@@ -7,6 +7,7 @@ cross-field rules below make capacity and time-window semantics explicit.
 
 from __future__ import annotations
 
+import json
 from datetime import date as _date
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -313,7 +314,9 @@ def validation_error_to_domain(exc: ValidationError) -> DomainError:
 
 def parse_optimize_input(arguments: dict[str, Any] | None) -> OptimizeInput:
     try:
-        return OptimizeInput.model_validate(arguments or {})
+        return OptimizeInput.model_validate(
+            coerce_json_fields(arguments or {}, "depot", "vehicles", "stops", "schedule")
+        )
     except ValidationError as exc:
         raise validation_error_to_domain(exc) from None
 
@@ -381,9 +384,27 @@ class GetGeocodeInput(StrictModel):
     )
 
 
+def coerce_json_fields(arguments: dict[str, Any], *keys: str) -> dict[str, Any]:
+    """Inspector `--tool-arg key=[...]` leaves arrays/objects as JSON strings."""
+
+    out = dict(arguments)
+    for key in keys:
+        raw = out.get(key)
+        if not isinstance(raw, str):
+            continue
+        text = raw.strip()
+        if not text or text[0] not in "[{":
+            continue
+        try:
+            out[key] = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
 def parse_geocode_input(arguments: dict[str, Any] | None) -> GeocodeInput:
     try:
-        return GeocodeInput.model_validate(arguments or {})
+        return GeocodeInput.model_validate(coerce_json_fields(arguments or {}, "addresses", "depot"))
     except ValidationError as exc:
         raise validation_error_to_domain(exc) from None
 

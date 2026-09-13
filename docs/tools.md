@@ -17,7 +17,10 @@ second charge.
 ## `geocode_addresses`
 
 Turns street addresses into coordinates via Vepathos Smart Import. Requires `depot` or `city`.
-Unresolved rows return `band=needs_geocoding` and null coordinates. Charges Smart Import quota.
+Unresolved rows return `band=needs_geocoding` and null coordinates (`unresolved_stop_ids`).
+Pins with `band=review` or confidence below 0.8 are listed in `review_stop_ids`.
+If `needs_confirmation` is true, the assistant must ask before calling `optimize_delivery_routes`.
+Charges Smart Import quota.
 
 ## `optimize_delivery_routes`
 

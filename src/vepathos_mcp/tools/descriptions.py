@@ -7,8 +7,12 @@ SERVER_INSTRUCTIONS = (
     "Vepathos solves vehicle routing problems (VRP) for delivery fleets: it assigns stops to vehicles and "
     "sequences each route from one depot, at scales from dozens to thousands of stops. "
     "optimize_delivery_routes requires latitude/longitude. If the user has street addresses, call "
-    "geocode_addresses first (Vepathos Smart Import); never invent coordinates. Then pass the resolved "
-    "pins to optimize_delivery_routes. Use get_geocode_result / get_optimization_result while a job runs. "
+    "geocode_addresses first (Vepathos Smart Import); never invent coordinates. After geocoding, if "
+    "needs_confirmation is true (unresolved_stop_ids or review_stop_ids), list those stop ids and wait "
+    "for the user: do not call optimize_delivery_routes until they confirm continuing with the pins "
+    "they accept, or they send corrected addresses. Never invent pins for unresolved stops. Review "
+    "means band=review or confidence below 0.8. Then pass only confirmed pins to "
+    "optimize_delivery_routes. Use get_geocode_result / get_optimization_result while a job runs. "
     "Units: kilograms, cubic meters, kilometers, minutes, local HH:MM times."
 )
 
@@ -30,16 +34,18 @@ GEOCODE_TITLE = "Geocode addresses"
 GEOCODE_DESCRIPTION = (
     "Turn street addresses into latitude/longitude using Vepathos Smart Import (the account's own "
     "geocoder, not a guessed coordinate). Requires a depot lat/lng or a city so the map region is known. "
-    "Charges the Smart Import address quota, not route stops. Unresolved addresses come back as "
-    "band=needs_geocoding with null coordinates — do not invent pins for those. Then call "
-    "optimize_delivery_routes with the resolved coordinates. Returns a geocode_id; if the job is still "
-    "running, use get_geocode_result."
+    "Charges the Smart Import address quota, not route stops. When complete, unresolved_stop_ids has "
+    "rows with no pin; review_stop_ids has pins that are band=review or confidence below 0.8. If "
+    "needs_confirmation is true, tell the user which ids are missing or uncertain and wait for "
+    "confirmation before optimize_delivery_routes. Do not invent coordinates. Returns a geocode_id; "
+    "if the job is still running, use get_geocode_result."
 )
 
 GET_GEOCODE_TITLE = "Get geocode result"
 GET_GEOCODE_DESCRIPTION = (
-    "Get the status and coordinates of a geocode_addresses job. Read-only. When complete, each stop has "
-    "latitude/longitude or band=needs_geocoding. Does not consume route-stop quota."
+    "Get the status and coordinates of a geocode_addresses job. Read-only. When complete, check "
+    "needs_confirmation, unresolved_stop_ids and review_stop_ids before optimizing. Does not consume "
+    "route-stop quota."
 )
 
 GET_RESULT_DESCRIPTION = (

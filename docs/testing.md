@@ -24,9 +24,7 @@ npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --
 npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --transport http \
   --header "Authorization: Bearer dev-bearer-token-change-me" --method tools/call \
   --tool-name optimize_delivery_routes \
-  --tool-arg 'depot={"latitude":-34.6037,"longitude":-58.3816}' \
-  --tool-arg 'vehicles=[{"vehicle_id":"van","count":2}]' \
-  --tool-arg 'stops=[{"stop_id":"A1","latitude":-34.61,"longitude":-58.39},{"stop_id":"A2","latitude":-34.62,"longitude":-58.40}]' \
+  --tool-args-json '{"depot":{"latitude":-34.6037,"longitude":-58.3816},"vehicles":[{"vehicle_id":"van","count":2}],"stops":[{"stop_id":"A1","latitude":-34.61,"longitude":-58.39},{"stop_id":"A2","latitude":-34.62,"longitude":-58.40}]}' \
   --format json
 ```
 

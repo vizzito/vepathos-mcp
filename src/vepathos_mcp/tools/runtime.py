@@ -177,6 +177,11 @@ async def instrumented(
         error_code=error_code or None,
         optimization_id=structured.get("optimization_id"),
         status=structured.get("status"),
+        error_message=(
+            (structured.get("error") or {}).get("message")
+            if isinstance(structured.get("error"), dict)
+            else None
+        ),
         account_hash=subject,
         client_type=client_label,
         latency_ms=round(elapsed * 1000),

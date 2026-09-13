@@ -118,7 +118,7 @@ class GeocodedStop(OutputModel):
     band: Literal["valid", "review", "needs_geocoding"] | None = Field(
         None, description="valid: use as-is. review: check. needs_geocoding: no pin."
     )
-    confidence: float | None = None
+    confidence: float | None = Field(None, description="Smart Import score, 0-1. Below 0.8 is review.")
 
 
 class GeocodeResult(OutputModel):
@@ -128,6 +128,17 @@ class GeocodeResult(OutputModel):
     status: JobStatus
     submitted_stops: int | None = None
     resolved_stops: int | None = Field(None, description="Stops that received a latitude and longitude.")
+    unresolved_stop_ids: list[str] | None = Field(
+        None, description="Stops with no pin. Do not invent coordinates. Ask before optimizing."
+    )
+    review_stop_ids: list[str] | None = Field(
+        None,
+        description="Pins to confirm (band=review or confidence below 0.8). Ask before routing them.",
+    )
+    needs_confirmation: bool | None = Field(
+        None,
+        description="True when any stop is unresolved or in review. Wait for the user before optimize.",
+    )
     poll_after_seconds: int | None = None
     progress: Progress | None = None
     stops: list[GeocodedStop] | None = None

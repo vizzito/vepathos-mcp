@@ -20,6 +20,28 @@ from vepathos_mcp.tools.runtime import RequestIdentity, ToolDeps, instrumented
 
 GEOCODE_TOOL = "geocode_addresses"
 GET_GEOCODE_TOOL = "get_geocode_result"
+# Smart Import scores below this (0-1, or 0-100) are treated as review.
+REVIEW_CONFIDENCE = 0.8
+
+
+def confidence_ratio(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return value / 100.0 if value > 1 else value
+
+
+def classify_geocoded_stops(stops: list[GeocodedStop]) -> tuple[list[str], list[str]]:
+    unresolved: list[str] = []
+    review: list[str] = []
+    for stop in stops:
+        has_pin = stop.latitude is not None and stop.longitude is not None
+        if not has_pin or stop.band == "needs_geocoding":
+            unresolved.append(stop.stop_id)
+            continue
+        score = confidence_ratio(stop.confidence)
+        if stop.band == "review" or (score is not None and score < REVIEW_CONFIDENCE):
+            review.append(stop.stop_id)
+    return unresolved, review
 
 
 def to_core_geocode_body(inp: Any) -> dict[str, Any]:
@@ -63,18 +85,24 @@ def _map_stops(rows: list[CoreGeocodedStop] | None) -> list[GeocodedStop] | None
 
 
 def _from_core(result: CoreGeocodeResult) -> GeocodeResult:
+    stops = _map_stops(result.stops)
+    unresolved, review = classify_geocoded_stops(stops) if stops else ([], [])
+    needs_confirmation = bool(unresolved or review) if stops is not None else None
     return GeocodeResult(
         geocode_id=result.job_id,
         status=result.status,
         submitted_stops=result.submitted_stops,
         resolved_stops=result.resolved_stops,
+        unresolved_stop_ids=unresolved or None,
+        review_stop_ids=review or None,
+        needs_confirmation=needs_confirmation,
         poll_after_seconds=None if result.is_terminal else POLL_AFTER_SECONDS,
         progress=(
             Progress(percent=result.progress.percent, stage=result.progress.stage)
             if result.progress
             else None
         ),
-        stops=_map_stops(result.stops),
+        stops=stops,
     )
 
 

@@ -205,6 +205,7 @@ async def test_geocode_addresses_returns_pins_from_smart_import_contract(
     assert payload["status"] == "completed"
     assert payload["stops"][0]["stop_id"] == "A1"
     assert payload["stops"][0]["latitude"] is not None
+    assert payload.get("needs_confirmation") is False
 
 
 async def test_validation_errors_are_structured(mcp_client: Callable[..., Any]) -> None:

@@ -6,7 +6,7 @@ import pytest
 
 from tests.conftest import sample_arguments
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
-from vepathos_mcp.schemas.inputs import parse_get_result_input, parse_optimize_input
+from vepathos_mcp.schemas.inputs import parse_geocode_input, parse_get_result_input, parse_optimize_input
 
 
 def expect_error(arguments: dict[str, object], code: ErrorCode) -> DomainError:
@@ -109,6 +109,20 @@ def test_issue_list_is_capped_and_never_echoes_input() -> None:
     assert len(err.details["issues"]) <= 10
     assert err.details["issue_count"] == 500
     assert "not-a-number" not in str(err.to_payload())
+
+
+def test_geocode_accepts_inspector_stringified_addresses() -> None:
+    inp = parse_geocode_input(
+        {
+            "addresses": (
+                '[{"stop_id":"A1","address":"Av. Corrientes 1000","city":"CABA","country":"AR"}]'
+            ),
+            "city": "CABA",
+            "country": "AR",
+        }
+    )
+    assert inp.addresses[0].stop_id == "A1"
+    assert inp.city == "CABA"
 
 
 def test_get_result_input() -> None:
