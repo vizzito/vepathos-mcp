@@ -1,0 +1,35 @@
+# Local development: vepathos-mcp against the fake Core channel (a test double, not the optimizer).
+#   docker compose up --build
+#   MCP endpoint: http://localhost:8080/mcp   (Authorization: Bearer dev-bearer-token-change-me)
+#
+# To use the real local stack instead, point VEPATHOS_API_BASE_URL at api-doc
+# (e.g. http://host.docker.internal:3000) and set a real VEPATHOS_SERVICE_CREDENTIAL.
+
+services:
+  fake-core:
+    image: python:3.12-slim
+    working_dir: /app
+    command: sh -c "pip install --quiet starlette uvicorn && python -m devtools.fake_core"
+    environment:
+      FAKE_CORE_HOST: 0.0.0.0
+      FAKE_CORE_PORT: "3900"
+      FAKE_CORE_SERVICE_KEY: dev-service-key
+    volumes:
+      - ./devtools:/app/devtools:ro
+
+  vepathos-mcp:
+    build: .
+    depends_on:
+      - fake-core
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ENVIRONMENT: development
+      MCP_PUBLIC_URL: http://localhost:8080
+      MCP_ALLOWED_HOSTS: "localhost:*,127.0.0.1:*"
+      VEPATHOS_API_BASE_URL: http://fake-core:3900
+      VEPATHOS_MCP_SERVICE_KEY: dev-service-key
+      AUTH_MODES: service,api_key
+      VEPATHOS_SERVICE_CREDENTIAL: "vpt_000000000000000000000000:vpt_sk_test_000000000000000000000000000000000000000000000000"
+      MCP_DEV_BEARER_TOKEN: dev-bearer-token-change-me
+      FORWARDED_ALLOW_IPS: "*"

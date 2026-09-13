@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vepathos-mcp"
+version = "0.1.0"
+description = "Vepathos MCP — large-scale delivery and fleet route optimization for AI agents."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "Vepathos" }]
+keywords = [
+  "mcp",
+  "model-context-protocol",
+  "vehicle-routing-problem",
+  "vrp",
+  "route-optimization",
+  "last-mile",
+  "fleet-optimization",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+  "mcp>=2.2,<3",
+  "httpx>=0.28,<1",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6,<3",
+  "uvicorn[standard]>=0.32",
+  "prometheus-client>=0.21",
+  "PyJWT[crypto]>=2.10",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "respx>=0.22",
+  "ruff>=0.8",
+  "mypy>=1.13",
+]
+
+[project.scripts]
+vepathos-mcp = "vepathos_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://vepathos.com"
+Documentation = "https://github.com/vizzito/vepathos-mcp/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vepathos_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "integration: runs against a real Vepathos Core (local stack); skipped unless VEPATHOS_INTEGRATION=1",
+]
+addopts = "-m 'not integration'"
+filterwarnings = ["ignore::DeprecationWarning:websockets.*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests", "devtools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "RUF"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S311", "E501"]
+"src/vepathos_mcp/tools/descriptions.py" = ["E501"]
+"devtools/**" = ["S311"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+packages = ["vepathos_mcp"]
+mypy_path = "src"
+warn_unused_ignores = false

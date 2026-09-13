@@ -1,0 +1,35 @@
+"""Model-facing text. Descriptions are part of the product: precise, factual, no promotion.
+
+Keep them consistent with the Core capability matrix (docs/tools.md).
+"""
+
+SERVER_INSTRUCTIONS = (
+    "Vepathos solves vehicle routing problems (VRP) for delivery fleets: it assigns stops to vehicles and "
+    "sequences each route from one depot, at scales from dozens to thousands of stops. Stops need "
+    "latitude/longitude (addresses are not geocoded). Optimizations run asynchronously: "
+    "optimize_delivery_routes returns an optimization_id, and get_optimization_result returns status, a compact "
+    "summary and paginated route details. Units: kilograms, cubic meters, kilometers, minutes, local HH:MM times."
+)
+
+OPTIMIZE_TITLE = "Optimize delivery routes"
+OPTIMIZE_DESCRIPTION = (
+    "Plan optimized delivery routes for a fleet (vehicle routing problem, VRP). Assigns each stop to a vehicle "
+    "and sequences every route from one depot, minimizing total distance while respecting the constraints you "
+    "provide: maximum stops per vehicle, weight capacity (kg), volume capacity (m3) and delivery time windows. "
+    "Built for large problems, from dozens to thousands of stops. Every stop needs latitude and longitude; "
+    "addresses are not geocoded. Runs asynchronously: returns an optimization_id, plus the result when the "
+    "optimization finishes within a few seconds; use get_optimization_result to retrieve status and routes. "
+    "Results stay available for 24 hours. Uses stops from the connected Vepathos account plan; a request that "
+    "exceeds the plan, or needs a constraint the plan does not include, is rejected with an explanation and is "
+    "never partially applied. Calling again with identical arguments returns the same optimization."
+)
+
+GET_RESULT_TITLE = "Get optimization result"
+GET_RESULT_DESCRIPTION = (
+    "Get the status and outcome of a route optimization started with optimize_delivery_routes. While it runs, "
+    "returns status and progress (waiting briefly for completion). When complete, detail=summary returns totals "
+    "(stops assigned and unassigned, vehicles used, distance, duration, time-window compliance) and a page of "
+    "per-route metrics; detail=stops returns the ordered stop_ids with estimated arrival times for one route "
+    "(route_id) or all routes page by page; detail=unassigned lists stops that could not be routed. Read-only; "
+    "it does not consume plan stops."
+)

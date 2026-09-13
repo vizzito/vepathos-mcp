@@ -1,0 +1,58 @@
+# Production deployment of vepathos-mcp (mcp.vepathos.com).
+#
+# Runs as its own compose project, container, logs and health check. TLS terminates at the edge
+# reverse proxy (see deploy/Caddyfile.example), which reaches this container over the external
+# Docker network `vepathos-edge`.
+#
+#   docker network create vepathos-edge   # once per host
+#   docker compose -p vepathos-mcp -f deploy/docker-compose.prod.yml --env-file /etc/vepathos-mcp/.env up -d --build
+
+name: vepathos-mcp
+
+services:
+  vepathos-mcp:
+    build:
+      context: ..
+    image: vepathos/mcp:${VEPATHOS_MCP_VERSION:-latest}
+    restart: unless-stopped
+    env_file:
+      - ${VEPATHOS_MCP_ENV_FILE:-/etc/vepathos-mcp/.env}
+    environment:
+      ENVIRONMENT: production
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8080"
+      MCP_PUBLIC_URL: https://mcp.vepathos.com
+      MCP_ALLOWED_HOSTS: mcp.vepathos.com
+      MCP_ALLOWED_ORIGINS: https://mcp.vepathos.com
+      VEPATHOS_API_BASE_URL: https://api.vepathos.com
+      AUTH_MODES: oauth,api_key
+      OAUTH_ISSUER: https://api.vepathos.com
+      OAUTH_JWKS_URL: https://api.vepathos.com/api/jwks
+      # Only the edge proxy on the shared network may set X-Forwarded-* headers.
+      FORWARDED_ALLOW_IPS: "*"
+    # No published ports: only the edge proxy can reach the service.
+    expose:
+      - "8080"
+    networks:
+      - vepathos-edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  vepathos-edge:
+    external: true

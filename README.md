@@ -1,0 +1,141 @@
+# Vepathos MCP
+
+**Large-scale delivery and fleet optimization for AI agents.**
+
+Vepathos solves vehicle routing problems (VRP) for last-mile fleets: it assigns stops to vehicles
+and sequences each route from one depot, at scales from dozens to thousands of stops.
+
+This repository is the remote MCP adapter (`mcp.vepathos.com`). It is not a product of its own.
+Web, REST and MCP share the same Vepathos account, plan, features, limits and monthly stop quota.
+
+| Tool | What it does |
+|---|---|
+| `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
+| `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
+
+There is no cancel tool. A submitted optimization runs to completion.
+
+## Status (2026-09-13)
+
+The adapter in this repo is usable locally (Streamable HTTP, two tools, structured errors). The
+Vepathos Core MCP channel and the OAuth authorization server are **not shipped yet**. Until they
+are, a real optimization against a Vepathos account is not available.
+
+- Local / CI: this server + a **fake Core** (test double; it does not route).
+- Next: Core channel in `vepathos-api-doc`, then a real job on the local stack.
+
+Production onboarding is OAuth. Do not add "Add to Claude / Cursor / …" buttons until each flow
+has been verified end to end.
+
+## Connect (production target)
+
+```
+Add Vepathos → Connect → Sign in / Sign up → Authorize
+```
+
+1. Discover Vepathos from Claude or another MCP client.
+2. Connect. The client signs in (or creates a Free / Duck account) at `api.vepathos.com`.
+3. Authorize the client to optimize routes with that account.
+4. Call `optimize_delivery_routes`. If the plan cannot run the request, the tool returns
+   `PLAN_UPGRADE_REQUIRED` with an `upgrade_url`. Pay on Vepathos; retry without reconnecting.
+
+No API keys and no JSON config for that flow. See [docs/onboarding.md](docs/onboarding.md).
+
+### Developers and headless agents
+
+Create a Vepathos dashboard credential with scope `mcp:optimize` and send
+
+`Authorization: Bearer <client_id>:<client_secret>`
+
+to `https://mcp.vepathos.com/mcp`. Usage counts against the same account plan as the web app and
+the REST API.
+
+## Example (3,200 deliveries)
+
+```json
+{
+  "depot": { "latitude": 40.7128, "longitude": -74.0060 },
+  "vehicles": [
+    { "vehicle_id": "van", "count": 35, "max_weight_kg": 900, "max_volume_m3": 8.0 }
+  ],
+  "stops": [
+    {
+      "stop_id": "ORD-10045",
+      "latitude": 40.7306,
+      "longitude": -73.9352,
+      "weight_kg": 18.5,
+      "volume_m3": 0.04,
+      "time_window": { "start": "09:00", "end": "12:00" }
+    }
+  ],
+  "schedule": {
+    "date": "2026-09-14",
+    "route_start_time": "07:30",
+    "time_zone": "America/New_York",
+    "service_time_minutes": 4
+  }
+}
+```
+
+Every stop needs latitude and longitude. Addresses are not geocoded. Weight, volume and time
+windows are optional; if you set a capacity on any vehicle, every vehicle and every stop must
+include that field. Time windows require `schedule.route_start_time`.
+
+Results stay available for 24 hours. `detail=summary` is compact (totals and a page of routes).
+`detail=stops` returns ordered `stop_id` + arrival time, without echoing coordinates.
+
+Full schemas and errors: [docs/tools.md](docs/tools.md).
+
+## Run locally
+
+Requires Python 3.12+.
+
+```bash
+python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cp .env.example .env
+docker compose up --build
+```
+
+The MCP endpoint is `http://127.0.0.1:8080/mcp` with
+`Authorization: Bearer dev-bearer-token-change-me`. That compose stack talks to the fake Core, not
+the optimizer.
+
+```bash
+.venv/bin/pytest -m "not integration"
+.venv/bin/mypy
+.venv/bin/ruff check src tests devtools
+```
+
+MCP Inspector and the real local-stack integration (after the Core channel lands):
+[docs/testing.md](docs/testing.md).
+
+## Privacy
+
+The tools accept coordinates, optional weight/volume/time windows and your own stop and vehicle
+ids. They do not accept names, phones, emails or addresses. Results do not echo coordinates.
+Logs omit tokens, payloads and coordinates. Hosted results are retained for 24 hours. See
+[docs/security.md](docs/security.md) and [SECURITY.md](SECURITY.md).
+
+## Research & benchmarks
+
+The Vepathos last-mile optimizer is described in a public technical report:
+[doi:10.5281/zenodo.19859531](https://doi.org/10.5281/zenodo.19859531). That deposit is not a
+peer-reviewed publication.
+
+## Docs
+
+| Document | Topic |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | ADR: standalone adapter, trust model, auth, trial |
+| [docs/core-changes.md](docs/core-changes.md) | Required Core (`vepathos-api-doc`) changes |
+| [docs/core-channel-contract.md](docs/core-channel-contract.md) | HTTP contract `/api/mcp/v1` |
+| [docs/auth.md](docs/auth.md) | OAuth, API keys, service mode |
+| [docs/onboarding.md](docs/onboarding.md) | Connect, signup, upgrade |
+| [docs/tools.md](docs/tools.md) | Tool schemas, annotations, errors |
+| [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
+| [docs/deployment.md](docs/deployment.md) | Container, Caddy, health |
+| [docs/publication-checklist.md](docs/publication-checklist.md) | Registry and directory gates |
+
+## License
+
+[Apache License 2.0](LICENSE)

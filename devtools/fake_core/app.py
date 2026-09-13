@@ -1,0 +1,378 @@
+"""A TEST DOUBLE of the Vepathos Core MCP channel (docs/core-channel-contract.md).
+
+It is NOT the Vepathos optimizer and implements no routing algorithm: routes are a naive split of
+the stops in input order, only so that the MCP adapter can be exercised end to end (CI, demos, MCP
+Inspector) without the real stack. Plan rules are a tiny, configurable imitation.
+
+Run:  python -m devtools.fake_core            (listens on 127.0.0.1:3900)
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import math
+import os
+import re
+import time
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+API_KEY = re.compile(r"^vpt_[0-9a-f]{24}:vpt_sk_(test|live)_[0-9a-f]{48}$")
+
+
+@dataclass
+class FakePlan:
+    name: str = "free"
+    max_stops_per_request: int | None = 150
+    monthly_stops: int | None = 2000
+    features: frozenset[str] = frozenset()
+    max_concurrent: int = 1
+
+
+@dataclass
+class FakeJob:
+    job_id: str
+    account: str
+    body_hash: str
+    body: dict[str, Any]
+    created_at: float
+    run_seconds: float
+    fail: bool = False
+
+
+@dataclass
+class FakeCoreState:
+    service_key: str = "dev-service-key"
+    plan: FakePlan = field(default_factory=FakePlan)
+    jobs: dict[str, FakeJob] = field(default_factory=dict)
+    used_stops: dict[str, int] = field(default_factory=dict)
+    trial_used: set[str] = field(default_factory=set)
+    run_seconds: float = 3.0
+    clock: Any = time.time
+
+
+def _error(status: int, code: str, message: str, details: dict[str, Any] | None = None) -> JSONResponse:
+    body: dict[str, Any] = {"error": {"code": code, "message": message, "retryable": status >= 500}}
+    if details:
+        body["error"]["details"] = details
+    return JSONResponse(body, status_code=status)
+
+
+def _iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, UTC).isoformat().replace("+00:00", "Z")
+
+
+def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
+    state = state or FakeCoreState()
+
+    def authenticate(request: Request) -> str | JSONResponse:
+        if not hmac.compare_digest(request.headers.get("x-vepathos-mcp-service-key", ""), state.service_key):
+            return _error(401, "SERVICE_UNAUTHORIZED", "Service key missing or invalid.")
+        auth = request.headers.get("authorization", "")
+        if not auth.startswith("Bearer "):
+            return _error(401, "AUTHENTICATION_REQUIRED", "User credential required.")
+        credential = auth[7:]
+        if API_KEY.match(credential):
+            return "acct_" + hashlib.sha256(credential.split(":")[0].encode()).hexdigest()[:12]
+        parts = credential.split(".")
+        if len(parts) == 3:  # fake: trust the JWT's sub without verifying (test double only)
+            try:
+                padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                import base64
+
+                sub = json.loads(base64.urlsafe_b64decode(padded)).get("sub")
+            except (ValueError, json.JSONDecodeError):
+                sub = None
+            if sub:
+                return f"acct_{sub}"
+        return _error(401, "INVALID_CREDENTIALS", "Credential invalid.")
+
+    async def health(request: Request) -> JSONResponse:
+        if request.headers.get("x-vepathos-mcp-service-key") != state.service_key:
+            return _error(401, "SERVICE_UNAUTHORIZED", "Service key missing or invalid.")
+        return JSONResponse({"status": "ok"})
+
+    def job_status(job: FakeJob) -> dict[str, Any]:
+        elapsed = state.clock() - job.created_at
+        if elapsed >= job.run_seconds:
+            status = "failed" if job.fail else "completed"
+            progress = None
+        elif elapsed < job.run_seconds * 0.15:
+            status, progress = "queued", {"percent": 0, "stage": "queued"}
+        else:
+            pct = int(100 * elapsed / job.run_seconds)
+            stage = "assigning_stops" if pct < 50 else "sequencing_routes"
+            status, progress = "running", {"percent": pct, "stage": stage}
+        payload: dict[str, Any] = {
+            "job_id": job.job_id,
+            "status": status,
+            "submitted_stops": len(job.body["stops"]),
+            "created_at": _iso(job.created_at),
+            "expires_at": _iso(job.created_at + 86400),
+            "billing": {
+                "mode": job.body.get("_billing", "plan"),
+                "quota_charged": job.body.get("_billing") != "mcp_full_trial",
+            },
+        }
+        if progress:
+            payload["progress"] = progress
+        if status in {"completed", "failed"}:
+            payload["completed_at"] = _iso(job.created_at + job.run_seconds)
+        if status == "failed":
+            payload["failure"] = {
+                "code": "OPTIMIZATION_FAILED",
+                "message": "The routing engine could not finish.",
+            }
+        return payload
+
+    async def create_job(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        key = request.headers.get("idempotency-key", "")
+        if not re.match(r"^[A-Za-z0-9_.:-]{8,128}$", key):
+            return _error(400, "INVALID_INPUT", "Idempotency-Key header required.")
+        raw = await request.body()
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError:
+            return _error(400, "INVALID_INPUT", "Body is not JSON.")
+        body_hash = hashlib.sha256(raw).hexdigest()
+        job_id = "mcp_" + hashlib.sha256(f"{account}:{key}".encode()).hexdigest()[:32]
+
+        existing = state.jobs.get(job_id)
+        if existing:
+            if existing.body_hash != body_hash:
+                return _error(409, "IDEMPOTENCY_CONFLICT", "Idempotency-Key reused with a different body.")
+            created = job_status(existing) | {
+                "idempotent_replay": True,
+                "vehicles_available": _fleet(existing.body),
+            }
+            return JSONResponse(created, status_code=202)
+
+        stops = body.get("stops") or []
+        features = sorted(
+            {"weight_capacity" for v in body.get("vehicles", []) if "max_weight_kg" in v}
+            | {"volume_capacity" for v in body.get("vehicles", []) if "max_volume_m3" in v}
+            | {"time_windows" for s in stops if "time_window" in s}
+        )
+        plan = state.plan
+        too_many = plan.max_stops_per_request is not None and len(stops) > plan.max_stops_per_request
+        missing = [f for f in features if f not in plan.features]
+        billing = "plan"
+        if too_many or missing:
+            trial_ok = (
+                account not in state.trial_used and len(stops) <= 2000 and (len(stops) > 500 or bool(missing))
+            )
+            if trial_ok:
+                billing = "mcp_full_trial"
+            else:
+                reason = "STOP_LIMIT_EXCEEDED" if too_many else "FEATURE_NOT_AVAILABLE"
+                details: dict[str, Any] = {
+                    "reason": reason,
+                    "requested": {"stops": len(stops), "features": missing},
+                    "current_limit": {"stops_per_request": plan.max_stops_per_request},
+                    "eligible_plans": [{"id": "growth", "name": "Growth"}],
+                    "upgrade_url": "http://localhost:3000/dashboard/billing?upgrade=growth&source=mcp",
+                }
+                if account not in state.trial_used and len(stops) > 2000:
+                    details["full_trial"] = {"available": True, "max_stops": 2000}
+                return _error(
+                    403,
+                    "PLAN_UPGRADE_REQUIRED",
+                    "Your current Vepathos plan cannot run this request.",
+                    details,
+                )
+
+        used = state.used_stops.get(account, 0)
+        if billing == "plan" and plan.monthly_stops is not None and used + len(stops) > plan.monthly_stops:
+            return _error(
+                429,
+                "QUOTA_EXCEEDED",
+                "Monthly stop quota exceeded.",
+                {
+                    "stops_remaining": plan.monthly_stops - used,
+                    "requested": len(stops),
+                    "period_ends_at": "2026-10-01T00:00:00Z",
+                },
+            )
+        active = [
+            j.job_id
+            for j in state.jobs.values()
+            if j.account == account and state.clock() - j.created_at < j.run_seconds
+        ]
+        if len(active) >= plan.max_concurrent:
+            response = _error(
+                429,
+                "CONCURRENT_OPTIMIZATION_LIMIT",
+                "Too many optimizations running.",
+                {"limit": plan.max_concurrent, "active_job_ids": active},
+            )
+            response.headers["Retry-After"] = "5"
+            return response
+
+        body["_billing"] = billing
+        job = FakeJob(
+            job_id,
+            account,
+            body_hash,
+            body,
+            state.clock(),
+            state.run_seconds,
+            fail=any(str(s.get("id", "")).startswith("FAIL") for s in stops),
+        )
+        state.jobs[job_id] = job
+        if billing == "plan":
+            state.used_stops[account] = used + len(stops)
+        else:
+            state.trial_used.add(account)
+        created = job_status(job) | {
+            "idempotent_replay": False,
+            "vehicles_available": _fleet(body),
+            "schedule_date": (body.get("schedule") or {}).get("date"),
+        }
+        remaining = (
+            None if plan.monthly_stops is None else plan.monthly_stops - state.used_stops.get(account, 0)
+        )
+        created["billing"]["stops_remaining_this_period"] = remaining
+        if billing == "mcp_full_trial":
+            created["full_trial_applied"] = {
+                "max_stops": 2000,
+                "features": ["weight_capacity", "volume_capacity", "time_windows"],
+            }
+        return JSONResponse(created, status_code=202)
+
+    def find_job(request: Request) -> FakeJob | JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        job = state.jobs.get(request.path_params["job_id"])
+        if job is None or job.account != account:
+            return _error(404, "OPTIMIZATION_NOT_FOUND", "Not found.")
+        return job
+
+    async def get_job(request: Request) -> JSONResponse:
+        job = find_job(request)
+        return job if isinstance(job, JSONResponse) else JSONResponse(job_status(job))
+
+    async def get_result(request: Request) -> JSONResponse:
+        job = find_job(request)
+        if isinstance(job, JSONResponse):
+            return job
+        status = job_status(job)
+        if status["status"] != "completed":
+            return JSONResponse(status)
+        view = request.query_params.get("view", "summary")
+        offset = int(request.query_params.get("offset", "0"))
+        routes = _naive_routes(job.body)
+        if view == "summary":
+            limit = int(request.query_params.get("limit", "25"))
+            page_items = routes[offset : offset + limit]
+            assigned = sum(len(r["stop_ids"]) for r in routes)
+            payload = status | {
+                "summary": {
+                    "stops_submitted": len(job.body["stops"]),
+                    "stops_assigned": assigned,
+                    "stops_unassigned": len(job.body["stops"]) - assigned,
+                    "vehicles_available": _fleet(job.body),
+                    "vehicles_used": len(routes),
+                    "total_distance_km": round(sum(r["distance_km"] for r in routes), 2),
+                    "total_duration_minutes": round(sum(r["duration_minutes"] for r in routes), 1),
+                    "charged_stops": assigned if job.body.get("_billing") == "plan" else 0,
+                },
+                "routes": [
+                    {k: v for k, v in r.items() if k != "stop_ids"} | {"stops": len(r["stop_ids"])}
+                    for r in page_items
+                ],
+                "page": _page(offset, limit, len(routes)),
+            }
+            return JSONResponse(payload)
+        if view == "stops":
+            limit = int(request.query_params.get("limit", "200"))
+            route_id = request.query_params.get("route_id")
+            visits = [
+                {
+                    "route_id": r["route_id"],
+                    "sequence": i + 1,
+                    "stop_id": sid,
+                    "arrival_time": _clock(job.body, i),
+                }
+                for r in routes
+                if route_id in (None, r["route_id"])
+                for i, sid in enumerate(r["stop_ids"])
+            ]
+            return JSONResponse(
+                status | {"stops": visits[offset : offset + limit], "page": _page(offset, limit, len(visits))}
+            )
+        limit = int(request.query_params.get("limit", "200"))
+        return JSONResponse(status | {"unassigned_stop_ids": [], "page": _page(offset, limit, 0)})
+
+    return Starlette(
+        routes=[
+            Route("/api/mcp/v1/health", health, methods=["GET"]),
+            Route("/api/mcp/v1/optimization/jobs", create_job, methods=["POST"]),
+            Route("/api/mcp/v1/optimization/jobs/{job_id}", get_job, methods=["GET"]),
+            Route("/api/mcp/v1/optimization/jobs/{job_id}/result", get_result, methods=["GET"]),
+        ]
+    )
+
+
+def _fleet(body: dict[str, Any]) -> int:
+    return sum(int(v.get("count", 1)) for v in body.get("vehicles", []))
+
+
+def _page(offset: int, limit: int, total: int) -> dict[str, Any]:
+    nxt = offset + limit
+    return {"offset": offset, "limit": limit, "total": total, "next_offset": nxt if nxt < total else None}
+
+
+def _clock(body: dict[str, Any], index: int) -> str | None:
+    start = (body.get("schedule") or {}).get("route_start_time")
+    if not start:
+        return None
+    base = datetime.strptime(start, "%H:%M")
+    return (base + timedelta(minutes=8 * (index + 1))).strftime("%H:%M")
+
+
+def _naive_routes(body: dict[str, Any]) -> list[dict[str, Any]]:
+    """Split stops in input order across vehicles. Deliberately naive: this is not an optimizer."""
+
+    stops = body["stops"]
+    units = [v["id"] for v in body["vehicles"] for _ in range(int(v.get("count", 1)))]
+    per_route = max(1, math.ceil(len(stops) / max(1, len(units))))
+    routes = []
+    for index, start in enumerate(range(0, len(stops), per_route)):
+        chunk = stops[start : start + per_route]
+        routes.append(
+            {
+                "route_id": f"r{index + 1}",
+                "vehicle_id": units[min(index, len(units) - 1)],
+                "stop_ids": [s["id"] for s in chunk],
+                "distance_km": round(2.5 * len(chunk), 2),
+                "duration_minutes": round(9.0 * len(chunk), 1),
+            }
+        )
+    return routes
+
+
+def main() -> None:
+    import uvicorn
+
+    state = FakeCoreState(service_key=os.environ.get("FAKE_CORE_SERVICE_KEY", "dev-service-key"))
+    uvicorn.run(
+        create_fake_core(state),
+        host=os.environ.get("FAKE_CORE_HOST", "127.0.0.1"),
+        port=int(os.environ.get("FAKE_CORE_PORT", "3900")),
+    )
+
+
+if __name__ == "__main__":
+    main()

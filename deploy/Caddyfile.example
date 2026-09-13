@@ -1,0 +1,33 @@
+# Site block for the edge Caddy that already serves api.vepathos.com on the same host.
+# The edge Caddy container must join the external Docker network `vepathos-edge`.
+# DNS: an A/AAAA record for mcp.vepathos.com pointing at this host must exist before Caddy starts,
+# so Let's Encrypt can issue the certificate.
+
+mcp.vepathos.com {
+	# Operational endpoints stay private: health checks run inside Docker, metrics are scraped internally.
+	@private path /metrics
+	respond @private 404
+
+	request_body {
+		max_size 8MB
+	}
+
+	reverse_proxy vepathos-mcp:8080 {
+		# Stream SSE responses (progress notifications) without buffering.
+		flush_interval -1
+		transport http {
+			dial_timeout 5s
+			# Tools answer within ~55 s (bounded waits); optimizations continue asynchronously in Core.
+			response_header_timeout 75s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	encode zstd gzip
+}
