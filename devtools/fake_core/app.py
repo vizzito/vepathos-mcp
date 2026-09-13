@@ -25,7 +25,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-API_KEY = re.compile(r"^vpt_[0-9a-f]{24}:vpt_sk_(test|live)_[0-9a-f]{48}$")
+API_KEY = re.compile(r"^vpt_(?:mcp_)?[0-9a-f]{24}:vpt_sk_(test|live)_[0-9a-f]{48}$")
 
 
 @dataclass

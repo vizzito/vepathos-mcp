@@ -8,7 +8,7 @@ own credential to the Vepathos Core MCP channel, and never decides which account
 | Mode | For | Inbound credential | Forwarded to Core |
 |---|---|---|---|
 | `oauth` | Production (default public onboarding) | OAuth access token issued by `https://api.vepathos.com` for `https://mcp.vepathos.com/mcp`, scope `optimize` | The same token |
-| `api_key` | Developers, CI and headless agents | `vpt_<id>:vpt_sk_<env>_<secret>` credential with scope `mcp:optimize` | The same credential |
+| `api_key` | Developers, CI and headless agents | `vpt_mcp_<id>:vpt_sk_<env>_<secret>` (or a classic `vpt_<id>`) with scope `mcp:optimize` | The same credential |
 | `service` | Local development only (refused in production) | Static `MCP_DEV_BEARER_TOKEN` | `VEPATHOS_SERVICE_CREDENTIAL` from the environment |
 
 `MCP_TRANSPORT=stdio` (self-hosting) uses `VEPATHOS_SERVICE_CREDENTIAL` for every call, as the MCP
@@ -72,4 +72,4 @@ claude mcp add --transport http vepathos-dev http://localhost:8080/mcp --header 
 ```
 
 Headless agents with a developer credential (`api_key` mode) send
-`Authorization: Bearer vpt_…:vpt_sk_…`. Keep credentials out of shared or committed configuration files.
+`Authorization: Bearer vpt_mcp_…:vpt_sk_…` (classic `vpt_…` keys still work). Keep credentials out of shared or committed configuration files.

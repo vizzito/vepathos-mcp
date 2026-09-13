@@ -95,6 +95,9 @@ async def test_api_key_and_service_modes() -> None:
     verifier = CompositeTokenVerifier(make_settings())
     api = await verifier.verify_token(API_KEY)
     assert api is not None and credential_kind(api) == "api_key" and api.client_id.startswith("vpt_")
+    mcp_key = "vpt_mcp_" + "a" * 24 + ":vpt_sk_test_" + "b" * 48
+    mcp = await verifier.verify_token(mcp_key)
+    assert mcp is not None and mcp.client_id.startswith("vpt_mcp_")
     service = await verifier.verify_token(DEV_TOKEN)
     assert service is not None and credential_kind(service) == "service"
     assert await verifier.verify_token("vpt_short:secret") is None
