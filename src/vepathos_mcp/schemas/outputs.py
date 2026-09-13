@@ -109,3 +109,25 @@ class OptimizeResult(OutputModel):
     result: OptimizationResult | None = Field(
         None, description="Present when the optimization finished within the call."
     )
+
+
+class GeocodedStop(OutputModel):
+    stop_id: str
+    latitude: float | None = None
+    longitude: float | None = None
+    band: Literal["valid", "review", "needs_geocoding"] | None = Field(
+        None, description="valid: use as-is. review: check. needs_geocoding: no pin."
+    )
+    confidence: float | None = None
+
+
+class GeocodeResult(OutputModel):
+    """Output of geocode_addresses and get_geocode_result."""
+
+    geocode_id: str = Field(description="Handle for get_geocode_result.")
+    status: JobStatus
+    submitted_stops: int | None = None
+    resolved_stops: int | None = Field(None, description="Stops that received a latitude and longitude.")
+    poll_after_seconds: int | None = None
+    progress: Progress | None = None
+    stops: list[GeocodedStop] | None = None

@@ -75,6 +75,36 @@ class CorePage(CoreModel):
     next_offset: int | None = None
 
 
+class CoreGeocodedStop(CoreModel):
+    id: str
+    lat: float | None = None
+    lng: float | None = None
+    band: Literal["valid", "review", "needs_geocoding"] | None = None
+    confidence: float | None = None
+
+
+class CoreGeocodeCreated(CoreModel):
+    job_id: str
+    status: CoreJobStatus = "queued"
+    submitted_stops: int
+    poll_after_ms: int | None = None
+
+
+class CoreGeocodeResult(CoreModel):
+    job_id: str
+    status: CoreJobStatus
+    submitted_stops: int | None = None
+    resolved_stops: int | None = None
+    progress: CoreProgress | None = None
+    poll_after_ms: int | None = None
+    message: str | None = None
+    stops: list[CoreGeocodedStop] | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in TERMINAL_STATUSES
+
+
 class CoreJobResult(CoreJobStatusResponse):
     summary: dict[str, Any] | None = None
     routes: list[dict[str, Any]] | None = None

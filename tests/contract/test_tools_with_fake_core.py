@@ -43,7 +43,12 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
     async with await mcp_client() as client:
         listed = await client.list_tools()
     tools = {t.name: t for t in listed.tools}
-    assert set(tools) == {"optimize_delivery_routes", "get_optimization_result"}
+    assert set(tools) == {
+        "optimize_delivery_routes",
+        "get_optimization_result",
+        "geocode_addresses",
+        "get_geocode_result",
+    }
 
     optimize = tools["optimize_delivery_routes"]
     assert optimize.annotations is not None
@@ -174,6 +179,32 @@ async def test_failed_optimization_and_unknown_id(mcp_client: Callable[..., Any]
             client, "get_optimization_result", {"optimization_id": "mcp_" + "0" * 32}
         )
     assert is_error and payload["error"]["code"] == "OPTIMIZATION_NOT_FOUND"
+
+
+async def test_geocode_addresses_returns_pins_from_smart_import_contract(
+    mcp_client: Callable[..., Any],
+) -> None:
+    async with await mcp_client() as client:
+        is_error, created = await call(
+            client,
+            "geocode_addresses",
+            {
+                "addresses": [
+                    {"stop_id": "A1", "address": "Av. Corrientes 1000", "city": "CABA", "country": "AR"}
+                ],
+                "city": "Buenos Aires",
+                "country": "AR",
+            },
+        )
+        assert is_error is False
+        assert created["geocode_id"].startswith("mcpg_")
+        is_error, payload = await call(
+            client, "get_geocode_result", {"geocode_id": created["geocode_id"]}
+        )
+    assert is_error is False
+    assert payload["status"] == "completed"
+    assert payload["stops"][0]["stop_id"] == "A1"
+    assert payload["stops"][0]["latitude"] is not None
 
 
 async def test_validation_errors_are_structured(mcp_client: Callable[..., Any]) -> None:

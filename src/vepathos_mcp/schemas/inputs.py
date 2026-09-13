@@ -20,6 +20,8 @@ HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 VEHICLE_ID_PATTERN = r"^[A-Za-z0-9_.-]{1,32}$"
 STOP_ID_PATTERN = r"^[^\x00-\x1f\x7f]{1,64}$"
 OPTIMIZATION_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+GEOCODE_ID_PATTERN = r"^[A-Za-z0-9_.-]{8,200}$"
+MAX_GEOCODE_STOPS = 500
 IDEMPOTENCY_KEY_PATTERN = r"^[A-Za-z0-9_.:-]{8,128}$"
 
 MAX_STOPS = 25_000
@@ -312,6 +314,83 @@ def validation_error_to_domain(exc: ValidationError) -> DomainError:
 def parse_optimize_input(arguments: dict[str, Any] | None) -> OptimizeInput:
     try:
         return OptimizeInput.model_validate(arguments or {})
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
+
+
+class AddressStop(StrictModel):
+    """A delivery location given as a street address. Vepathos Smart Import geocodes it."""
+
+    stop_id: str = Field(
+        pattern=STOP_ID_PATTERN,
+        description="Your id for this stop (max 64 characters). Unique. Echoed in results.",
+        examples=["ORD-10045"],
+    )
+    address: str = Field(
+        min_length=1,
+        max_length=300,
+        description="Street address to geocode. Not a coordinate.",
+    )
+    city: str | None = Field(None, max_length=120, description="City, when known.")
+    region: str | None = Field(None, max_length=120, description="State, province or region.")
+    postcode: str | None = Field(None, max_length=32)
+    country: str | None = Field(None, max_length=64, description="Country name or ISO code, when known.")
+
+
+class GeocodeInput(StrictModel):
+    """Arguments of geocode_addresses."""
+
+    addresses: list[AddressStop] = Field(
+        min_length=1,
+        max_length=MAX_GEOCODE_STOPS,
+        description="Stops to geocode (1-500). Uses the account Smart Import quota, not route stops.",
+    )
+    depot: Depot | None = Field(
+        None,
+        description="Depot coordinates. Helps pick the map region. Required if city is omitted.",
+    )
+    city: str | None = Field(
+        None, max_length=120, description="City used to pick the map region when depot is omitted."
+    )
+    country: str | None = Field(None, max_length=64)
+    timezone: str | None = Field(
+        None,
+        max_length=64,
+        description="IANA time zone, e.g. America/Argentina/Buenos_Aires.",
+    )
+
+    @model_validator(mode="after")
+    def _region_hint(self) -> GeocodeInput:
+        if self.depot is None and not (self.city and self.city.strip()):
+            raise PydanticCustomError(
+                "geocode_region",
+                "Provide depot coordinates or city so Smart Import knows which region to search",
+            )
+        ids = [s.stop_id for s in self.addresses]
+        if len(ids) != len(set(ids)):
+            raise PydanticCustomError("geocode_ids", "addresses[].stop_id values must be unique")
+        return self
+
+
+class GetGeocodeInput(StrictModel):
+    """Arguments of get_geocode_result."""
+
+    geocode_id: str = Field(
+        pattern=GEOCODE_ID_PATTERN,
+        description="The geocode_id returned by geocode_addresses.",
+    )
+
+
+def parse_geocode_input(arguments: dict[str, Any] | None) -> GeocodeInput:
+    try:
+        return GeocodeInput.model_validate(arguments or {})
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
+
+
+def parse_get_geocode_input(arguments: dict[str, Any] | None) -> GetGeocodeInput:
+    try:
+        return GetGeocodeInput.model_validate(arguments or {})
     except ValidationError as exc:
         raise validation_error_to_domain(exc) from None
 

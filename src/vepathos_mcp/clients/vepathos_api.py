@@ -26,7 +26,13 @@ from pydantic import BaseModel, ValidationError
 
 from vepathos_mcp import __version__
 from vepathos_mcp.clients.breaker import CircuitBreaker
-from vepathos_mcp.clients.core_models import CoreJobCreated, CoreJobResult, CoreJobStatusResponse
+from vepathos_mcp.clients.core_models import (
+    CoreGeocodeCreated,
+    CoreGeocodeResult,
+    CoreJobCreated,
+    CoreJobResult,
+    CoreJobStatusResponse,
+)
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.errors.mapping import from_core_error
 
@@ -125,6 +131,26 @@ class VepathosApiClient:
             params=params,
         )
         return self._parse(CoreJobResult, data)
+
+    async def create_geocode(
+        self, call: CallContext, body: dict[str, Any], idempotency_key: str
+    ) -> CoreGeocodeCreated:
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/geocode",
+            call,
+            operation="geocode_submit",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            request_timeout=self._submit_timeout,
+        )
+        return self._parse(CoreGeocodeCreated, data)
+
+    async def get_geocode(self, call: CallContext, job_id: str) -> CoreGeocodeResult:
+        data = await self._request(
+            "GET", f"{BASE_PATH}/geocode/{_segment(job_id)}", call, operation="geocode_status"
+        )
+        return self._parse(CoreGeocodeResult, data)
 
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""

@@ -2,7 +2,8 @@
 
 - `oauth`: RS256 access tokens from the Vepathos authorization server, verified against JWKS with
   issuer, audience (this server's resource URI), expiry and scope.
-- `api_key`: developer credentials `vpt_<id>:vpt_sk_<env>_<secret>` or `vpt_mcp_<id>:vpt_sk_<env>_<secret>`. Only the shape is checked here;
+- `api_key`: developer credentials `vpt_<id>:vpt_sk_<env>_<secret>` or
+  `vpt_mcp_<id>:vpt_sk_<env>_<secret>`. Only the shape is checked here;
   Vepathos Core verifies the secret and scope on every call, so a wrong key fails there.
 - `service`: one static development token (constant-time comparison).
 

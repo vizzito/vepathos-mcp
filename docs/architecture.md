@@ -88,7 +88,7 @@ api.vepathos.com — MCP channel (gate → entitlements → job engine → ledge
 optimizer (workers, RabbitMQ, Redis)
 ```
 
-- **Tools (v1):** `optimize_delivery_routes` and `get_optimization_result`. No cancel tool.
+- **Tools:** `geocode_addresses`, `get_geocode_result`, `optimize_delivery_routes`, `get_optimization_result`. No cancel tool.
 - **MCP channel in Core:** same pattern as the RapidAPI and Shopify channels (shared job engine),
   but identity is a **Vepathos account** and entitlements come from the **account's plan**.
 - **Python** because SDK v2 is Tier 1 and stable on `2026-07-28`, supports stateless Streamable
@@ -195,6 +195,5 @@ need no sticky sessions. See `docs/deployment.md`.
 
 ## Future extensions (measure first)
 
-MCP Tasks; dataset upload handles for very large problems; geocoding once Smart Import is
-account-scoped; MCP Apps (interactive route maps); multi-depot and structured unassignment reasons
+MCP Tasks; dataset upload handles for very large problems; MCP Apps (interactive route maps); multi-depot and structured unassignment reasons
 in the engine; x402-style paid calls. None of these are part of v1.

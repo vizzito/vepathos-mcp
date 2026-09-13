@@ -10,19 +10,22 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 
 | Tool | What it does |
 |---|---|
+| `geocode_addresses` | Turn street addresses into coordinates via Vepathos Smart Import. |
+| `get_geocode_result` | Read geocode status and pins. |
 | `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
 | `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
 
-There is no cancel tool. A submitted optimization runs to completion.
+There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
+through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.
 
 ## Status (2026-09-13)
 
-The adapter in this repo is usable locally (Streamable HTTP, two tools, structured errors). The
-Vepathos Core MCP channel and the OAuth authorization server are **not shipped yet**. Until they
-are, a real optimization against a Vepathos account is not available.
+The adapter and the Core MCP channel work on the local stack (optimize + geocode tools).
+OAuth for public Connect is **not shipped yet**. Production `develop` does not have the channel
+enabled.
 
-- Local / CI: this server + a **fake Core** (test double; it does not route).
-- Next: Core channel in `vepathos-api-doc`, then a real job on the local stack.
+- Local / CI: this server + a **fake Core** (test double; it does not route or geocode for real).
+- Local real: `feat/mcp-channel` in `vepathos-api-doc` + optimizer + Smart Import worker.
 
 Production onboarding is OAuth. Do not add "Add to Claude / Cursor / …" buttons until each flow
 has been verified end to end.

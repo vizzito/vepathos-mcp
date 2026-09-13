@@ -182,6 +182,28 @@ Coordinates are not echoed (the caller already has them).
 }
 ```
 
+## `POST /api/mcp/v1/geocode`
+
+Start a Smart Import geocode job. Requires a `depot` `{lat,lng}` or `city`. `stops[]` are
+`id` + `address` (optional city/region/postcode/country). Max 500 stops.
+
+### Response `202 Accepted`
+
+```json
+{
+  "job_id": "si-job-id.hmac",
+  "status": "queued",
+  "submitted_stops": 2,
+  "poll_after_ms": 1500
+}
+```
+
+## `GET /api/mcp/v1/geocode/{job_id}`
+
+Poll. `running` while Smart Import works; `completed` includes `stops[]` with `id`, `lat`, `lng`,
+`band` (`valid` | `review` | `needs_geocoding`), `confidence`. Usable pins are charged to the
+account Smart Import quota. Unknown / other-account handle → `404 GEOCODE_NOT_FOUND`.
+
 ## Errors
 
 Every error has the same envelope:
@@ -209,6 +231,8 @@ Every error has the same envelope:
 | 401 | `AUTHENTICATION_REQUIRED` / `INVALID_CREDENTIALS` | — (user factor missing/invalid) |
 | 401 | `SERVICE_UNAUTHORIZED` | — (service key missing/invalid; an operator problem) |
 | 404 | `OPTIMIZATION_NOT_FOUND` | — (unknown job or owned by another account) |
+| 404 | `GEOCODE_NOT_FOUND` | — |
+| 410 | `GEOCODE_EXPIRED` | — |
 | 410 | `OPTIMIZATION_EXPIRED` | — |
 | 404 | `CHANNEL_DISABLED` | — |
 | 503 | `BACKEND_UNAVAILABLE` | `Retry-After` header |

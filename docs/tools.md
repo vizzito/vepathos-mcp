@@ -1,16 +1,23 @@
 # Tools
 
-Vepathos MCP v1 exposes exactly two tools. There is intentionally no cancel tool: a submitted
+Vepathos MCP exposes four tools. There is intentionally no cancel tool: a submitted
 optimization always runs to completion.
 
 | Tool | Title | Annotations |
 |---|---|---|
+| `geocode_addresses` | Geocode addresses | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `get_geocode_result` | Get geocode result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `optimize_delivery_routes` | Optimize delivery routes | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `get_optimization_result` | Get optimization result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 
 `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
+
+## `geocode_addresses`
+
+Turns street addresses into coordinates via Vepathos Smart Import. Requires `depot` or `city`.
+Unresolved rows return `band=needs_geocoding` and null coordinates. Charges Smart Import quota.
 
 ## `optimize_delivery_routes`
 

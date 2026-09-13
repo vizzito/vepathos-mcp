@@ -213,6 +213,18 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 "The results of this optimization have expired.",
                 suggestion="Run the optimization again to get fresh results.",
             )
+        case "GEOCODE_NOT_FOUND":
+            return DomainError(
+                ErrorCode.GEOCODE_NOT_FOUND,
+                "No geocoding job with this id exists for the connected Vepathos account.",
+                suggestion="Check geocode_id, or start a new geocode_addresses call.",
+            )
+        case "GEOCODE_EXPIRED":
+            return DomainError(
+                ErrorCode.GEOCODE_EXPIRED,
+                "This geocoding job is no longer available.",
+                suggestion="Call geocode_addresses again with the same addresses.",
+            )
         case "BACKEND_UNAVAILABLE":
             return DomainError(
                 ErrorCode.BACKEND_UNAVAILABLE,

@@ -55,6 +55,7 @@ class FakeCoreState:
     jobs: dict[str, FakeJob] = field(default_factory=dict)
     used_stops: dict[str, int] = field(default_factory=dict)
     trial_used: set[str] = field(default_factory=set)
+    geocode_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_seconds: float = 3.0
     clock: Any = time.time
 
@@ -315,12 +316,62 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         limit = int(request.query_params.get("limit", "200"))
         return JSONResponse(status | {"unassigned_stop_ids": [], "page": _page(offset, limit, 0)})
 
+    async def create_geocode(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        body = await request.json()
+        stops = body.get("stops") or []
+        if not stops:
+            return _error(422, "INVALID_INPUT", "stops is required.")
+        if not body.get("depot") and not (body.get("city") or "").strip():
+            return _error(422, "INVALID_INPUT", "Send a depot or a city.")
+        digest = hashlib.sha256(f"{account}:{json.dumps(body, sort_keys=True)}".encode())
+        job_id = "mcpg_" + digest.hexdigest()[:24]
+        state.geocode_jobs[job_id] = {"account": account, "stops": stops}
+        return JSONResponse(
+            {"job_id": job_id, "status": "queued", "submitted_stops": len(stops), "poll_after_ms": 200},
+            status_code=202,
+        )
+
+    async def get_geocode(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        job_id = request.path_params["job_id"]
+        job = state.geocode_jobs.get(job_id)
+        if job is None or job["account"] != account:
+            return _error(404, "GEOCODE_NOT_FOUND", "Unknown geocode job.")
+        mapped = []
+        for stop in job["stops"]:
+            digest = hashlib.sha256(str(stop.get("address", "")).encode()).digest()
+            mapped.append(
+                {
+                    "id": stop.get("id"),
+                    "lat": -34.6 + digest[0] / 2550.0,
+                    "lng": -58.4 + digest[1] / 2550.0,
+                    "band": "valid",
+                    "confidence": 0.8,
+                }
+            )
+        return JSONResponse(
+            {
+                "job_id": job_id,
+                "status": "completed",
+                "submitted_stops": len(mapped),
+                "resolved_stops": len(mapped),
+                "stops": mapped,
+            }
+        )
+
     return Starlette(
         routes=[
             Route("/api/mcp/v1/health", health, methods=["GET"]),
             Route("/api/mcp/v1/optimization/jobs", create_job, methods=["POST"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}", get_job, methods=["GET"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}/result", get_result, methods=["GET"]),
+            Route("/api/mcp/v1/geocode", create_geocode, methods=["POST"]),
+            Route("/api/mcp/v1/geocode/{job_id}", get_geocode, methods=["GET"]),
         ]
     )
 
