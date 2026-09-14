@@ -18,18 +18,19 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
 through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.
 
-## Status (2026-09-13)
+## Status (2026-09-14)
 
-The adapter and the Core MCP channel work on the local stack (optimize + geocode, OAuth, trial,
-structured plan errors). Production `develop` does not have the channel enabled. Do not add
-"Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+Production is live at `https://mcp.vepathos.com/mcp` (`/ready` ok, authenticated `tools/list`
+ok). Claude and other directories do **not** list Vepathos yet — a user must add a custom
+connector with that URL. Publication order: [docs/publish-marketplaces.md](docs/publish-marketplaces.md).
 
-Paid self-serve is **off** until Stripe is configured. MCP accounts stay on Free; jobs the plan
-cannot run return `contact_url`, not Checkout. That is enough for internal / beta. For the public
-Claude directory, enable Stripe or state clearly that the channel is Free + contact.
+Do not add "Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+
+Paid self-serve is **off**. Public listings must say **Free + contact**. Jobs the plan cannot
+run return `contact_url`, not Stripe Checkout.
 
 - Local / CI: this server + a **fake Core** (test double; it does not route or geocode for real).
-- Local real: `feat/mcp-channel` in `vepathos-api-doc` + optimizer + Smart Import worker.
+- Local real: `vepathos-api-doc` MCP channel + optimizer + Smart Import worker.
 
 ## Connect (production target)
 
@@ -141,9 +142,17 @@ peer-reviewed publication.
 | [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
 | [docs/deployment.md](docs/deployment.md) | Operator index (container, Caddy, health) |
 | [docs/deploy-api-prod.md](docs/deploy-api-prod.md) | First prod cut on api-prod (2026-09-14): every step and pitfall |
+| [docs/publish-marketplaces.md](docs/publish-marketplaces.md) | Claude, MCP Registry, ChatGPT, Cursor — order and blockers |
+| [docs/directory-listing.md](docs/directory-listing.md) | Paste-ready listing copy (Free + contact) |
 | [docs/publication-checklist.md](docs/publication-checklist.md) | Registry and directory gates |
 | [docs/privacy-mcp.md](docs/privacy-mcp.md) | Draft MCP section for the public privacy policy |
 | [docs/public-mcp-page.md](docs/public-mcp-page.md) | Draft copy for vepathos.com/mcp |
+
+## Privacy
+
+Account and logistics data follow the public policy at [vepathos.com/privacy](https://vepathos.com/privacy).
+The MCP-specific section (what agents send, 24 h result retention, no payload logs) is drafted in
+[docs/privacy-mcp.md](docs/privacy-mcp.md) and must be copied onto that page before directory review.
 
 ## License
 

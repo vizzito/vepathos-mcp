@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 # Local OAuth loop: PRM → AS → JWKS → DCR → consent → token → MCP initialize.
+#
+# Core must be the process on :3001 (AUTH_URL=http://localhost:3001). Google
+# always returns to AUTH_URL; if that is :3000 and nothing is listening, Chrome
+# shows "localhost refused to connect".
+#
+# 1. Core on :3001, adapter on :8080 (this repo).
+# 2. Run this script; it opens the authorize URL.
+# 3. If you are not signed in: email/password on :3001, or Google (only if
+#    Google Cloud has http://localhost:3001/api/auth/callback/google).
+# 4. Allow this client? → Allow.
+# 5. "Vepathos MCP connected" = callback ok; the terminal finishes initialize.
 set -euo pipefail
 
 ADAPTER="${ADAPTER_URL:-http://localhost:8080}"

@@ -19,7 +19,7 @@ method="${1:-tools/list}"
 shift || true
 
 args=(
-  http://127.0.0.1:8080/mcp
+  http://localhost:8080/mcp
   --transport http
   --header "Authorization: Bearer ${VEPATHOS_MCP_BEARER}"
   --method "${method}"

@@ -2,6 +2,7 @@
 
 Re-verify every external requirement immediately before submitting: directory and registry rules change.
 Publishing steps (production deploy, DNS, public repository, submissions) require explicit approval.
+**Publish-everywhere approved 2026-09-14.** Execute in the order in [docs/publish-marketplaces.md](publish-marketplaces.md). Listings stay **Free + contact** until Stripe is on.
 
 ## 0. Pre-deploy review (required)
 
@@ -33,7 +34,7 @@ needs a separate explicit OK.
 
 ## 3. Claude Connectors Directory
 
-- [ ] Stripe self-serve is live, **or** the listing and public docs state that MCP is Free + contact (a reviewer who submits a large job will be told to contact, not to pay)
+- [x] Listing posture decided: **Free + contact** (Stripe off). Copy in [docs/directory-listing.md](directory-listing.md)
 - [ ] Team or Enterprise organization with directory permission (submission portal in Claude.ai)
 - [ ] Remote server over HTTPS, Streamable HTTP
 - [ ] OAuth: CIMD (`client_id_metadata_document_supported: true` and `none` in `token_endpoint_auth_methods_supported`), PKCE S256 advertised, callback `https://claude.ai/api/mcp/auth_callback`, Claude Code loopback redirects on any port, `offline_access`, refresh rotation with `invalid_grant`, OAuth endpoints answering in under 10 s
@@ -50,7 +51,7 @@ needs a separate explicit OK.
 - [ ] Cursor: verify install flow and any directory listing
 - [ ] VS Code: MCP gallery entry via the official registry
 - [ ] Smithery and other aggregators: confirm they are still relevant; most ingest the official registry
-- [ ] GitHub: public repository `vepathos-mcp` (Apache-2.0), README, security policy
+- [x] GitHub: public repository `vizzito/vepathos-mcp` (Apache-2.0), README, security policy
 - [ ] Vepathos website: landing section, "Research & benchmarks" link to DOI 10.5281/zenodo.19859531 (no peer-review or superiority claims)
 
 ## 5. README buttons

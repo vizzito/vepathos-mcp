@@ -9,7 +9,8 @@ This page is the short operator index.
 project, logs, health checks and DNS record. It can share a host with `api.vepathos.com`.
 
 Smart Import and RouteHub are **not** part of this deploy. Core already calls SI on the private
-network (`SMART_IMPORT_URL=http://10.0.0.2:8100` on api-prod). Do not expose SI.
+network (`SMART_IMPORT_URL=http://vepathos-smart-import:8100` on `vepathos-net`).
+The host bind `10.0.0.2:8100` is for the host / RouteHub, not for api-doc. Do not expose SI.
 
 ```
 Internet ─► edge Caddy (TLS, :443) ─┬─► api.vepathos.com  (api-doc)
