@@ -87,4 +87,18 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
         structured_output=True,
     )
     get_geocode.parameters = inline_model_schema(GetGeocodeInput)
-    return [optimize, get_result, geocode, get_geocode]
+    tools = [optimize, get_result, geocode, get_geocode]
+    if deps.settings.map_shares_enabled:
+        from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
+
+        share = Tool.from_function(
+            make_map_tool(deps), name="create_optimization_map", title="Create route map",
+            description=DESCRIPTION,
+            annotations=ToolAnnotations(
+                read_only_hint=False, destructive_hint=False,
+                idempotent_hint=True, open_world_hint=False,
+            ), structured_output=True,
+        )
+        share.parameters = inline_model_schema(CreateMapInput)
+        tools.append(share)
+    return tools

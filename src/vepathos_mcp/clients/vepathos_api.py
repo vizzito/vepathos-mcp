@@ -35,6 +35,7 @@ from vepathos_mcp.clients.core_models import (
 )
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.errors.mapping import from_core_error
+from vepathos_mcp.schemas.maps import MapCreated
 
 BASE_PATH = "/api/mcp/v1"
 RETRYABLE_STATUS = frozenset({502, 503, 504})
@@ -151,6 +152,15 @@ class VepathosApiClient:
             "GET", f"{BASE_PATH}/geocode/{_segment(job_id)}", call, operation="geocode_status"
         )
         return self._parse(CoreGeocodeResult, data)
+
+    async def create_map(self, call: CallContext, job_id: str) -> MapCreated:
+        # Core deduplicates permanently per account/job; retries never extend the TTL.
+        data = await self._request(
+            "POST", f"{BASE_PATH}/optimization/jobs/{_segment(job_id)}/map",
+            call, operation="map_create", json_body={},
+            idempotency_key=f"map:{job_id}",
+        )
+        return self._parse(MapCreated, data)
 
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""

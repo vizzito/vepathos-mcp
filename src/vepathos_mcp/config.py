@@ -72,6 +72,8 @@ class Settings(BaseSettings):
         SecretStr("vepathos-mcp-dev-salt"), validation_alias=_env("ACCOUNT_HASH_SALT")
     )
 
+    map_shares_enabled: bool = Field(False, validation_alias=_env("MCP_MAP_SHARES_ENABLED"))
+
     # --- Behaviour budgets ------------------------------------------------------------------
     optimize_inline_wait_seconds: float = Field(
         8.0, ge=0, le=25, validation_alias=_env("MCP_OPTIMIZE_INLINE_WAIT_SECONDS")

@@ -6,9 +6,9 @@ are paginated and never include coordinates the caller already has.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -73,8 +73,8 @@ class Page(OutputModel):
 class OptimizationResult(OutputModel):
     """Output of get_optimization_result."""
 
-    optimization_id: str
-    status: JobStatus
+    optimization_id: str | None = None
+    status: JobStatus | None = None
     detail: Literal["summary", "stops", "unassigned"] | None = None
     progress: Progress | None = None
     poll_after_seconds: int | None = Field(
@@ -86,17 +86,25 @@ class OptimizationResult(OutputModel):
     stops: list[StopVisit] | None = None
     unassigned_stop_ids: list[str] | None = None
     page: Page | None = None
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> OptimizationResult:
+        success = self.optimization_id is not None and self.status is not None
+        if success == (self.error is not None):
+            raise ValueError("output must contain either an optimization result or an error")
+        return self
 
 
 class OptimizeResult(OutputModel):
     """Output of optimize_delivery_routes."""
 
-    optimization_id: str = Field(description="Handle for get_optimization_result.")
-    status: JobStatus
+    optimization_id: str | None = Field(None, description="Handle for get_optimization_result.")
+    status: JobStatus | None = None
     idempotent_replay: bool = Field(
         False, description="True when identical arguments returned an optimization that already existed."
     )
-    submitted_stops: int
+    submitted_stops: int | None = None
     vehicles_available: int | None = None
     schedule_date: str | None = None
     expires_at: str | None = None
@@ -109,6 +117,18 @@ class OptimizeResult(OutputModel):
     result: OptimizationResult | None = Field(
         None, description="Present when the optimization finished within the call."
     )
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> OptimizeResult:
+        success = (
+            self.optimization_id is not None
+            and self.status is not None
+            and self.submitted_stops is not None
+        )
+        if success == (self.error is not None):
+            raise ValueError("output must contain either an optimization result or an error")
+        return self
 
 
 class GeocodedStop(OutputModel):
@@ -124,8 +144,8 @@ class GeocodedStop(OutputModel):
 class GeocodeResult(OutputModel):
     """Output of geocode_addresses and get_geocode_result."""
 
-    geocode_id: str = Field(description="Handle for get_geocode_result.")
-    status: JobStatus
+    geocode_id: str | None = Field(None, description="Handle for get_geocode_result.")
+    status: JobStatus | None = None
     submitted_stops: int | None = None
     resolved_stops: int | None = Field(None, description="Stops that received a latitude and longitude.")
     unresolved_stop_ids: list[str] | None = Field(
@@ -142,3 +162,11 @@ class GeocodeResult(OutputModel):
     poll_after_seconds: int | None = None
     progress: Progress | None = None
     stops: list[GeocodedStop] | None = None
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> GeocodeResult:
+        success = self.geocode_id is not None and self.status is not None
+        if success == (self.error is not None):
+            raise ValueError("output must contain either a geocode result or an error")
+        return self
