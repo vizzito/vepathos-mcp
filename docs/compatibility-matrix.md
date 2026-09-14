@@ -13,7 +13,7 @@ Last documentation review: 2026-09-13.
 | VS Code (GitHub Copilot) | Yes (`type: http`) | Yes | Yes (verify DCR/CIMD at release) | Not listed [3] | — | — |
 | Codex (CLI / IDE) | Yes (`url` in `config.toml`) [5] | Yes [5] | Yes (`codex mcp login`; may need `oauth_resource`) [5] | Not listed [3] | — | — |
 | ChatGPT (developer mode / apps) | Yes, public HTTPS [6] | Yes (and SSE) [6] | Yes: CIMD supported, DCR [6] | Not listed [3] | — | — |
-| MCP Inspector 2.6.0 | Yes | Yes | Yes | — | 2026-07-28 client | Yes (fake Core, 2026-09-13) |
+| MCP Inspector 2.6.0 | Yes | Yes | Yes | — | 2026-07-28 client | Yes — fake Core tools (2026-09-13). Real stack: discovery/401/DCR (`scripts/smoke-local.sh`, 2026-09-13). Tools/call on Core pending a dashboard key or OAuth consent. |
 
 Notes:
 

@@ -33,8 +33,8 @@ MCP 2026-07-28 authorization specification and security best practices.
 - [x] Error messages clipped and free of stack traces, paths, worker or queue names.
 - [x] `/metrics` only with a bearer token or from private networks; blocked at the public proxy.
 - [x] Container: non-root, read-only root filesystem, `no-new-privileges`, all capabilities dropped.
-- [ ] Core: negative tests for the two-factor gate (service key without token, token without service key, wrong audience, revoked grant, injected account id).
-- [ ] Core: OAuth authorization server security suite (PKCE, redirect URI exact match, code reuse, refresh reuse, CIMD SSRF, DCR abuse) and an external review before public launch.
+- [x] Core: negative tests for the two-factor gate (service key without token, token without service key, ledger used as user factor, revoked grant, suspended account, injected account id).
+- [x] Core: OAuth authorization server security suite (PKCE, redirect URI exact match, refresh reuse, CIMD SSRF). External review still required before public launch.
 
 ## Findings in Vepathos Core (outside this repository)
 

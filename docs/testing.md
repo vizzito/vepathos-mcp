@@ -28,14 +28,15 @@ npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --
   --format json
 ```
 
-Checklist (last run 2026-09-13, Inspector 2.6.0, fake Core):
+Checklist (last run 2026-09-13):
 
-- [x] `tools/list` returns both tools with titles, annotations, input and output schemas; `--strict` reports no portability problems.
-- [x] `tools/call optimize_delivery_routes` completes (inline wait) with summary and routes.
-- [x] `tools/call get_optimization_result` with `detail=stops` returns ordered stops with arrival times.
-- [x] Unauthenticated request → `401`.
-- [ ] Same checks against the real local stack (after the Core MCP channel lands).
-- [ ] OAuth discovery with the Inspector web UI (after the authorization server lands).
+- [x] `tools/list` returns the tools with titles, annotations, input and output schemas; `--strict` reports no portability problems (Inspector 2.6.0, fake Core).
+- [x] `tools/call optimize_delivery_routes` completes (inline wait) with summary and routes (fake Core).
+- [x] `tools/call get_optimization_result` with `detail=stops` returns ordered stops with arrival times (fake Core).
+- [x] Unauthenticated request → `401` + `resource_metadata` (fake Core and real local stack).
+- [x] Real local stack discovery (`scripts/smoke-local.sh`, 2026-09-13): adapter `/health` + `/ready` (`core: ok`), Core `/api/mcp/v1/health`, PRM, AS (S256, CIMD, `none`, scope `optimize`), JWKS, DCR 201.
+- [ ] Inspector `tools/list` / `tools/call` against the real stack (needs `VEPATHOS_MCP_BEARER` or `scripts/oauth-local.sh` in a browser).
+- [ ] OAuth consent in the Inspector web UI against the real local AS.
 
 ## Integration against the local Vepathos stack
 

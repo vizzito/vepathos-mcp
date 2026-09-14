@@ -141,6 +141,8 @@ peer-reviewed publication.
 | [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
 | [docs/deployment.md](docs/deployment.md) | Container, Caddy, health |
 | [docs/publication-checklist.md](docs/publication-checklist.md) | Registry and directory gates |
+| [docs/privacy-mcp.md](docs/privacy-mcp.md) | Draft MCP section for the public privacy policy |
+| [docs/public-mcp-page.md](docs/public-mcp-page.md) | Draft copy for vepathos.com/mcp |
 
 ## License
 
