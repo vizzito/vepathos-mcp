@@ -20,15 +20,16 @@ through `geocode_addresses` first; `optimize_delivery_routes` does not invent co
 
 ## Status (2026-09-13)
 
-The adapter and the Core MCP channel work on the local stack (optimize + geocode tools).
-OAuth for public Connect is **not shipped yet**. Production `develop` does not have the channel
-enabled.
+The adapter and the Core MCP channel work on the local stack (optimize + geocode, OAuth, trial,
+structured plan errors). Production `develop` does not have the channel enabled. Do not add
+"Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+
+Paid self-serve is **off** until Stripe is configured. MCP accounts stay on Free; jobs the plan
+cannot run return `contact_url`, not Checkout. That is enough for internal / beta. For the public
+Claude directory, enable Stripe or state clearly that the channel is Free + contact.
 
 - Local / CI: this server + a **fake Core** (test double; it does not route or geocode for real).
 - Local real: `feat/mcp-channel` in `vepathos-api-doc` + optimizer + Smart Import worker.
-
-Production onboarding is OAuth. Do not add "Add to Claude / Cursor / …" buttons until each flow
-has been verified end to end.
 
 ## Connect (production target)
 
@@ -40,7 +41,9 @@ Add Vepathos → Connect → Sign in / Sign up → Authorize
 2. Connect. The client signs in (or creates a Free / Duck account) at `api.vepathos.com`.
 3. Authorize the client to optimize routes with that account.
 4. Call `optimize_delivery_routes`. If the plan cannot run the request, the tool returns
-   `PLAN_UPGRADE_REQUIRED` with an `upgrade_url`. Pay on Vepathos; retry without reconnecting.
+   `PLAN_UPGRADE_REQUIRED` with `upgrade_url` (when paid plans are on) or `contact_url`
+   (Free-only, until Stripe is configured). Payment, when enabled, is handled entirely by
+   Stripe. Retry without reconnecting after the account can run the job.
 
 No API keys and no JSON config for that flow. See [docs/onboarding.md](docs/onboarding.md).
 

@@ -171,7 +171,12 @@ time windows — no names, phones or emails). See `docs/security.md`.
 - Normal requests are evaluated against the account plan (stops per request, features, fleet size,
   stops per route, monthly quota, concurrency).
 - When a plan cannot run a request, the Core returns `PLAN_UPGRADE_REQUIRED` with the plans that
-  can (computed from the catalog) and an upgrade URL. Payment happens on Vepathos/Stripe.
+  can (computed from the catalog) and `upgrade_url` or `contact_url`. While
+  `NEXT_PUBLIC_PAID_PLANS_ENABLED` is not `true`, only Free is offered and the agent gets
+  `contact_url` (internal / beta). For the public Claude directory, enable Stripe or state
+  clearly that the channel is Free + contact. When paid plans are on, payment is delegated
+  entirely to Stripe (Checkout / subscription). Vepathos does not take cards; MCP has no
+  pay tool. The token has no plan claims, so retrying does not need a reconnect.
 - **`MCP_FULL_FIRST_TRIAL`**: one promotional optimization per account, up to 2,000 stops, with
   weight, volume and time windows, that does **not** consume monthly quota. It is used only when
   the plan cannot run the request **and** the request has more than 500 stops **or** asks for a

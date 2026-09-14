@@ -160,7 +160,7 @@ Errors are tool results with `isError: true` and a structured `error` object:
 | `INVALID_INPUT` | A field is missing, malformed or unknown (`details.issues`). | no |
 | `NO_STOPS` / `NO_VEHICLES` | Empty stop or vehicle list. | no |
 | `INVALID_COORDINATES` | Coordinates out of range or too far from the depot. | no |
-| `PLAN_UPGRADE_REQUIRED` | The plan cannot run this request (stops per request, feature, fleet size, stops per route). Eligible plans and upgrade URL come from Vepathos. | no |
+| `PLAN_UPGRADE_REQUIRED` | The plan cannot run this request (stops per request, feature, fleet size, stops per route). Eligible plans come from Vepathos, plus `upgrade_url` when paid self-serve is on, or `contact_url` while only Free is offered. | no |
 | `QUOTA_EXCEEDED` | Not enough stops left in the current billing period. | no |
 | `CONCURRENT_OPTIMIZATION_LIMIT` | Too many optimizations running; wait for `active_optimization_ids`. | yes |
 | `IDEMPOTENCY_CONFLICT` | `idempotency_key` reused with different arguments. | no |

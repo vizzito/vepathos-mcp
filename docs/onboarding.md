@@ -24,11 +24,21 @@ optimization without consuming the monthly quota. Afterwards the normal plan lim
 
 ### Upgrading
 
-When a request exceeds the plan, the tool returns `PLAN_UPGRADE_REQUIRED` with an `upgrade_url`.
-The assistant can show it, for example: "This optimization exceeds your current Vepathos plan.
-[Upgrade Vepathos]". The user completes payment on Vepathos (Stripe Checkout) and returns to the
-conversation. The connection keeps working without reconnecting, and resending the same request now
-succeeds.
+When a request exceeds the plan, the tool returns `PLAN_UPGRADE_REQUIRED` with `eligible_plans`
+and either `upgrade_url` or `contact_url`.
+
+While paid self-serve is off (`NEXT_PUBLIC_PAID_PLANS_ENABLED` is not `true`), Vepathos only
+offers the Free plan on this channel. The assistant receives a `contact_url`, not a Stripe
+checkout link. That is fine for internal use and beta. A reviewer who submits a large job will
+be told to contact Vepathos, not to pay.
+
+For the public Claude directory, either enable Stripe so reviewers can pay and retry, or state
+clearly in the listing and docs that the channel is Free + contact.
+
+When paid plans are enabled, `upgrade_url` points at Billing (`upgrade`, `reason`, `source=mcp`).
+Payment is delegated entirely to Stripe (Checkout or a Stripe subscription change). Vepathos
+does not charge cards and MCP has no pay tool. After Stripe confirms the plan, the user
+returns to the conversation and retries without reconnecting.
 
 ## Developers and headless agents
 

@@ -99,10 +99,11 @@ Algorithm:
 Persistence (same pattern as `ccWelcomeBonus*`): `User.mcpFullTrialUsedAt`, `mcpFullTrialStops`,
 `mcpFullTrialTrigger`, `mcpFullTrialJobId @unique`.
 
-Lifecycle: atomic claim inside the reservation transaction; marked used when the engine accepts the
-job; released if submission fails; idempotent retries never consume it again; restored if the
-engine fails or the job expires without delivering a result (a technical failure of ours; confirmed
-at the pre-deploy review). The trial job is recorded in `StopTransaction` with
+Lifecycle: atomic claim inside the reservation transaction (before the engine submit, so two
+in-flight requests cannot both take the trial). Restored if submission fails, the engine returns
+failed/expired, or the reservation goes stale without a result. Confirmed at the 7.5 review:
+a technical failure of ours does not consume the lifetime trial. Idempotent retries of a
+successful claim never consume it again. The trial job is recorded in `StopTransaction` with
 `billing: "mcp_full_trial"` and never touches `ApiUsagePeriod`.
 
 ## 4. `PLAN_UPGRADE_REQUIRED` (step 6)
@@ -112,8 +113,12 @@ at the pre-deploy review). The trial job is recorded in `StopTransaction` with
   names): plans whose limits and features cover every failing dimension, ordered by catalog order.
 - `upgrade_url` points to `/dashboard/billing?upgrade=<plan>&reason=<reason>&source=mcp` when a
   self-serve paid plan is eligible and paid plans are enabled; otherwise `contact_url`.
-- The billing page preselects the plan and, after Stripe Checkout, tells the user to go back to their
-  assistant and retry. Checkout metadata carries `source=mcp` for attribution.
+  Free-only (no Stripe) is the intended beta posture. A Claude directory reviewer who submits a
+  large job will be told to contact, not to pay, until Stripe is on or the listing says Free +
+  contact.
+- The billing page preselects the plan and sends the user to Stripe for payment (no in-app card
+  capture on the MCP path). After Checkout, it tells them to go back to the assistant and retry.
+  Checkout metadata carries `source=mcp` for attribution only.
 - Rejections store nothing, so retrying the same tool call after upgrading creates the job. Tokens
   carry no plan data, so no reconnection is needed.
 
