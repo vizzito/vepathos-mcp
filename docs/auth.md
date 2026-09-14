@@ -73,3 +73,20 @@ claude mcp add --transport http vepathos-dev http://localhost:8080/mcp --header 
 
 Headless agents with a developer credential (`api_key` mode) send
 `Authorization: Bearer vpt_mcp_…:vpt_sk_…` (classic `vpt_…` keys still work). Keep credentials out of shared or committed configuration files.
+
+Local OAuth against the Core worktree (`vepathos-api-doc-mcp` on `:3001`):
+
+```bash
+# adapter .env
+AUTH_MODES=oauth,api_key
+OAUTH_ISSUER=http://localhost:3001
+OAUTH_JWKS_URL=http://localhost:3001/api/jwks
+MCP_PUBLIC_URL=http://localhost:8080
+
+# Core .env.local
+MCP_OAUTH_ISSUER=http://localhost:3001
+MCP_RESOURCE_URI=http://localhost:8080   # JWT aud becomes http://localhost:8080/mcp
+```
+
+`./scripts/oauth-local.sh` checks discovery, registers a DCR client and prints the consent URL.
+`./scripts/inspect.sh` still uses an API key (CLI). The Inspector **web** UI can now complete DCR.

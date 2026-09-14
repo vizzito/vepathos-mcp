@@ -123,7 +123,10 @@ class CompositeTokenVerifier(TokenVerifier):
             )
 
         if AuthMode.OAUTH in self._modes and self._jwks is not None and JWT_SHAPE.match(token):
-            return await self._jwks.verify(token)
+            access = await self._jwks.verify(token)
+            if access is None or self._required_scope not in access.scopes:
+                return None
+            return access
 
         return None
 

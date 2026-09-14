@@ -73,6 +73,7 @@ async def test_oauth_token_accepted_with_claims(rsa_key: rsa.RSAPrivateKey) -> N
         {"aud": "https://api.vepathos.com"},  # token for another resource
         {"iss": "https://evil.example"},
         {"exp": int(time.time()) - 3600},
+        {"scope": "offline_access"},  # missing optimize
     ],
 )
 async def test_oauth_token_rejected(rsa_key: rsa.RSAPrivateKey, claims: dict[str, object]) -> None:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Inspector CLI against the local adapter. Does not open the web UI (that one
-# tries OAuth DCR and fails with HTTP 404).
+# Inspector CLI against the local adapter (API key). The web UI can use OAuth DCR
+# when AUTH_MODES includes oauth (see scripts/oauth-local.sh).
 #
 #   ./scripts/inspect.sh tools/list
 #   ./scripts/inspect.sh tools/call geocode_addresses '{"addresses":[...],"city":"CABA"}'

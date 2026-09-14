@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.conftest import DEV_TOKEN, make_settings, sample_arguments
+from tests.conftest import API_KEY, DEV_TOKEN, make_settings, sample_arguments
 from vepathos_mcp.app import create_app
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 
@@ -88,6 +88,20 @@ async def test_oauth_mode_advertises_protected_resource_metadata(http: Callable[
         assert metadata["resource"] == "http://localhost:8080/mcp"
         assert metadata["authorization_servers"] == ["https://api.vepathos.com"]
         assert metadata["scopes_supported"] == ["optimize"]
+
+
+async def test_oauth_plus_api_key_keeps_keys_and_advertises_prm(http: Callable[..., Any]) -> None:
+    async with http(AUTH_MODES="oauth,api_key") as client:
+        denied = await client.post("/mcp", json=legacy_initialize(), headers={"Accept": ACCEPT})
+        assert denied.status_code == 401
+        assert "resource_metadata" in denied.headers.get("www-authenticate", "")
+
+        allowed = await client.post(
+            "/mcp",
+            json=legacy_initialize(),
+            headers={"Accept": ACCEPT, "Authorization": f"Bearer {API_KEY}"},
+        )
+        assert allowed.status_code == 200, allowed.text
 
 
 async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., Any]) -> None:
