@@ -1,5 +1,10 @@
 # Deployment — `mcp.vepathos.com`
 
+The first production cut (2026-09-14) is documented end to end in
+**[docs/deploy-api-prod.md](deploy-api-prod.md)** — every command, env name, hairpin fix,
+Let's Encrypt wait, and the mistakes we actually hit. Use that file to repeat or rollback.
+This page is the short operator index.
+
 `vepathos-mcp` is deployed independently from Vepathos Core: its own image, container, compose
 project, logs, health checks and DNS record. It can share a host with `api.vepathos.com`.
 
@@ -23,7 +28,7 @@ Internet ─► edge Caddy (TLS, :443) ─┬─► api.vepathos.com  (api-doc)
 | Caddyfile | `~/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api/Caddyfile` |
 | Adapter checkout | `~/vepathos-deploy/vepathos-mcp` (branch `develop`) |
 | Adapter secrets | `~/vepathos-deploy/vepathos-mcp/.env` (mode 600; `deploy` has no sudo for `/etc`) |
-| Core | `vepathos-api-doc` — channel **off** until adapter `/health` is 200 |
+| Core | `vepathos-api-doc` — channel **on** after adapter `/health` 200 (2026-09-14) |
 
 `deploy/docker-compose.prod.yml` talks about a network named `vepathos-edge`. On this VM that
 network does not exist. Use `deploy/docker-compose.apiprod.yml` so the same compose key binds to
@@ -90,19 +95,20 @@ git pull
 
 export VEPATHOS_MCP_ENV_FILE="$PWD/.env"
 export CADDY_VETH_IP
-CADDY_VETH_IP=$(docker inspect vepathos-caddy --format '{{.NetworkSettings.Networks.vepathos-net.IPAddress}}')
+CADDY_VETH_IP=$(docker inspect vepathos-caddy --format '{{index .NetworkSettings.Networks "vepathos-net" "IPAddress"}}')
 
+# --env-file alone does not override env_file: in the YAML. Export VEPATHOS_MCP_ENV_FILE.
 docker compose -p vepathos-mcp \
   -f deploy/docker-compose.prod.yml \
   -f deploy/docker-compose.apiprod.yml \
-  --env-file .env \
+  --env-file "$VEPATHOS_MCP_ENV_FILE" \
   up -d --build
 ```
 
 Compose names the container `vepathos-mcp-vepathos-mcp-1` unless `container_name` is set.
 
 ```bash
-docker exec vepathos-mcp-vepathos-mcp-1 wget -qO- http://127.0.0.1:8080/health
+docker exec vepathos-mcp-vepathos-mcp-1 python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read().decode())"
 ```
 
 Expect HTTP 200. After a successful rebuild, `docker image prune -f` removes dangling images only.
@@ -158,7 +164,7 @@ compute stays in the Vepathos engine.
 2. `curl -X POST https://mcp.vepathos.com/mcp` without a token → `401` with `resource_metadata`.
 3. `curl https://mcp.vepathos.com/.well-known/oauth-protected-resource/mcp` → resource and
    authorization server.
-4. MCP Inspector against `https://mcp.vepathos.com/mcp` with a real account (OAuth or
-   `mcp:optimize` key): small CABA geocode, then optimize those coordinates.
-5. Custom Claude connector with that account. Directory / registry submissions are step 8 and
-   need an explicit OK.
+4. Authenticated `tools/list` via `curl` + `Authorization: Bearer <client_id>:<client_secret>`
+   (dashboard pair). Inspector **CLI** often starts OAuth because of PRM — use curl for keys.
+5. Still open: small CABA geocode, then optimize those coordinates; custom Claude connector.
+   Directory / registry submissions are step 8 and need an explicit OK.

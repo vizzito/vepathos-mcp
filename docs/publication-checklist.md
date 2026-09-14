@@ -16,8 +16,8 @@ needs a separate explicit OK.
 
 ## 1. Production readiness
 
-- [ ] Core MCP channel and OAuth authorization server deployed; security test suites green
-- [ ] `mcp.vepathos.com` deployed on api-prod (`docs/deployment.md`: GoDaddy `A`, `vepathos-net` overlay, Caddy, then `MCP_CHANNEL_ENABLED`); `/ready` ok; `401` + resource metadata
+- [x] Core MCP channel and OAuth authorization server deployed on api-prod (2026-09-14); local security suites were green before ship — re-run if Core changes
+- [x] `mcp.vepathos.com` deployed on api-prod ([docs/deploy-api-prod.md](deploy-api-prod.md): GoDaddy `A`, `vepathos-net` overlay, Caddy, hairpin `CADDY_VETH_IP`, then `MCP_CHANNEL_ENABLED`); `/ready` `core: ok`; `401` + resource metadata; authenticated `tools/list` via curl + dashboard key. Geocode/optimize smoke still open.
 - [ ] Privacy policy updated with an MCP section (data sent, retention of 24 h results, logs without payloads): public HTTPS URL — draft: `docs/privacy-mcp.md`
 - [ ] Public documentation page (e.g. `vepathos.com/mcp`) with onboarding, tools, limits and support contact — draft: `docs/public-mcp-page.md`
 - [ ] Test account (Growth plan, populated) for reviewers

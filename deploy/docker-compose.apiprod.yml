@@ -15,8 +15,10 @@
 # The public A record is this same VM; from a container that hairpins and
 # times out. host-gateway:443 also fails here (published-port DNAT does not
 # apply between bridge peers). Point the name at Caddy's address on
-# vepathos-net (docker inspect vepathos-caddy … IPAddress). Recheck if Caddy
-# is recreated.
+# vepathos-net. Hyphenated network names need `index` in Go templates:
+#   docker inspect vepathos-caddy --format \
+#     '{{index .NetworkSettings.Networks "vepathos-net" "IPAddress"}}'
+# Recheck if Caddy is recreated.
 
 services:
   vepathos-mcp:
