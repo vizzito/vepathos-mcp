@@ -19,7 +19,7 @@ Internet
        └─ mcp.vepathos.com     → vepathos-mcp:8080
                                     │ HTTPS (hairpin-fixed via extra_hosts)
                                     └─ https://api.vepathos.com/api/mcp/v1
-                                         └─ SI http://10.0.0.2:8100  (Core only)
+                                         └─ SI http://vepathos-smart-import:8100  (Core only; same Docker net)
                                          └─ optimizer :8000
 ```
 
@@ -104,15 +104,18 @@ MCP_CHANNEL_ENABLED=false
 MCP_SERVICE_KEYS=<openssl rand -hex 32>
 MCP_OAUTH_ISSUER=https://api.vepathos.com
 MCP_RESOURCE_URI=https://mcp.vepathos.com
-SMART_IMPORT_URL=http://10.0.0.2:8100
+SMART_IMPORT_URL=http://vepathos-smart-import:8100
 MCP_FULL_TRIAL_ENABLED=false
 ```
 
 Notes:
 
 - `SMART_IMPORT_URL` was **never** on api-doc before. Web geocode goes RouteHub → SI. MCP is the
-  first Core caller. Use the **private** bind from `docker ps` (`10.0.0.2:8100`), not
+  first Core caller. Use the **container DNS** on `vepathos-net`
+  (`http://vepathos-smart-import:8100`), not the host publish `10.0.0.2:8100` (from api-doc that
+  address times out — same hairpin class as `api.vepathos.com`). Not
   `ROUTEHUB_SMART_IMPORT_URL` and not `127.0.0.1` (that is the Next container, not SI).
+  Join SI to `vepathos-net` if it is not already there (`docker network connect`).
 - `MCP_OAUTH_ISSUER` is also a **build-time** value via `next.config.mjs`. Keep it in the env
   compose reads at `build`.
 - Do **not** change prod `AUTH_URL` / Google callbacks.
@@ -123,7 +126,7 @@ Notes:
 From inside Core, SI must answer:
 
 ```bash
-docker exec vepathos-api-doc wget -qO- --timeout=5 http://10.0.0.2:8100/health
+docker exec vepathos-api-doc wget -qO- --timeout=5 http://vepathos-smart-import:8100/health
 ```
 
 ### 1.2 Migrations
@@ -270,7 +273,7 @@ Want: `certificate obtained successfully` for `mcp.vepathos.com`. Then from a **
 
 ```bash
 curl -fsS https://mcp.vepathos.com/health
-# {"status":"ok","version":"0.1.0"}
+# {"status":"ok","version":"0.2.0"}
 ```
 
 `GET /` and `/favicon.ico` 404 from scanners is fine. The MCP path is `/mcp`.
@@ -442,6 +445,7 @@ Kill switch: `MCP_CHANNEL_ENABLED=false` + api-doc recreate, no `--build`. Web/R
 | inspect template `bad character '-'` | `vepathos-net` in Go template | `index .NetworkSettings.Networks "vepathos-net"` |
 | TLS `internal error` then OK | ACME still issuing | Wait for Caddy log; retry from laptop |
 | `/ready` 503, JWKS timeout | Hairpin to public A | `CADDY_VETH_IP` = Caddy veth, not `host-gateway` |
+| Claude geocode `BACKEND_UNAVAILABLE`, ~30–40 s | api-doc → `10.0.0.2:8100` connect timeout | SI on `vepathos-net`, `SMART_IMPORT_URL=http://vepathos-smart-import:8100`, recreate api-doc `--no-build` |
 | `invalid_token` with 60-char bearer | Secret only | `client_id:client_secret` |
 | Inspector CLI OAuth error | CLI follows PRM | `curl` + Bearer |
 | Consent shows `127.0.0.1` | Inspector local callback | Expected; not prod Claude |
