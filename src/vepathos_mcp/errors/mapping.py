@@ -96,6 +96,8 @@ def _plan_upgrade(message: str, details: dict[str, Any]) -> DomainError:
     elif isinstance(upgrade_url, str) and upgrade_url.startswith("http://"):
         # Local development deployments use plain http; production Core always sends https.
         kept["upgrade_url"] = upgrade_url
+    elif isinstance(contact_url, str) and contact_url.startswith("http://"):
+        kept["contact_url"] = contact_url
     if trial_max is not None:
         kept["full_trial"] = {"available": True, "max_stops": trial_max}
     return DomainError(ErrorCode.PLAN_UPGRADE_REQUIRED, _clip(message), suggestion=suggestion, details=kept)
