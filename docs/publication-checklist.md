@@ -17,7 +17,7 @@ needs a separate explicit OK.
 ## 1. Production readiness
 
 - [ ] Core MCP channel and OAuth authorization server deployed; security test suites green
-- [ ] `mcp.vepathos.com` deployed (`docs/deployment.md`); `/ready` ok; `401` + resource metadata
+- [ ] `mcp.vepathos.com` deployed on api-prod (`docs/deployment.md`: GoDaddy `A`, `vepathos-net` overlay, Caddy, then `MCP_CHANNEL_ENABLED`); `/ready` ok; `401` + resource metadata
 - [ ] Privacy policy updated with an MCP section (data sent, retention of 24 h results, logs without payloads): public HTTPS URL — draft: `docs/privacy-mcp.md`
 - [ ] Public documentation page (e.g. `vepathos.com/mcp`) with onboarding, tools, limits and support contact — draft: `docs/public-mcp-page.md`
 - [ ] Test account (Growth plan, populated) for reviewers

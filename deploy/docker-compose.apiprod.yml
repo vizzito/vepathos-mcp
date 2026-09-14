@@ -1,0 +1,29 @@
+# Overlay for api-prod (Hetzner). The edge Caddy that serves api.vepathos.com
+# already joins `vepathos-net`. This compose file keeps the internal network
+# name `vepathos-edge` and binds it to that existing network so Caddy can
+# resolve `vepathos-mcp:8080`.
+#
+#   docker compose -p vepathos-mcp \
+#     -f deploy/docker-compose.prod.yml \
+#     -f deploy/docker-compose.apiprod.yml \
+#     --env-file ../.env \
+#     up -d --build
+#
+# Do not create a second Docker network. Do not publish :8080 on the host.
+#
+# extra_hosts: the adapter calls https://api.vepathos.com (JWKS + /api/mcp/v1).
+# The public A record is this same VM; from a container that hairpins and
+# times out. host-gateway:443 also fails here (published-port DNAT does not
+# apply between bridge peers). Point the name at Caddy's address on
+# vepathos-net (docker inspect vepathos-caddy … IPAddress). Recheck if Caddy
+# is recreated.
+
+services:
+  vepathos-mcp:
+    extra_hosts:
+      - "api.vepathos.com:${CADDY_VETH_IP:?set CADDY_VETH_IP to Caddy's vepathos-net address}"
+
+networks:
+  vepathos-edge:
+    external: true
+    name: vepathos-net
