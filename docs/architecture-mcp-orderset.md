@@ -578,6 +578,8 @@ no route-level test yet: verify it in the local stack before deploying.
    `MCP_MAP_SHARES_ENABLED`), so deploying the code does not expose them. *Flag implemented.*
 3. Turn the flag on locally / on staging, run the ChatGPT smoke (T19), then in prod.
 4. P0-2, P0-3 and P0-4, then orderset routes and tools, in the same order.
+5. Results by reference (section 13): P2-1 map preference first (description + flag), P2-2 export
+   after P0-2.
 
 ### Phase 2 (explicitly out of MVP)
 
@@ -590,7 +592,65 @@ no route-level test yet: verify it in the local stack before deploying.
 
 ---
 
-## 13. Out of scope here
+## 13. Results by reference (P2)
+
+The import path keeps thousands of rows out of tool **arguments**. Results need the same rule for tool
+**outputs**.
+
+### Evidence (2026-09-16, local stack, 10,931 stops, 135 routes)
+
+Asked for "the map", Claude Code built its own page: it paged `get_optimization_result detail=stops`
+eleven times (~300k tokens of rows), joined coordinates from the source file, wrote a 479-line HTML
+page and screenshotted it — several minutes for something Core already renders.
+`create_optimization_map` was not offered: `MCP_MAP_SHARES_ENABLED=false` in the local adapter (Core
+and the map web client were ready).
+
+### P2-1 Prefer the server map
+
+- `create_optimization_map` description: say it renders every route and stop server-side in one call
+  and is the way to show a plan on a map; never rebuild a map from `detail=stops` pages. Keep the
+  existing warning that anyone with the link can view it (a client-built artifact can be private; the
+  agent should say which one it offers).
+- `get_optimization_result` description: `detail=stops` is for reading a route or a few pages, not for
+  exporting a whole plan of hundreds+ stops.
+- Enable `MCP_MAP_SHARES_ENABLED` wherever the import tools are enabled, and verify the snapshot with a
+  10k-stop plan (per-route geometry cap is 100,000 points; total page weight untested).
+
+### P2-2 `export_optimization_result`
+
+Core builds the file and returns a link; rows never pass through the model.
+
+| | |
+|---|---|
+| Input | `optimization_id`, `format` (`csv` \| `xlsx` \| `geojson`), `granularity` (`stops` \| `routes`), `language` |
+| Stops rows | route, sequence, stop id, arrival time, lat/lng, address and the source columns kept by the dataset (P0-2), weight/volume |
+| Route rows | vehicle, stops, distance, duration, departure and return clock time |
+| Output | `{ export_id, url, expires_at, rows, columns }`, signed URL, 24 h, same account only |
+| Billing | none |
+| Limits | dataset jobs: complete. Inline jobs: Core keeps only stop ids and depot, so no coordinates unless inline stops start being stored |
+| Retention | files deleted at expiry by the P0-4 cron |
+
+Core route: `POST /api/mcp/v1/optimization/jobs/{job_id}/exports`. Needs P0-2 for addresses.
+Acceptance: a 10k-stop dataset exports in one tool call, with row count equal to assigned stops, and
+the model output for the call stays under a few hundred tokens.
+
+### Correctness issues seen in the same run (verify before P2)
+
+1. **Depot ~170 km from every stop.** The request used depot 59.778, 14.94091 (engine tag
+   `SELJUSNARSBERGSKOMMUN`); the stops sit around 58.5–58.6°N, 13.0–13.5°E. Each route drove
+   350–400 km of deadhead (76,248 km total, 13–16 h routes). Where the depot came from in the
+   conversation is unknown; instructions already forbid depots the user did not give.
+2. **The distance guard did not fire.** The contract promises `INVALID_COORDINATES` for stops beyond the
+   preprocessing radius (100 km for API channels), but Core never returns that code and the engine
+   routed all 10,931 stops. Add a check (Core or preflight: depot to dataset centroid / farthest stop)
+   and fix the contract text until it exists.
+3. **Arrival times ignore the drive from the depot.** First arrivals were ~08:12 for an 08:05 departure
+   170 km away. Check how the engine anchors `arrival_time`, together with the start-time encoding
+   mismatch in [channel-defaults.md](channel-defaults.md) (routehub UTC vs api-doc local).
+
+---
+
+## 14. Out of scope here
 
 Application code, Prisma migrations, deploy runbooks, Connect-loop cron, OAuth scope split (already
 documented), other-repo inventory. Implementation = a separate plan/PR after this design is accepted.
