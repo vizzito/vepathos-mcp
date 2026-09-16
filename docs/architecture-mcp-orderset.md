@@ -77,8 +77,8 @@ flowchart TB
 | Side | Where | State |
 |---|---|---|
 | Core | `src/server/mcp/datasets.ts`, `app/api/mcp/v1/imports/`, `app/api/mcp/v1/datasets/`, migration `20260916180000_mcp_datasets`, `dataset_id` branch of `optimization/jobs/route.ts` | Pushed to `develop` (`ce5bc03`). That commit fails `next build` (typecheck) and has the billing hole: **do not deploy api-doc** until the P0-1 fix commit is pushed on top |
-| Core P0-1 fix | billing, typecheck, `GET /datasets/{id}`, migration `20260916210000_mcp_dataset_billed_at` | Working tree, tested (`tsc` clean, unit tests green), not committed |
-| Adapter 0.4.0 | `tools/import_tools.py` and the rest of the release | Committed locally, not pushed. P0-1 adapter side + `MCP_IMPORT_TOOLS_ENABLED` in working tree, not committed |
+| Core P0-1 fix | billing, typecheck, `GET /datasets/{id}`, migration `20260916210000_mcp_dataset_billed_at` | Pushed (`331a4c3`). Settlement fix for free replans (`billing.ts`) in working tree, not committed: **do not deploy without it** |
+| Adapter 0.4.0 | `tools/import_tools.py`, `MCP_IMPORT_TOOLS_ENABLED`, dataset preflight | Committed locally (`fee0d88`), not pushed. `devtools/smoke_local_datasets.py` not committed |
 
 ~1 005 stops worked inline; ~8 200 did not (model argument budget), not the solver.
 
@@ -159,6 +159,12 @@ does not go through any of them (it only activates when the body carries `datase
   breaking “unknown fields are never silently ignored”). *Implemented.*
 - Import and dataset views report `first_optimize_charged` and `free_replans_remaining` (0 until the
   first billed run); job responses report `billing.free_replans_remaining`. *Implemented.*
+- Settlement follows the reservation. The local smoke (`devtools/smoke_local_datasets.py`) found that a
+  free replan reserved without quota was still charged when it completed: `confirmRapidApiJob` /
+  `releaseRapidApiJob` only recognised the trial as quota-free. `src/server/mcp/billing.ts` now holds
+  the billing mode, and confirm, release, idempotent replay, job status and the result summary all read
+  it. The summary's `charged_stops` is 0 for the trial and free replans, as the contract already said
+  (before, trial results showed the served stops). *Implemented, after `331a4c3`.*
 - Adapter: the `optimize_dataset` preflight reported `stops=0, charges_stops=0`, which told the user
   nothing was charged. It now reads `GET /datasets/{id}` and reports the real stops (minus
   `exclude_stop_ids`), `charges_stops` (0 on a free replan), the plan check against both, and warnings
