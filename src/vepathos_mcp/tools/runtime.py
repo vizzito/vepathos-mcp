@@ -16,10 +16,12 @@ from mcp.server.mcpserver.context import Context
 from mcp_types import CallToolResult
 
 from vepathos_mcp.auth.upstream import subject_key, upstream_authorization
+from vepathos_mcp.auth.verifier import credential_kind
 from vepathos_mcp.clients.core_models import CoreJobStatusResponse
 from vepathos_mcp.clients.vepathos_api import CallContext, VepathosApiClient
-from vepathos_mcp.config import Settings
+from vepathos_mcp.config import AuthMode, Settings
 from vepathos_mcp.errors.codes import PLAN_CODES, DomainError, ErrorCode
+from vepathos_mcp.errors.mapping import API_KEY_AUTH_SUGGESTION
 from vepathos_mcp.rate_limit import RateLimiter
 from vepathos_mcp.telemetry import metrics
 from vepathos_mcp.telemetry.client_detect import detect_client
@@ -75,6 +77,7 @@ class RequestIdentity:
     subject: str
     client_label: str
     protocol_version: str | None
+    credential_kind: str | None = None
 
 
 def raw_arguments(ctx: Context) -> dict[str, Any]:
@@ -110,6 +113,7 @@ def resolve_identity(ctx: Context, deps: ToolDeps) -> RequestIdentity:
         subject=subject_key(deps.settings, access_token),
         client_label=client_label,
         protocol_version=ctx.protocol_version,
+        credential_kind=credential_kind(access_token),
     )
 
 
@@ -139,6 +143,19 @@ async def wait_for_terminal(
         await deps.sleep(min(deps.settings.poll_interval_seconds, remaining))
         status = await deps.core.get_job(identity.call, status.job_id)
     return status
+
+
+AUTH_CODES = frozenset({ErrorCode.AUTHENTICATION_REQUIRED, ErrorCode.INVALID_CREDENTIALS})
+
+
+def explain_auth_failure(identity: RequestIdentity | None, err: DomainError) -> DomainError:
+    """Point an authorization failure at the credential the caller actually used."""
+
+    if identity is None or err.code not in AUTH_CODES:
+        return err
+    if identity.credential_kind == AuthMode.API_KEY.value:
+        err.suggestion = API_KEY_AUTH_SUGGESTION
+    return err
 
 
 async def name_connected_account(
@@ -184,7 +201,9 @@ async def instrumented(
         ).inc()
         result = await handler(identity, arguments)
     except DomainError as err:
-        result = error_result(await name_connected_account(deps, identity, err))
+        result = error_result(
+            explain_auth_failure(identity, await name_connected_account(deps, identity, err))
+        )
     except Exception as exc:
         log_event("tool_crashed", logging.ERROR, tool=tool, exception=type(exc).__name__)
         result = error_result(

@@ -101,3 +101,44 @@ def test_quota_error_also_questions_the_connected_account() -> None:
     )
     assert err.code is ErrorCode.QUOTA_EXCEEDED
     assert err.suggestion is not None and "get_account" in err.suggestion
+
+
+def test_api_key_callers_are_not_told_to_reconnect_a_connector() -> None:
+    from vepathos_mcp.clients.vepathos_api import CallContext
+    from vepathos_mcp.tools.runtime import RequestIdentity, explain_auth_failure
+
+    def identity(kind: str) -> RequestIdentity:
+        return RequestIdentity(
+            call=CallContext(authorization="Bearer x"),
+            subject="s",
+            client_label="other",
+            protocol_version=None,
+            credential_kind=kind,
+        )
+
+    key_error = explain_auth_failure(identity("api_key"), from_core_error(401, envelope("INVALID_CREDENTIALS")))
+    assert key_error.suggestion is not None
+    # A developer credential has no connector, no consent screen and no grant to revoke.
+    assert "reconnect" not in key_error.suggestion.lower().replace("no connector to reconnect", "")
+    assert "mcp:optimize" in key_error.suggestion
+    assert "client_id:client_secret" in key_error.suggestion
+    assert "test secret does not authenticate against production" in key_error.suggestion
+    assert "revoked and reissued" in key_error.suggestion
+
+    oauth_error = explain_auth_failure(identity("oauth"), from_core_error(401, envelope("INVALID_CREDENTIALS")))
+    assert oauth_error.suggestion is not None and "Connected apps" in oauth_error.suggestion
+
+
+def test_only_authorization_errors_are_rewritten_for_the_credential() -> None:
+    from vepathos_mcp.clients.vepathos_api import CallContext
+    from vepathos_mcp.tools.runtime import RequestIdentity, explain_auth_failure
+
+    identity = RequestIdentity(
+        call=CallContext(authorization="Bearer x"),
+        subject="s",
+        client_label="other",
+        protocol_version=None,
+        credential_kind="api_key",
+    )
+    quota = from_core_error(403, envelope("QUOTA_EXCEEDED", "", stops_remaining=1, requested=9))
+    assert explain_auth_failure(identity, quota).suggestion == quota.suggestion

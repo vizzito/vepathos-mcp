@@ -18,12 +18,22 @@ MAX_MESSAGE_CHARS = 400
 AUTH_MESSAGE = (
     "The Vepathos connection is not authorized, so no account could be read for this request."
 )
+# The fix differs by how the caller authenticated, and advice for the other path wastes the user's
+# time: an API-key caller has no connector to reconnect, and an OAuth user has no key to reissue.
 AUTH_SUGGESTION = (
     "Ask the user to reconnect the Vepathos connector and sign in. Tell them that signing in with a "
     "different Vepathos user connects a different account, with its own plan and stop quota, and "
     "that connecting without an account creates a free one. To switch accounts, the grant must be "
     "revoked first in Connected apps in the Vepathos dashboard, because the old one is remembered. "
     "Once connected, call get_account to confirm which account it is."
+)
+API_KEY_AUTH_SUGGESTION = (
+    "This client authenticates with a Vepathos developer credential, so there is no connector to "
+    "reconnect: the credential itself was refused. Ask the user to check, in the Vepathos dashboard "
+    "of the account they mean, that it is sent as client_id:client_secret, that it was created with "
+    "the option for AI agents (scope mcp:optimize) rather than as a REST key, and that it belongs "
+    "to the environment being called — a test secret does not authenticate against production. "
+    "Never ask the user to paste the secret; if they already did, it must be revoked and reissued."
 )
 
 # Plans and quotas belong to an account, so "upgrade the plan" is the wrong advice when the client
