@@ -1,4 +1,9 @@
-"""MCP tool arguments → Vepathos Core channel request (see docs/core-channel-contract.md)."""
+"""MCP tool arguments → Vepathos Core channel request (see docs/core-channel-contract.md).
+
+Also the one place that derives facts from a parsed request: the confirmation preflight and the
+two identities. `request_fingerprint` is the whole request (what Core deduplicates on);
+`stops_identity` is the stop set alone, so a variant of an already-charged day is recognisable.
+"""
 
 from __future__ import annotations
 
@@ -75,3 +80,63 @@ def request_fingerprint(core_request: dict[str, Any]) -> str:
 
     canonical = json.dumps(core_request, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return "mcp-fp-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:48]
+
+
+def stops_identity(core_request: dict[str, Any]) -> str:
+    """Identity of the delivery day itself: the depot and the stops, ignoring how it is routed.
+
+    Two requests over the same stops with different vehicles, caps or schedule share this value
+    and differ in `request_fingerprint` — which is exactly the case Core charges twice.
+    """
+
+    stops = sorted((str(s.get("id")), s.get("lat"), s.get("lng")) for s in core_request.get("stops", []))
+    canonical = json.dumps(
+        {"depot": core_request.get("depot"), "stops": stops},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return "mcp-si-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+def constraints_enforced(inp: OptimizeInput) -> list[str]:
+    """The constraint names this request actually turns on, in the plan's own vocabulary."""
+
+    active = []
+    if inp.uses_weight:
+        active.append("weight_capacity")
+    if inp.uses_volume:
+        active.append("volume_capacity")
+    if inp.uses_time_windows:
+        active.append("time_windows")
+    return active
+
+
+def _total(values: list[float | None]) -> float | None:
+    """Sum of a declared quantity, or None when no stop declares it. 0.0 is a real total."""
+
+    present = [v for v in values if v is not None]
+    if not present:
+        return None
+    return round(sum(present), 6)
+
+
+def preflight_facts(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
+    """What the user is about to send, derived from the arguments alone: no Core call, no charge."""
+
+    return {
+        "stops": len(inp.stops),
+        "charges_stops": len(inp.stops),
+        "total_weight_kg": _total([s.weight_kg for s in inp.stops]),
+        "total_volume_m3": _total([s.volume_m3 for s in inp.stops]),
+        "stops_with_time_window": sum(1 for s in inp.stops if s.time_window is not None),
+        "depot": {"latitude": inp.depot.latitude, "longitude": inp.depot.longitude},
+        "vehicle_types": len(inp.vehicles),
+        "vehicle_units": inp.vehicles_available,
+        "constraints_enforced": constraints_enforced(inp),
+        "objective": "minimize_distance",
+        "schedule_date": schedule_date,
+        "route_start_time": inp.schedule.route_start_time if inp.schedule else None,
+        "time_zone": inp.schedule.time_zone if inp.schedule else "UTC",
+        "service_time_minutes": inp.schedule.service_time_minutes if inp.schedule else None,
+    }

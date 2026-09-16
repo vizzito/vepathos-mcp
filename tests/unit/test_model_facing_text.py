@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from vepathos_mcp.tools import descriptions as d
 
-# Roughly 1,500 tokens. Raising this is a decision, not an accident: every conversation pays it.
-MAX_TOTAL_CHARS = 6_000
+# Roughly 1,600 tokens. Raising this is a decision, not an accident: every conversation pays it.
+# Raised from 6,000 to buy the confirmation preflight in OPTIMIZE_DESCRIPTION: optimizing spends the
+# user's stops, and the rule that guards that has to reach clients which hide server instructions.
+MAX_TOTAL_CHARS = 6_400
 MAX_INSTRUCTION_CHARS = 2_000
 
 TOOL_NAMES = (
@@ -49,3 +51,7 @@ def test_tool_rules_live_in_the_tool_description_clients_always_receive() -> Non
     assert "do not invent coordinates" in d.GEOCODE_DESCRIPTION.lower()
     assert "empty=true" in d.LIST_FLEET_DESCRIPTION
     assert "connected apps" in d.GET_ACCOUNT_DESCRIPTION.lower()
+    # Spending the user's quota must be confirmable without the server instructions.
+    optimize = d.OPTIMIZE_DESCRIPTION.lower()
+    assert "confirmed=false" in optimize and "confirmed=true" in optimize
+    assert "charges" in optimize

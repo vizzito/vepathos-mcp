@@ -96,6 +96,50 @@ class OptimizationResult(OutputModel):
         return self
 
 
+class PreflightPlan(OutputModel):
+    """The connected plan's side of the check. Absent when the account could not be read."""
+
+    account_label: str | None = Field(None, description="Account that would be charged.")
+    plan_name: str | None = None
+    max_stops_per_request: int | None = Field(None, description="Null means unlimited on this plan.")
+    stops_remaining: int | None = Field(None, description="Before this optimization. Null: unlimited.")
+    stops_remaining_after: int | None = Field(None, description="Projected, if it is charged.")
+    fits: bool | None = Field(None, description="False when the plan would reject this request.")
+    missing_features: list[str] | None = Field(
+        None, description="Constraints this request needs that the plan does not include."
+    )
+
+
+class Preflight(OutputModel):
+    """What optimize_delivery_routes would send, returned instead of optimizing when confirmed is false."""
+
+    stops: int = Field(description="Stops that would be sent.")
+    charges_stops: int = Field(description="Stops this would charge against the plan's period.")
+    total_weight_kg: float | None = Field(None, description="Null when no stop declares weight.")
+    total_volume_m3: float | None = None
+    stops_with_time_window: int = 0
+    depot: dict[str, float] | None = None
+    vehicle_types: int | None = None
+    vehicle_units: int | None = Field(None, description="Total vehicles available across all types.")
+    constraints_enforced: list[str] = Field(
+        default_factory=list, description="Empty means distance only: no capacity or window is enforced."
+    )
+    objective: str | None = Field(None, description="Objective this would run with.")
+    schedule_date: str | None = None
+    route_start_time: str | None = Field(
+        None, description="Null means the result carries no wall-clock arrival times."
+    )
+    time_zone: str | None = None
+    service_time_minutes: float | None = None
+    stops_identity: str | None = Field(
+        None, description="Identity of the depot and stop set, shared by every variant of this day."
+    )
+    plan: PreflightPlan | None = None
+    confirm_with: str = Field(
+        description="What to do next: show this to the user and call again with confirmed=true."
+    )
+
+
 class OptimizeResult(OutputModel):
     """Output of optimize_delivery_routes."""
 
@@ -117,6 +161,11 @@ class OptimizeResult(OutputModel):
     result: OptimizationResult | None = Field(
         None, description="Present when the optimization finished within the call."
     )
+    preflight: Preflight | None = Field(
+        None,
+        description="Present instead of an optimization when confirmed was false: nothing ran, "
+        "nothing was charged.",
+    )
     error: dict[str, Any] | None = None
 
     @model_validator(mode="after")
@@ -126,8 +175,12 @@ class OptimizeResult(OutputModel):
             and self.status is not None
             and self.submitted_stops is not None
         )
-        if success == (self.error is not None):
-            raise ValueError("output must contain either an optimization result or an error")
+        # Exactly one of three outcomes: an optimization, a preflight awaiting confirmation, an error.
+        variants = [success, self.preflight is not None, self.error is not None]
+        if sum(1 for present in variants if present) != 1:
+            raise ValueError(
+                "output must contain exactly one of an optimization result, a preflight, or an error"
+            )
         return self
 
 

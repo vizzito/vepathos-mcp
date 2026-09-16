@@ -160,6 +160,12 @@ class OptimizeInput(StrictModel):
         pattern=IDEMPOTENCY_KEY_PATTERN,
         description="Optional key to deduplicate retries. By default identical arguments are deduplicated.",
     )
+    confirmed: bool = Field(
+        False,
+        description="Set true only after the user has seen what will be sent and how many stops it "
+        "charges, and agreed. While false the call optimizes nothing and charges nothing: it returns "
+        "a preflight of this exact request for you to show them.",
+    )
 
     @model_validator(mode="after")
     def _cross_field_rules(self) -> OptimizeInput:

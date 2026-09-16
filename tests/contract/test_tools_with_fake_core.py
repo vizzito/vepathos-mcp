@@ -299,3 +299,75 @@ async def test_list_fleet_rejects_arguments(mcp_client: Callable[..., Any]) -> N
     async with await mcp_client() as client:
         is_error, payload = await call(client, "list_fleet", {"fleet_id": "7"})
     assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+
+
+async def test_unconfirmed_optimize_returns_a_preflight_and_charges_nothing(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    args = sample_arguments(stops=12, confirmed=False)
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "optimize_delivery_routes", args)
+    assert not is_error
+    # No job reached Core, so no stop was spent deciding whether to spend stops.
+    assert not core_state.jobs
+    assert "optimization_id" not in payload
+    preflight = payload["preflight"]
+    assert preflight["stops"] == 12 and preflight["charges_stops"] == 12
+    assert preflight["vehicle_units"] == 3
+    assert preflight["constraints_enforced"] == []
+    assert preflight["plan"]["stops_remaining_after"] == preflight["plan"]["stops_remaining"] - 12
+    assert "confirmed=true" in preflight["confirm_with"]
+
+
+async def test_preflight_names_the_constraints_and_totals_it_would_enforce(
+    mcp_client: Callable[..., Any],
+) -> None:
+    args = sample_arguments(stops=2, confirmed=False)
+    args["vehicles"] = [{"vehicle_id": "van", "count": 1, "max_weight_kg": 900}]
+    args["stops"][0]["weight_kg"] = 1.5
+    args["stops"][1]["weight_kg"] = 2.25
+    args["stops"][0]["time_window"] = {"start": "09:00", "end": "12:00"}
+    args["schedule"]["route_start_time"] = "08:00"
+    async with await mcp_client() as client:
+        _, payload = await call(client, "optimize_delivery_routes", args)
+    preflight = payload["preflight"]
+    assert preflight["constraints_enforced"] == ["weight_capacity", "time_windows"]
+    assert preflight["total_weight_kg"] == 3.75
+    # exclude_none: a quantity no stop declares is absent, not zero.
+    assert "total_volume_m3" not in preflight
+    assert preflight["stops_with_time_window"] == 1
+    # The fake Core's plan carries no premium features, so the request would be rejected.
+    assert preflight["plan"]["fits"] is False
+    assert preflight["plan"]["missing_features"] == ["weight_capacity", "time_windows"]
+
+
+async def test_preflight_flags_a_request_over_the_plan_maximum(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        _, payload = await call(
+            client, "optimize_delivery_routes", sample_arguments(stops=400, confirmed=False)
+        )
+    plan = payload["preflight"]["plan"]
+    assert plan["fits"] is False and plan["max_stops_per_request"] == 150
+
+
+async def test_variants_of_one_day_share_a_stops_identity(mcp_client: Callable[..., Any]) -> None:
+    first = sample_arguments(stops=5, confirmed=False)
+    second = sample_arguments(stops=5, confirmed=False)
+    second["vehicles"] = [{"vehicle_id": "van", "count": 2, "max_stops": 3}]
+    async with await mcp_client() as client:
+        _, a = await call(client, "optimize_delivery_routes", first)
+        _, b = await call(client, "optimize_delivery_routes", second)
+    # Same delivery day, different routing: the pair Core would charge twice.
+    assert a["preflight"]["stops_identity"] == b["preflight"]["stops_identity"]
+    assert a["preflight"]["vehicle_units"] == 3 and b["preflight"]["vehicle_units"] == 2
+
+
+async def test_the_gate_can_be_turned_off_for_unattended_callers(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    args = sample_arguments(stops=4)
+    del args["confirmed"]
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
+        is_error, payload = await call(client, "optimize_delivery_routes", args)
+    assert not is_error and payload["optimization_id"].startswith("mcp_")
+    assert len(core_state.jobs) == 1

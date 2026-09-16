@@ -92,5 +92,8 @@ def sample_arguments(stops: int = 12, **extra: Any) -> dict[str, Any]:
             for i in range(stops)
         ],
         "schedule": {"date": "2026-09-14", "time_zone": "America/Argentina/Buenos_Aires"},
+        # Confirmed by default: these fixtures exercise the optimization path. The confirmation
+        # gate has its own tests, which pass confirmed=False explicitly.
+        "confirmed": True,
         **extra,
     }

@@ -78,9 +78,42 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `schedule.time_zone` | IANA name | no (`UTC`) | e.g. `America/New_York`. |
 | `schedule.service_time_minutes` | number 0–240 | no | Minutes spent at each stop. |
 | `idempotency_key` | string 8–128 | no | Override the automatic deduplication key. |
+| `confirmed` | boolean | no (`false`) | `false` returns a preflight and charges nothing. `true` submits the job. |
 
 Unknown fields are rejected with `INVALID_INPUT`, so an unsupported constraint is never silently
 ignored.
+
+### Confirmation preflight
+
+Optimizing spends the account's monthly stops, and any changed request is charged again, so the
+tool is called twice. With `confirmed: false` (the default) nothing reaches Core and nothing is
+charged: the response carries `preflight` instead of an optimization, for the agent to show the
+user before spending their quota. `MCP_CONFIRM_BEFORE_OPTIMIZE=false` disables the gate for
+unattended callers, which then optimize in one call.
+
+```json
+{
+  "preflight": {
+    "stops": 12, "charges_stops": 12,
+    "total_weight_kg": 5.28, "total_volume_m3": 0.12, "stops_with_time_window": 0,
+    "depot": { "latitude": -34.6038, "longitude": -58.3807 },
+    "vehicle_types": 1, "vehicle_units": 2,
+    "constraints_enforced": ["weight_capacity", "volume_capacity"],
+    "objective": "minimize_distance",
+    "schedule_date": "2026-09-16", "route_start_time": "10:30",
+    "time_zone": "America/Argentina/Buenos_Aires", "service_time_minutes": 10,
+    "stops_identity": "mcp-si-9f2c…",
+    "plan": { "account_label": "Stormtech", "plan_name": "Scale", "max_stops_per_request": 15000,
+              "stops_remaining": 349964, "stops_remaining_after": 349952, "fits": true },
+    "confirm_with": "…call again with the same arguments and confirmed=true."
+  }
+}
+```
+
+`plan` is absent when the account could not be read: a preflight never fails on that, it just says
+less. `stops_identity` is the depot plus the stop set, so two variants of one delivery day — the
+pair that gets charged twice — are recognisable as the same day. `missing_features` lists
+constraints the request needs that the plan lacks.
 
 ### Example
 
@@ -213,4 +246,7 @@ implementation plan). Tool descriptions must stay consistent with them:
 - Time windows are optimized with tolerances; stops that cannot meet their window are reported in
   `summary.time_windows.violated` (verification pending on whether the engine instead leaves them
   unassigned).
-- The objective is minimum total distance. Duration-based routing is exposed only after verification.
+- The objective is minimum total distance. Duration-based routing is exposed only after
+  verification, so `get_account` filters `minimize_duration` out of the plan's advertised features
+  (`UNEXPOSED_FEATURES` in `tools/account.py`): the instructions tell the model to offer a
+  constraint when the plan lists it, and `OptimizeInput` has no `objective` to request it with.

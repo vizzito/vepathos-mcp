@@ -59,3 +59,16 @@ def test_unlimited_plan_reports_no_stop_ceiling() -> None:
     account.plan.max_stops_per_request = None
     info = to_account_info(account)
     assert info.plan is not None and info.plan.max_stops_per_request is None
+
+
+def test_features_the_tools_cannot_request_are_not_advertised() -> None:
+    account = CoreAccount.model_validate(
+        {
+            "account": {"email": "ops@stormtech.com"},
+            "plan": {"name": "Scale", "features": ["time_windows", "minimize_duration"]},
+        }
+    )
+    info = to_account_info(account)
+    assert info.plan is not None
+    # Offering duration routing produces a promise optimize_delivery_routes cannot keep.
+    assert info.plan.features == ["time_windows"]

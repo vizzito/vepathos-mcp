@@ -23,6 +23,11 @@ from vepathos_mcp.tools.runtime import RequestIdentity, ToolDeps, instrumented
 
 TOOL_NAME = "get_account"
 
+# The server instructions tell the model to offer a constraint only when the plan lists it, so a
+# feature the tools cannot request must not be listed: OptimizeInput has no `objective`, and Core
+# always runs minimize_distance through this channel. Drop this set when the objective is exposed.
+UNEXPOSED_FEATURES = frozenset({"minimize_duration"})
+
 
 def mask_email(email: str) -> str:
     """`martin@stormtech.com` -> `m***@stormtech.com`: enough to recognise, not to harvest."""
@@ -60,7 +65,7 @@ def to_account_info(account: CoreAccount) -> AccountInfo:
             max_fleet_units=plan.max_fleet_units,
             max_stops_per_route=plan.max_stops_per_route,
             max_active_optimizations=plan.max_active_optimizations,
-            features=plan.features or None,
+            features=[f for f in (plan.features or []) if f not in UNEXPOSED_FEATURES] or None,
         ),
         usage=AccountUsage(
             stops_limit=usage.stops_limit,
