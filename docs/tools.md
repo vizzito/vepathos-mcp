@@ -91,6 +91,12 @@ charged: the response carries `preflight` instead of an optimization, for the ag
 user before spending their quota. `MCP_CONFIRM_BEFORE_OPTIMIZE=false` disables the gate for
 unattended callers, which then optimize in one call.
 
+The tool description, the server instructions and the input schema follow the flag. With it off,
+`confirmed` is no longer advertised and the description asks the agent to confirm the charge before
+its single call; a client that still sends `confirmed` from a cached schema is accepted, not rejected.
+A text that kept promising a free first call would make the agent report a real, charged optimization
+as a preview.
+
 ```json
 {
   "preflight": {

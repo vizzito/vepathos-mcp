@@ -15,7 +15,7 @@ from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.config import AuthMode, Settings
 from vepathos_mcp.rate_limit import RateLimiter
 from vepathos_mcp.tools import build_tools
-from vepathos_mcp.tools.descriptions import SERVER_INSTRUCTIONS
+from vepathos_mcp.tools.descriptions import server_instructions
 from vepathos_mcp.tools.runtime import ToolDeps
 
 
@@ -56,7 +56,7 @@ def build_server(
         title=SERVER_TITLE,
         version=__version__,
         description="Large-scale delivery and fleet route optimization for AI agents.",
-        instructions=SERVER_INSTRUCTIONS,
+        instructions=server_instructions(confirm_before_optimize=settings.confirm_before_optimize),
         website_url="https://vepathos.com",
         token_verifier=CompositeTokenVerifier(settings, jwks_verifier=jwks_verifier),
         auth=build_auth_settings(settings),

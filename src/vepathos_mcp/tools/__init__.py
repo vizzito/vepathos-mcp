@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server.mcpserver.tools import Tool
 from mcp_types import ToolAnnotations
 
@@ -32,12 +34,24 @@ from vepathos_mcp.tools.results import make_get_result_tool
 from vepathos_mcp.tools.runtime import ToolDeps
 
 
+def optimize_schema(*, confirm_before_optimize: bool) -> dict[str, Any]:
+    """The published optimize schema. Without the gate, `confirmed` changes nothing, so it is not
+    advertised; the model still accepts it, because clients cache schemas and keep sending it."""
+
+    schema = inline_model_schema(OptimizeInput)
+    if confirm_before_optimize:
+        return schema
+    properties = {name: spec for name, spec in schema["properties"].items() if name != "confirmed"}
+    return {**schema, "properties": properties}
+
+
 def build_tools(deps: ToolDeps) -> list[Tool]:
+    confirm_before_optimize = deps.settings.confirm_before_optimize
     optimize = Tool.from_function(
         make_optimize_tool(deps),
         name=OPTIMIZE_TOOL,
         title=descriptions.OPTIMIZE_TITLE,
-        description=descriptions.OPTIMIZE_DESCRIPTION,
+        description=descriptions.optimize_description(confirm_before_optimize=confirm_before_optimize),
         annotations=ToolAnnotations(
             title=descriptions.OPTIMIZE_TITLE,
             read_only_hint=False,
@@ -49,7 +63,7 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
     )
     # Handlers read and validate the raw arguments themselves (strict, with structured errors);
     # the published schema is the strict model's schema.
-    optimize.parameters = inline_model_schema(OptimizeInput)
+    optimize.parameters = optimize_schema(confirm_before_optimize=confirm_before_optimize)
 
     get_result = Tool.from_function(
         make_get_result_tool(deps),

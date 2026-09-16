@@ -3,7 +3,8 @@
 Optimizing spends the account's monthly stops, and Core charges again for any changed request, so
 a call arrives twice: once with `confirmed` false, which only describes what would be sent, and
 once with it true, after the user has agreed. The gate is here and not only in the tool
-description because a description is advice a model may skip; this cannot be skipped.
+description because a description is advice a model may skip; this cannot be skipped. With the gate
+off, the published description and schema stop mentioning `confirmed` (tools/descriptions.py).
 """
 
 from __future__ import annotations

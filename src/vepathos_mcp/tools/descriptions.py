@@ -2,17 +2,21 @@
 
 Two audiences, no overlap:
 
-- SERVER_INSTRUCTIONS: the order of work and when to ask the user. Read once per session, and some
+- server_instructions(): the order of work and when to ask the user. Read once per session, and some
   clients truncate or never show it, so nothing here may be the only place a rule lives.
 - Tool descriptions: what one tool does and when to call it. These always reach the model, so every
   rule that governs a single tool belongs in that tool's description.
 
 Both are sent in every conversation, so they are written to be short.
 
+Text about confirming a charge follows `MCP_CONFIRM_BEFORE_OPTIMIZE`, so it is built per server rather
+than fixed: a client told its first call is free, when the server optimizes and charges on it,
+reports a real charged plan as a preview.
+
 Keep them consistent with the Core capability matrix (docs/tools.md).
 """
 
-SERVER_INSTRUCTIONS = (
+_INSTRUCTIONS_HEAD = (
     "Vepathos solves vehicle routing problems (VRP) for delivery fleets: it assigns stops to "
     "vehicles and sequences each route from one depot, from dozens to thousands of stops. Units: "
     "kilograms, cubic meters, kilometers, minutes, local HH:MM times.\n"
@@ -24,8 +28,16 @@ SERVER_INSTRUCTIONS = (
     "3. Before a large or first optimization: call get_account and compare the stop count with the "
     "plan's maximum. Say the limit and offer options before geocoding or optimizing, not after a "
     "rejection.\n"
+)
+_STEP_4_CONFIRMED = (
     "4. Then optimize_delivery_routes with confirmed=false, show the preflight it returns and get a "
     "yes, call it again with confirmed=true, and get_optimization_result while it runs.\n"
+)
+_STEP_4_DIRECT = (
+    "4. Then say how many stops the optimization charges and how many remain, get a yes, call "
+    "optimize_delivery_routes once, and get_optimization_result while it runs.\n"
+)
+_INSTRUCTIONS_TAIL = (
     "Ask the user only what the tools cannot answer and what changes the plan: the depot, when it "
     "is not known; which fleet to use, when the account fleet does not match what they asked for; "
     "whether the weights or volumes in their data are the real load, when capacity matters. Ask one "
@@ -39,24 +51,48 @@ SERVER_INSTRUCTIONS = (
     "not a limit that has to be raised."
 )
 
+
+def server_instructions(*, confirm_before_optimize: bool) -> str:
+    step_4 = _STEP_4_CONFIRMED if confirm_before_optimize else _STEP_4_DIRECT
+    return _INSTRUCTIONS_HEAD + step_4 + _INSTRUCTIONS_TAIL
+
+
 OPTIMIZE_TITLE = "Optimize delivery routes"
-OPTIMIZE_DESCRIPTION = (
+_OPTIMIZE_INTRO = (
     "Plan optimized delivery routes for a fleet (vehicle routing problem, VRP). Assigns each stop to a vehicle "
     "and sequences every route from one depot, minimizing total distance while respecting the constraints you "
     "provide: maximum stops per vehicle, weight capacity (kg), volume capacity (m3) and delivery time windows. "
     "Built for large problems, from dozens to thousands of stops. Every stop needs latitude and longitude; "
     "addresses are not geocoded. Runs asynchronously: returns an optimization_id, plus the result when the "
     "optimization finishes within a few seconds; use get_optimization_result to retrieve status and routes. "
-    "Results stay available for 24 hours. Charges one plan stop per stop sent, so it takes two calls: "
+    "Results stay available for 24 hours. "
+)
+_OPTIMIZE_CHARGE_CONFIRMED = (
+    "Charges one plan stop per stop sent, so it takes two calls: "
     "with confirmed=false (the default) nothing runs and nothing is charged, and the preflight it returns "
     "is what to show the user — stops and stops remaining, totals, the vehicles, the constraints this "
     "enforces, and whether the plan accepts it. Add what the preflight cannot know: which columns of their "
     "data are not being sent, and that arrival times are absent unless schedule.route_start_time is set. "
-    "Then call again with identical arguments and confirmed=true. Identical arguments are deduplicated and "
+    "Then call again with identical arguments and confirmed=true. "
+)
+_OPTIMIZE_CHARGE_DIRECT = (
+    "Every call runs and charges one plan stop per stop sent, so confirm first: tell the user how many "
+    "stops it charges and how many remain, the vehicles and the constraints it enforces, which columns of "
+    "their data are not being sent, and that arrival times are absent unless schedule.route_start_time is "
+    "set. Then call once. "
+)
+_OPTIMIZE_TAIL = (
+    "Identical arguments are deduplicated and "
     "charged once, but any change, including a different max_stops or vehicle count on the same stops, is a "
     "new optimization and charges again. A request that exceeds the plan, or needs a constraint it lacks, is "
     "rejected with an explanation and never partially applied."
 )
+
+
+def optimize_description(*, confirm_before_optimize: bool) -> str:
+    charge = _OPTIMIZE_CHARGE_CONFIRMED if confirm_before_optimize else _OPTIMIZE_CHARGE_DIRECT
+    return _OPTIMIZE_INTRO + charge + _OPTIMIZE_TAIL
+
 
 LIST_FLEET_TITLE = "List fleet"
 LIST_FLEET_DESCRIPTION = (

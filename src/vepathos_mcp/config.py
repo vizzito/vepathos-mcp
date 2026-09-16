@@ -74,7 +74,8 @@ class Settings(BaseSettings):
 
     map_shares_enabled: bool = Field(False, validation_alias=_env("MCP_MAP_SHARES_ENABLED"))
     # Optimizing spends the account's stops, so it is confirmed by default. Turning this off makes
-    # `confirmed` moot and lets an unattended integration optimize in one call.
+    # `confirmed` moot and lets an unattended integration optimize in one call; the published
+    # description, instructions and schema follow it (tools/descriptions.py).
     confirm_before_optimize: bool = Field(True, validation_alias=_env("MCP_CONFIRM_BEFORE_OPTIMIZE"))
 
     # --- Behaviour budgets ------------------------------------------------------------------

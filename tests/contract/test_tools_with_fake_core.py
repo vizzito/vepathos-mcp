@@ -371,3 +371,45 @@ async def test_the_gate_can_be_turned_off_for_unattended_callers(
         is_error, payload = await call(client, "optimize_delivery_routes", args)
     assert not is_error and payload["optimization_id"].startswith("mcp_")
     assert len(core_state.jobs) == 1
+
+
+async def test_a_client_with_a_cached_schema_still_optimizes_without_the_gate(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    # ChatGPT caches tool schemas and kept sending confirmed=false after the gate was turned off
+    # (2026-09-16). Rejecting the field would have broken optimization for every such client.
+    args = sample_arguments(stops=4, confirmed=False)
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
+        is_error, payload = await call(client, "optimize_delivery_routes", args)
+    assert not is_error and payload["optimization_id"].startswith("mcp_")
+    assert "preflight" not in payload
+    assert len(core_state.jobs) == 1
+
+
+async def test_the_published_contract_follows_the_gate(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        gated = {t.name: t for t in (await client.list_tools()).tools}["optimize_delivery_routes"]
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
+        direct = {t.name: t for t in (await client.list_tools()).tools}["optimize_delivery_routes"]
+
+    assert "confirmed" in gated.input_schema["properties"]
+    assert "confirmed=true" in (gated.description or "")
+    # Without the gate the field changes nothing, so advertising it only invites a second call.
+    assert "confirmed" not in direct.input_schema["properties"]
+    assert "confirmed" not in (direct.description or "")
+    assert direct.input_schema["additionalProperties"] is False
+
+
+async def test_server_instructions_follow_the_gate(
+    core_client_factory: Callable[..., VepathosApiClient], clock: FakeClock
+) -> None:
+    for gate, describes_two_calls in (("true", True), ("false", False)):
+        core = core_client_factory()
+        server = build_server(
+            make_settings(MCP_TRANSPORT="stdio", MCP_CONFIRM_BEFORE_OPTIMIZE=gate),
+            core,
+            sleep=clock.sleep,
+            clock=clock,
+        )
+        assert ("confirmed=true" in (server.instructions or "")) is describes_two_calls
+        await core.aclose()
