@@ -122,6 +122,56 @@ successful claim never consume it again. The trial job is recorded in `StopTrans
 - Rejections store nothing, so retrying the same tool call after upgrading creates the job. Tokens
   carry no plan data, so no reconnection is needed.
 
+## 4b. `GET /api/mcp/v1/account` (done)
+
+`vepathos-mcp` ships the `get_account` tool against the contract in
+[`core-channel-contract.md`](./core-channel-contract.md#get-apimcpv1account); Core serves the route
+in `app/api/mcp/v1/account/route.ts`. Against an older Core that lacks it, the tool answers that the
+deployment does not report account information yet, rather than a generic failure.
+
+Why it is needed: nothing in the channel tells a user *which* Vepathos account a client is connected
+to. A second sign-in (an older personal account, another company) silently becomes the billed
+account, and the mismatch only surfaces as a plan or quota rejection, which reads as a Vepathos
+limitation rather than a wrong connection. The tool also feeds the account label that plan and quota
+errors now carry.
+
+Implementation is a read of data Core already has, with no new state:
+
+- Route `app/api/mcp/v1/account/route.ts` over `src/server/mcp/account.ts` (database access stays in
+  `src/server/**`), behind the same two-factor gate as every other MCP route
+  (`src/server/mcp/gate.ts`), account derived only from the verified credential. No billing record
+  for that user fails closed with `401 INVALID_CREDENTIALS`.
+- Body built from `getBillingOverview(userId)` — the same source
+  `src/server/mcp/entitlements.ts` already uses for limits, features and period usage — plus
+  `maxActiveJobsForPlan`, the `User`/company record for the label, and the existing full-trial
+  marker for `full_trial_available`.
+- Send `max_stops_per_request: null` with `unlimited_stops_per_request: true` for Unlimited plans,
+  so "no ceiling" and "field missing" stay distinguishable. `features` is derived from the same
+  `OptimizationFeatures` flags `evaluateMcpEntitlements` checks, so the advertised set cannot drift
+  from what an optimization accepts. The email is masked in Core, before it reaches the adapter.
+- No quota is charged and no job is created; it is a read of the account's own data, so it needs no
+  new scope beyond `optimize` / `mcp:optimize`.
+
+## 4c. `GET /api/mcp/v1/catalog` (done)
+
+Serves the account's fleets and vehicles for the `list_fleet` tool
+(`app/api/mcp/v1/catalog/route.ts` over `src/server/mcp/catalog.ts`).
+
+Why: without it an assistant invents a fleet, so the plan is geometric — it cannot honour payload or
+volume, and its vehicle ids mean nothing to the operation. The stop weights users already keep in
+their spreadsheets are unusable until the real capacities are known.
+
+- Reads through `proxyRoutehubForUser(userId, "GET", ["fleets" | "vehicles"])`, so the RouteHub
+  tenant guard scopes the catalog to the caller's own company; no new upstream path.
+- `GET /fleets` and `GET /vehicles` are not billable triggers (`isBillableOptimizationTrigger`), so
+  nothing is metered.
+- Capacities are converted to kilograms and cubic metres in Core; an unrecognised unit drops the
+  value rather than guessing it, because a wrong capacity plans a route that cannot be loaded.
+- One resource failing still returns the other; both failing is `503 BACKEND_UNAVAILABLE`.
+- Read-only, and it runs under the existing `optimize` / `mcp:optimize` scope: it reads the caller's
+  own catalog in service of an optimization. **Any write to the catalog needs a new scope and fresh
+  consent** — today's tokens carry no permission to modify anything.
+
 ## 5. OAuth authorization server (steps 4–5)
 
 Minimal OAuth 2.1 AS in api-doc (issuer `https://api.vepathos.com`), reusing NextAuth sessions,

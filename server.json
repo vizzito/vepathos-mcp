@@ -3,7 +3,7 @@
   "name": "com.vepathos/vepathos",
   "title": "Vepathos",
   "description": "Multi-vehicle delivery route optimization at scale, with capacity and time-window constraints.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "websiteUrl": "https://vepathos.com",
   "repository": {
     "url": "https://github.com/vizzito/vepathos-mcp",

@@ -13,6 +13,26 @@ from vepathos_mcp.errors.codes import DomainError, ErrorCode
 
 MAX_MESSAGE_CHARS = 400
 
+# Authorization failures are usually a connection problem, not a Vepathos outage: the grant was
+# revoked, the token expired, or the client is connected to a different account than the user means.
+AUTH_MESSAGE = (
+    "The Vepathos connection is not authorized, so no account could be read for this request."
+)
+AUTH_SUGGESTION = (
+    "Ask the user to reconnect the Vepathos connector and sign in. Tell them that signing in with a "
+    "different Vepathos user connects a different account, with its own plan and stop quota, and "
+    "that connecting without an account creates a free one. To switch accounts, the grant must be "
+    "revoked first in Connected apps in the Vepathos dashboard, because the old one is remembered. "
+    "Once connected, call get_account to confirm which account it is."
+)
+
+# Plans and quotas belong to an account, so "upgrade the plan" is the wrong advice when the client
+# is simply connected to the wrong one.
+WRONG_ACCOUNT_HINT = (
+    "These limits are the connected Vepathos account's: if that plan is not the one the user "
+    "expects, call get_account to check which account the connector is on."
+)
+
 FEATURE_LABELS: dict[str, str] = {
     "weight_capacity": "weight capacity constraints",
     "volume_capacity": "volume capacity constraints",
@@ -78,6 +98,7 @@ def _plan_upgrade(message: str, details: dict[str, Any]) -> DomainError:
     else:
         suggestion = "Adjust the request or upgrade the Vepathos plan."
 
+    suggestion += f" {WRONG_ACCOUNT_HINT}"
     trial_max = _int(trial.get("max_stops")) if trial.get("available") is True else None
     if trial_max is not None:
         suggestion += (
@@ -118,6 +139,7 @@ def _quota(message: str, details: dict[str, Any]) -> DomainError:
             "Reduce the number of stops, wait for the quota to renew "
             f"({resets}), or upgrade the Vepathos plan."
         )
+    suggestion += f" {WRONG_ACCOUNT_HINT}"
     kept: dict[str, Any] = {
         k: details[k]
         for k in ("stops_remaining", "requested", "period_ends_at", "upgrade_url")
@@ -198,11 +220,7 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 details={k: details[k] for k in ("limit_bytes", "received_bytes") if k in details} or None,
             )
         case "AUTHENTICATION_REQUIRED" | "INVALID_CREDENTIALS":
-            return DomainError(
-                ErrorCode(code_raw),
-                "The Vepathos connection is not authorized.",
-                suggestion="Reconnect the Vepathos connector and sign in again.",
-            )
+            return DomainError(ErrorCode(code_raw), _clip(AUTH_MESSAGE), suggestion=AUTH_SUGGESTION)
         case "OPTIMIZATION_NOT_FOUND":
             return DomainError(
                 ErrorCode.OPTIMIZATION_NOT_FOUND,
@@ -245,9 +263,7 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
 
     if status in (401, 403) and not code_raw:
         return DomainError(
-            ErrorCode.AUTHENTICATION_REQUIRED,
-            "The Vepathos connection is not authorized.",
-            suggestion="Reconnect the Vepathos connector and sign in again.",
+            ErrorCode.AUTHENTICATION_REQUIRED, _clip(AUTH_MESSAGE), suggestion=AUTH_SUGGESTION
         )
     if status == 413:
         return DomainError(ErrorCode.PAYLOAD_TOO_LARGE, "The optimization request is too large.")

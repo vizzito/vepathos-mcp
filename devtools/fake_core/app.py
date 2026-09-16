@@ -57,6 +57,9 @@ class FakeCoreState:
     trial_used: set[str] = field(default_factory=set)
     geocode_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_seconds: float = 3.0
+    company_name: str | None = None
+    fleets: list[dict[str, Any]] = field(default_factory=list)
+    vehicles: list[dict[str, Any]] = field(default_factory=list)
     clock: Any = time.time
 
 
@@ -100,6 +103,48 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         if request.headers.get("x-vepathos-mcp-service-key") != state.service_key:
             return _error(401, "SERVICE_UNAUTHORIZED", "Service key missing or invalid.")
         return JSONResponse({"status": "ok"})
+
+    async def get_account(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        plan = state.plan
+        used = state.used_stops.get(account, 0)
+        now = state.clock()
+        return JSONResponse(
+            {
+                # A real Core resolves the owner; the double derives a plausible one from the account.
+                "account": {
+                    "account_id": account,
+                    "email": f"{account}@example.test",
+                    "company_name": state.company_name,
+                },
+                "plan": {
+                    "id": plan.name,
+                    "name": plan.name.title(),
+                    "max_stops_per_request": plan.max_stops_per_request,
+                    "unlimited_stops_per_request": plan.max_stops_per_request is None,
+                    "features": sorted(plan.features),
+                    "max_active_optimizations": plan.max_concurrent,
+                },
+                "usage": {
+                    "stops_limit": plan.monthly_stops,
+                    "stops_used": used,
+                    "stops_remaining": (
+                        None if plan.monthly_stops is None else max(0, plan.monthly_stops - used)
+                    ),
+                    "period_start": _iso(now - 86400),
+                    "period_end": _iso(now + 86400),
+                },
+                "full_trial_available": account not in state.trial_used,
+            }
+        )
+
+    async def get_catalog(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        return JSONResponse({"fleets": state.fleets, "vehicles": state.vehicles})
 
     def job_status(job: FakeJob) -> dict[str, Any]:
         elapsed = state.clock() - job.created_at
@@ -367,6 +412,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
     return Starlette(
         routes=[
             Route("/api/mcp/v1/health", health, methods=["GET"]),
+            Route("/api/mcp/v1/account", get_account, methods=["GET"]),
+            Route("/api/mcp/v1/catalog", get_catalog, methods=["GET"]),
             Route("/api/mcp/v1/optimization/jobs", create_job, methods=["POST"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}", get_job, methods=["GET"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}/result", get_result, methods=["GET"]),

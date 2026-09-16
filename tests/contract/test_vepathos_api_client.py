@@ -180,3 +180,21 @@ async def test_health_probe_uses_service_key_only() -> None:
     request = route.calls.last.request
     assert request.headers["X-Vepathos-MCP-Service-Key"] == SERVICE_KEY
     assert "authorization" not in request.headers
+
+
+async def test_get_account_reports_a_core_without_the_route() -> None:
+    """Core does not serve /account yet: say so plainly instead of 'unexpected response'."""
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="Not Found")
+
+    client = VepathosApiClient(
+        "http://core.test", "svc", transport=httpx.MockTransport(handler), max_attempts=1
+    )
+    try:
+        with pytest.raises(DomainError) as excinfo:
+            await client.get_account(CallContext(authorization="Bearer t"))
+    finally:
+        await client.aclose()
+    assert "does not report account information yet" in excinfo.value.message
+    assert excinfo.value.retryable is False

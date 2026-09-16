@@ -5,9 +5,20 @@ from __future__ import annotations
 from mcp.server.mcpserver.tools import Tool
 from mcp_types import ToolAnnotations
 
-from vepathos_mcp.schemas.inputs import GeocodeInput, GetGeocodeInput, GetResultInput, OptimizeInput
+from vepathos_mcp.schemas.inputs import (
+    GeocodeInput,
+    GetAccountInput,
+    GetGeocodeInput,
+    GetResultInput,
+    ListFleetInput,
+    OptimizeInput,
+)
 from vepathos_mcp.schemas.jsonschema import inline_model_schema
 from vepathos_mcp.tools import descriptions
+from vepathos_mcp.tools.account import TOOL_NAME as GET_ACCOUNT_TOOL
+from vepathos_mcp.tools.account import make_get_account_tool
+from vepathos_mcp.tools.fleet import TOOL_NAME as LIST_FLEET_TOOL
+from vepathos_mcp.tools.fleet import make_list_fleet_tool
 from vepathos_mcp.tools.geocode import (
     GEOCODE_TOOL,
     GET_GEOCODE_TOOL,
@@ -87,7 +98,40 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
         structured_output=True,
     )
     get_geocode.parameters = inline_model_schema(GetGeocodeInput)
-    tools = [optimize, get_result, geocode, get_geocode]
+
+    get_account = Tool.from_function(
+        make_get_account_tool(deps),
+        name=GET_ACCOUNT_TOOL,
+        title=descriptions.GET_ACCOUNT_TITLE,
+        description=descriptions.GET_ACCOUNT_DESCRIPTION,
+        annotations=ToolAnnotations(
+            title=descriptions.GET_ACCOUNT_TITLE,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        structured_output=True,
+    )
+    get_account.parameters = inline_model_schema(GetAccountInput)
+
+    list_fleet = Tool.from_function(
+        make_list_fleet_tool(deps),
+        name=LIST_FLEET_TOOL,
+        title=descriptions.LIST_FLEET_TITLE,
+        description=descriptions.LIST_FLEET_DESCRIPTION,
+        annotations=ToolAnnotations(
+            title=descriptions.LIST_FLEET_TITLE,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        structured_output=True,
+    )
+    list_fleet.parameters = inline_model_schema(ListFleetInput)
+
+    tools = [optimize, get_result, geocode, get_geocode, get_account, list_fleet]
     if deps.settings.map_shares_enabled:
         from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
 

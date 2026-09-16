@@ -5,7 +5,7 @@ Do not invent a second Smart Import MCP or rebuild RouteHub / SI for this channe
 
 **Status after this run:** `https://mcp.vepathos.com` is live. `/health` 200, `/ready`
 `core: ok` + `signing_keys: ok`, unauthenticated `POST /mcp` → 401 + PRM, authenticated
-`tools/list` returns the four tools. Geocode/optimize smoke and Claude directory are **not**
+`tools/list` returns the six tools. Geocode/optimize smoke and Claude directory are **not**
 done. Registry / directory still need an explicit OK (`docs/publication-checklist.md`).
 
 ---
@@ -404,7 +404,8 @@ curl -sS -X POST https://mcp.vepathos.com/mcp \
 
 Expect SSE `event: message` and tools:
 
-`optimize_delivery_routes`, `get_optimization_result`, `geocode_addresses`, `get_geocode_result`.
+`optimize_delivery_routes`, `get_optimization_result`, `geocode_addresses`, `get_geocode_result`,
+`get_account`, `list_fleet`.
 
 Verified 2026-09-14 with a dashboard `vpt_…:vpt_sk_live_…` pair.
 

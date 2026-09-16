@@ -25,7 +25,10 @@ def test_plan_upgrade_stop_limit_message_uses_core_numbers() -> None:
     assert err.message == (
         "Your current Vepathos plan allows up to 500 stops per optimization. This request contains 2,430 stops."
     )
-    assert err.suggestion == "Reduce the number of stops or upgrade the Vepathos plan."
+    assert err.suggestion is not None
+    assert err.suggestion.startswith("Reduce the number of stops or upgrade the Vepathos plan.")
+    # Plan limits belong to an account, so the agent must be able to question the connection itself.
+    assert "get_account" in err.suggestion
     assert err.details["upgrade_url"].startswith("https://")
     assert err.details["eligible_plans"] == [{"id": "growth", "name": "Growth"}]
     assert err.retryable is False
@@ -80,3 +83,21 @@ def test_unknown_errors_by_status() -> None:
 def test_messages_are_clipped() -> None:
     err = from_core_error(400, envelope("INVALID_INPUT", "x" * 5000))
     assert len(err.message) <= 400
+
+
+def test_authentication_error_explains_accounts_and_how_to_switch() -> None:
+    err = from_core_error(401, envelope("AUTHENTICATION_REQUIRED", "nope"))
+    assert err.code is ErrorCode.AUTHENTICATION_REQUIRED
+    assert err.suggestion is not None
+    # Reconnecting is only half the fix: a stale grant keeps sending the user back to the old account.
+    assert "Connected apps" in err.suggestion and "revoked" in err.suggestion
+    assert "creates a free one" in err.suggestion
+    assert "get_account" in err.suggestion
+
+
+def test_quota_error_also_questions_the_connected_account() -> None:
+    err = from_core_error(
+        403, envelope("QUOTA_EXCEEDED", "", stops_remaining=10, requested=400, period_ends_at="2026-10-01")
+    )
+    assert err.code is ErrorCode.QUOTA_EXCEEDED
+    assert err.suggestion is not None and "get_account" in err.suggestion

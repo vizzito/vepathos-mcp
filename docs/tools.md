@@ -1,6 +1,6 @@
 # Tools
 
-Vepathos MCP exposes four tools. There is intentionally no cancel tool: a submitted
+Vepathos MCP exposes six tools. There is intentionally no cancel tool: a submitted
 optimization always runs to completion.
 
 | Tool | Title | Annotations |
@@ -9,10 +9,40 @@ optimization always runs to completion.
 | `get_geocode_result` | Get geocode result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `optimize_delivery_routes` | Optimize delivery routes | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `get_optimization_result` | Get optimization result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `list_fleet` | List fleet | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `get_account` | Get connected account | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 
 `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
+
+## `list_fleet`
+
+The vehicles and fleets the account already has, with capacity in kg and m³, shaped to drop into
+`optimize_delivery_routes` as `vehicles[]`. No arguments, read-only, charges no stops. `empty: true`
+means the account has no fleet loaded — then ask the user to describe it.
+
+Catalog ids are reshaped to the `vehicle_id` pattern optimize accepts (a RouteHub UUID is longer
+than the 32-character limit) and kept unique within each fleet, so the output can be passed through
+unchanged. Requires `GET /api/mcp/v1/catalog` in Core.
+
+Use it before planning a real delivery day: a fleet invented in conversation produces a geometric
+plan that ignores what each vehicle carries, and route ids nobody in the operation recognises.
+
+## `get_account`
+
+Reports which Vepathos account the connection uses and what its plan allows: `account_label`
+(company name, or an email masked to `m***@domain`), `account_id`, `plan` (name, stops per
+optimization, fleet and route limits, features, concurrent optimizations), `usage` (stops used and
+remaining, period dates) and `full_trial_available`. Takes no arguments — the account comes from the
+credential, and cannot be chosen per call. Read-only and free: it charges no stops.
+
+It exists because a client can be connected to a different account than the user assumes (an older
+sign-in, a second company, an account created during OAuth), which otherwise only surfaces as a plan
+or quota rejection. Plan and quota errors therefore also carry `details.connected_account` with the
+same label, cached briefly per caller.
+
+Requires `GET /api/mcp/v1/account` in Core; until Core serves it, the tool returns a not-found error.
 
 ## `geocode_addresses`
 

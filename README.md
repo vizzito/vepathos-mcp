@@ -14,6 +14,8 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `get_geocode_result` | Read geocode status and pins. |
 | `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
 | `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
+| `get_account` | Read which Vepathos account is connected, its plan limits and period usage. |
+| `list_fleet` | Read the account's own vehicles and fleets, ready to pass to an optimization. |
 
 There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
 through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.

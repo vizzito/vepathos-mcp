@@ -384,6 +384,14 @@ class GetGeocodeInput(StrictModel):
     )
 
 
+class ListFleetInput(StrictModel):
+    """Arguments of list_fleet. It takes none: the catalog belongs to the connected account."""
+
+
+class GetAccountInput(StrictModel):
+    """Arguments of get_account. It takes none: the account comes from the connection itself."""
+
+
 def coerce_json_fields(arguments: dict[str, Any], *keys: str) -> dict[str, Any]:
     """Inspector `--tool-arg key=[...]` leaves arrays/objects as JSON strings."""
 
@@ -412,6 +420,20 @@ def parse_geocode_input(arguments: dict[str, Any] | None) -> GeocodeInput:
 def parse_get_geocode_input(arguments: dict[str, Any] | None) -> GetGeocodeInput:
     try:
         return GetGeocodeInput.model_validate(arguments or {})
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
+
+
+def parse_get_account_input(arguments: dict[str, Any] | None) -> GetAccountInput:
+    try:
+        return GetAccountInput.model_validate(arguments or {})
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
+
+
+def parse_list_fleet_input(arguments: dict[str, Any] | None) -> ListFleetInput:
+    try:
+        return ListFleetInput.model_validate(arguments or {})
     except ValidationError as exc:
         raise validation_error_to_domain(exc) from None
 

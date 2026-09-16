@@ -25,6 +25,89 @@ The Core rejects any account/user/company identifier supplied in headers or body
 Reachability probe for `/ready` in `vepathos-mcp`. Requires only `X-Vepathos-MCP-Service-Key`,
 touches no account, database or optimizer, and returns `200 {"status": "ok"}`.
 
+## `GET /api/mcp/v1/account`
+
+Who the caller's credential belongs to, and what its plan allows. Read-only: it starts no job,
+charges no stop quota and is not rate limited beyond the generic call limit. The account is derived
+from `Authorization` like every other call — there is no account parameter.
+
+`vepathos-mcp` publishes this as the `get_account` tool so an agent can tell the user which account
+a client is connected to (connecting with a second identity is the usual cause of "my plan is
+bigger than this"), and it uses the label to name the account in plan and quota errors.
+
+```json
+{
+  "account": {
+    "account_id": "acct_7f3c…",
+    "email": "m***@stormtech.com"
+  },
+  "plan": {
+    "id": "free",
+    "name": "Free",
+    "max_stops_per_request": 150,
+    "unlimited_stops_per_request": false,
+    "max_fleet_units": 50,
+    "max_stops_per_route": null,
+    "features": ["time_windows"],
+    "max_active_optimizations": 1
+  },
+  "usage": {
+    "stops_limit": 2000,
+    "stops_used": 236,
+    "stops_remaining": 1764,
+    "period_start": "2026-09-01T00:00:00Z",
+    "period_end": "2026-10-01T00:00:00Z"
+  },
+  "full_trial_available": true
+}
+```
+
+`null` in a limit means unlimited; `unlimited_stops_per_request` states it explicitly so an absent
+field and an unlimited plan stay distinguishable. `features` uses the same names the entitlement
+check rejects requests with (`time_windows`, `weight_capacity`, `volume_capacity`,
+`minimize_duration`), so this route can never advertise a constraint an optimization would refuse.
+
+**`email` is already masked by Core** (`m***@domain`): the full address never crosses this channel.
+`vepathos-mcp` masks again anyway — masking is idempotent — so a Core that sent a full address
+would still not expose it to an agent. `company_name` is optional and currently unused: Core has no
+organization name today, and a personal display name must not be presented as one. Every field is
+optional: a Core that omits `usage`, say, yields a result without it rather than an error. An
+unauthorized credential returns the usual `401 AUTHENTICATION_REQUIRED` / `INVALID_CREDENTIALS`.
+
+## `GET /api/mcp/v1/catalog`
+
+The account's own fleets and vehicles, so an optimization can use the real fleet. Read-only, no
+stop quota: `GET /fleets` and `GET /vehicles` are not billable triggers. Scoped to the caller's
+company by the RouteHub tenant guard.
+
+```json
+{
+  "fleets": [
+    {
+      "fleet_id": "7",
+      "name": "Reparto AM",
+      "total_units": 3,
+      "vehicles": [
+        { "vehicle_id": "v1", "name": "Sprinter 1", "count": 2, "max_weight_kg": 1200, "max_volume_m3": null }
+      ]
+    }
+  ],
+  "vehicles": [
+    { "vehicle_id": "v9", "name": "KIA", "count": null, "max_weight_kg": 800, "max_volume_m3": 6 }
+  ]
+}
+```
+
+Core converts every capacity to **kilograms and cubic metres** (the channel's units) and drops a
+value whose unit it does not recognise: a wrong capacity plans a route that cannot be loaded, which
+is worse than an unconstrained one. `vehicles[]` is the whole account catalog, `fleets[]` groups it
+as the user does; both are present because a vehicle can belong to no fleet.
+
+`vehicle_id` is the catalog id and may not fit `optimize_delivery_routes` (max 32 chars, letters,
+digits, `_`, `-`, `.`): `vepathos-mcp` reshapes it before publishing, keeping it unique per fleet.
+When neither resource answers, Core returns `503 BACKEND_UNAVAILABLE`; when only one fails, the
+other is still returned.
+
 ## `POST /api/mcp/v1/optimization/jobs`
 
 Create an asynchronous optimization job.

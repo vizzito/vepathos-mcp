@@ -170,3 +170,91 @@ class GeocodeResult(OutputModel):
         if success == (self.error is not None):
             raise ValueError("output must contain either a geocode result or an error")
         return self
+
+
+class AccountPlan(OutputModel):
+    id: str | None = None
+    name: str | None = Field(None, description="Plan name as Vepathos shows it, e.g. Free or Enterprise.")
+    max_stops_per_request: int | None = Field(
+        None, description="Stops allowed in one optimize_delivery_routes call. Null when unlimited."
+    )
+    max_fleet_units: int | None = Field(
+        None, description="Vehicles allowed per optimization. Null when unlimited."
+    )
+    max_stops_per_route: int | None = Field(
+        None, description="Stops allowed on one route. Null when unlimited."
+    )
+    max_active_optimizations: int | None = Field(None, description="Optimizations that may run at once.")
+    features: list[str] | None = Field(
+        None,
+        description="Constraints this plan includes, e.g. time_windows, weight_capacity, volume_capacity.",
+    )
+
+
+class AccountUsage(OutputModel):
+    stops_limit: int | None = Field(
+        None, description="Stops included in the billing period. Null when unlimited."
+    )
+    stops_used: int | None = None
+    stops_remaining: int | None = None
+    period_start: str | None = None
+    period_end: str | None = Field(None, description="When the period's stop quota renews.")
+
+
+class AccountInfo(OutputModel):
+    """Output of get_account: which Vepathos account this connection uses, and what it allows."""
+
+    account_label: str | None = Field(
+        None,
+        description="Human-readable owner of the connected account: company name, or a masked email.",
+    )
+    account_id: str | None = Field(None, description="Vepathos account id. Use it to tell accounts apart.")
+    plan: AccountPlan | None = None
+    usage: AccountUsage | None = None
+    full_trial_available: bool | None = Field(
+        None, description="Whether the one-time full-feature optimization is still unused."
+    )
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> AccountInfo:
+        if (self.plan is not None) == (self.error is not None):
+            raise ValueError("output must contain either account information or an error")
+        return self
+
+
+class FleetVehicle(OutputModel):
+    """A vehicle as the account has it, shaped to drop straight into optimize_delivery_routes."""
+
+    vehicle_id: str = Field(description="Pass as vehicles[].vehicle_id so routes name the real vehicle.")
+    name: str | None = Field(None, description="Label the account gave it, for talking to the user.")
+    count: int | None = Field(None, description="Units of this vehicle in the fleet.")
+    max_weight_kg: float | None = Field(None, description="Payload capacity, kg. Null when not set.")
+    max_volume_m3: float | None = Field(None, description="Cargo volume, m3. Null when not set.")
+
+
+class Fleet(OutputModel):
+    fleet_id: str
+    name: str | None = None
+    total_units: int | None = Field(None, description="Vehicles in the fleet, counting repeats.")
+    vehicles: list[FleetVehicle] = Field(default_factory=list)
+
+
+class FleetCatalog(OutputModel):
+    """Output of list_fleet: the account's own fleets and vehicles."""
+
+    fleets: list[Fleet] | None = None
+    vehicles: list[FleetVehicle] | None = Field(
+        None, description="Vehicles in the account, including any that belong to no fleet."
+    )
+    empty: bool | None = Field(
+        None,
+        description="True when the account has no fleet loaded: ask the user to describe the vehicles.",
+    )
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_variant(self) -> FleetCatalog:
+        if (self.fleets is not None) == (self.error is not None):
+            raise ValueError("output must contain either a catalog or an error")
+        return self

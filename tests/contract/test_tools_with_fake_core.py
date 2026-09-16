@@ -48,7 +48,13 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
         "get_optimization_result",
         "geocode_addresses",
         "get_geocode_result",
+        "get_account",
+        "list_fleet",
     }
+    account = tools["get_account"]
+    assert account.annotations is not None and account.annotations.read_only_hint is True
+    assert account.input_schema["additionalProperties"] is False
+    assert not account.input_schema.get("required")
 
     optimize = tools["optimize_delivery_routes"]
     assert optimize.annotations is not None
@@ -215,3 +221,81 @@ async def test_validation_errors_are_structured(mcp_client: Callable[..., Any]) 
     assert is_error
     assert payload["error"]["code"] == "INVALID_INPUT"
     assert payload["error"]["details"]["issues"][0]["path"] == "return_to_depot"
+
+
+async def test_get_account_reports_the_connected_account_and_its_limits(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    core_state.company_name = "Stormtech SRL"
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "get_account", {})
+    assert not is_error, payload
+    assert payload["account_label"] == "Stormtech SRL"
+    assert payload["plan"]["name"] == "Free" and payload["plan"]["max_stops_per_request"] == 150
+    assert payload["usage"]["stops_limit"] == 2000 and payload["usage"]["stops_remaining"] == 2000
+
+
+async def test_get_account_masks_the_email_when_there_is_no_company(
+    mcp_client: Callable[..., Any],
+) -> None:
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "get_account", {})
+    assert not is_error, payload
+    assert payload["account_label"].startswith("a***@") and "@example.test" in payload["account_label"]
+
+
+async def test_get_account_rejects_arguments(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "get_account", {"account_id": "acct_other"})
+    assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+
+
+async def test_plan_error_names_the_connected_account(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    core_state.company_name = "Stormtech SRL"
+    core_state.trial_used.add(
+        "acct_" + __import__("hashlib").sha256(("vpt_" + "a" * 24).encode()).hexdigest()[:12]
+    )
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "optimize_delivery_routes", sample_arguments(stops=400))
+    assert is_error
+    error = payload["error"]
+    assert error["details"]["connected_account"] == "Stormtech SRL"
+    assert "Stormtech SRL" in error["suggestion"] and "get_account" in error["suggestion"]
+
+
+async def test_list_fleet_returns_the_account_catalog(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    core_state.fleets = [
+        {
+            "fleet_id": "7",
+            "name": "Reparto AM",
+            "total_units": 3,
+            "vehicles": [
+                {"vehicle_id": "v1", "name": "Sprinter", "count": 2, "max_weight_kg": 1200.0},
+                {"vehicle_id": "v2", "name": "KIA", "count": 1, "max_volume_m3": 6.0},
+            ],
+        }
+    ]
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "list_fleet", {})
+    assert not is_error, payload
+    assert payload["fleets"][0]["name"] == "Reparto AM"
+    assert [v["vehicle_id"] for v in payload["fleets"][0]["vehicles"]] == ["v1", "v2"]
+    assert payload["fleets"][0]["vehicles"][0]["max_weight_kg"] == 1200.0
+    assert "empty" not in payload
+
+
+async def test_list_fleet_flags_an_account_with_no_fleet(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "list_fleet", {})
+    assert not is_error, payload
+    assert payload["empty"] is True
+
+
+async def test_list_fleet_rejects_arguments(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        is_error, payload = await call(client, "list_fleet", {"fleet_id": "7"})
+    assert is_error and payload["error"]["code"] == "INVALID_INPUT"

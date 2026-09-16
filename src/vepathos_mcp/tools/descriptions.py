@@ -13,7 +13,21 @@ SERVER_INSTRUCTIONS = (
     "they accept, or they send corrected addresses. Never invent pins for unresolved stops. Review "
     "means band=review or confidence below 0.8. Then pass only confirmed pins to "
     "optimize_delivery_routes. Use get_geocode_result / get_optimization_result while a job runs. "
-    "Units: kilograms, cubic meters, kilometers, minutes, local HH:MM times."
+    "Units: kilograms, cubic meters, kilometers, minutes, local HH:MM times. "
+    "Before optimizing a real delivery day, call list_fleet and use the account's own vehicles and "
+    "capacities; invent a fleet only for what-if questions, and say so. When the account fleet does "
+    "not match what the user asked for — a different number of vehicles, or no capacity loaded — "
+    "say what the fleet has and ask which to use before optimizing, instead of silently choosing "
+    "one. The user may always override it with a fleet they describe. "
+    "Every call runs on the Vepathos account the connector is signed in to, and that account's plan "
+    "sets the limits (stops per optimization, fleet size, constraints, monthly quota). Call "
+    "get_account when the user asks which account or plan is connected, before a first large "
+    "optimization, and whenever a request is rejected for the plan, the quota or authorization: say "
+    "which account is connected, because the usual cause is being connected to a different account "
+    "than the user means, not a limit that has to be raised. Connecting a client signs the user in "
+    "to Vepathos and creates a free account if they have none; a different sign-in is a different "
+    "account. To change accounts the user revokes the grant in Connected apps in the Vepathos "
+    "dashboard and then reconnects, since the previous grant is otherwise reused."
 )
 
 OPTIMIZE_TITLE = "Optimize delivery routes"
@@ -27,6 +41,31 @@ OPTIMIZE_DESCRIPTION = (
     "Results stay available for 24 hours. Uses stops from the connected Vepathos account plan; a request that "
     "exceeds the plan, or needs a constraint the plan does not include, is rejected with an explanation and is "
     "never partially applied. Calling again with identical arguments returns the same optimization."
+)
+
+LIST_FLEET_TITLE = "List fleet"
+LIST_FLEET_DESCRIPTION = (
+    "List the vehicles and fleets the connected Vepathos account already has, with capacity in "
+    "kilograms and cubic meters, ready to pass as vehicles[] to optimize_delivery_routes. Takes no "
+    "arguments; read-only and it does not consume plan stops. Call it before optimizing for a real "
+    "delivery day, so the plan respects what each vehicle carries and every route names a vehicle "
+    "the operation recognises, instead of a fleet invented in the conversation. When empty is true "
+    "the account has no fleet loaded: ask the user to describe the vehicles, or let them add the "
+    "fleet in the Vepathos dashboard first. A made-up fleet is still fine for a what-if question, "
+    "but say that is what it is."
+)
+
+GET_ACCOUNT_TITLE = "Get connected account"
+GET_ACCOUNT_DESCRIPTION = (
+    "Show which Vepathos account this connection uses and what its plan allows: account label "
+    "(company name, or a masked email), plan name, maximum stops per optimization, fleet and route "
+    "limits, the constraints the plan includes, and the stops used and remaining in the current "
+    "billing period. Takes no arguments: the account comes from the connection itself, and cannot "
+    "be chosen per call. Read-only, and it does not consume plan stops. Use it to answer which "
+    "account or plan is connected, to check limits before a large optimization, and to diagnose a "
+    "rejection for the plan, the quota or authorization — a client is often connected to a "
+    "different account than the user expects, in which case the fix is to reconnect as the right "
+    "user, not to change the plan."
 )
 
 GET_RESULT_TITLE = "Get optimization result"

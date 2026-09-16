@@ -27,6 +27,8 @@ from pydantic import BaseModel, ValidationError
 from vepathos_mcp import __version__
 from vepathos_mcp.clients.breaker import CircuitBreaker
 from vepathos_mcp.clients.core_models import (
+    CoreAccount,
+    CoreCatalog,
     CoreGeocodeCreated,
     CoreGeocodeResult,
     CoreJobCreated,
@@ -162,6 +164,46 @@ class VepathosApiClient:
         )
         return self._parse(MapCreated, data)
 
+    async def get_account(self, call: CallContext) -> CoreAccount:
+        """Who the caller's credential belongs to, plus plan limits and period usage."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/account",
+            call,
+            operation="account",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not report account information yet.",
+                suggestion=(
+                    "Skip get_account. To see which Vepathos account is connected, the user can open "
+                    "Connected apps in the Vepathos dashboard."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAccount, data)
+
+    async def get_catalog(self, call: CallContext) -> CoreCatalog:
+        """The account's own fleets and vehicles, already in kilograms and cubic metres."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/catalog",
+            call,
+            operation="catalog",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not expose the vehicle catalog yet.",
+                suggestion=(
+                    "Skip list_fleet and ask the user to describe the fleet, then pass those vehicles "
+                    "to optimize_delivery_routes."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreCatalog, data)
+
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""
 
@@ -188,6 +230,7 @@ class VepathosApiClient:
         params: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         request_timeout: float | None = None,
+        absent_error: DomainError | None = None,
     ) -> Any:
         if self._breaker.is_open:
             raise DomainError(
@@ -253,7 +296,11 @@ class VepathosApiClient:
                     else:
                         # A 4xx means Core is reachable and answered deliberately.
                         self._breaker.record_success()
-                    raise from_core_error(response.status_code, _json(response), retry_after)
+                    payload = _json(response)
+                    if response.status_code == 404 and absent_error is not None and payload is None:
+                        # No error envelope on a 404: this Core build does not serve the route.
+                        raise absent_error
+                    raise from_core_error(response.status_code, payload, retry_after)
                 else:
                     self._breaker.record_success()
                     payload = _json(response)
