@@ -451,6 +451,18 @@ Kill switch: `MCP_CHANNEL_ENABLED=false` + api-doc recreate, no `--build`. Web/R
 | Inspector CLI OAuth error | CLI follows PRM | `curl` + Bearer |
 | Consent shows `127.0.0.1` | Inspector local callback | Expected; not prod Claude |
 
+## Pitfalls (2026-09-16)
+
+Diagnosis of client symptoms is in [runbook-incidents.md](runbook-incidents.md).
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Edited `.env`, nothing changed | `docker restart` keeps the old environment | Deploy command from § 4 with `--force-recreate --no-build` |
+| `up` did not recreate the container | `CADDY_VETH_IP` not exported in this shell; Compose aborts on `${CADDY_VETH_IP:?}` | Export it again (§ 4) and read the `up` output, not only `docker ps` |
+| `optimize_delivery_routes` answers with `preflight`, nothing runs | `MCP_CONFIRM_BEFORE_OPTIMIZE` defaults to `true` | Set `false` in the adapter `.env`, recreate |
+| `docker logs … \| grep` shows unrelated lines | Logs are on stderr | `docker logs … 2>&1 \| grep …` |
+| `jq: parse error` on `/.well-known/oauth-authorization-server` | Asked the MCP host; that document is on `api.vepathos.com` | `curl https://api.vepathos.com/.well-known/oauth-authorization-server` |
+
 ---
 
 ## Rollback
