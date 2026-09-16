@@ -12,6 +12,10 @@ class MapCreated(BaseModel):
     expires_at: AwareDatetime
     access: Literal["anyone_with_link"]
     notice: str = "Anyone with this link can view the delivery locations until expires_at."
+    # Echoed for telemetry: tool_call logs read optimization_id from structured output.
+    optimization_id: str | None = Field(
+        None, description="Optimization this map belongs to (same id passed to the tool)."
+    )
     language: Literal["en", "es", "pt"] | None = Field(
         None,
         description="Language the map page opens in. Null: the viewer's browser language.",
@@ -27,6 +31,7 @@ class MapOutput(BaseModel):
     expires_at: AwareDatetime | None = None
     access: Literal["anyone_with_link"] | None = None
     notice: str | None = None
+    optimization_id: str | None = None
     language: Literal["en", "es", "pt"] | None = None
     error: dict[str, Any] | None = None
 

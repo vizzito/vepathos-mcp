@@ -77,7 +77,11 @@ def make_map_tool(deps: ToolDeps) -> Any:
                 raise validation_error_to_domain(exc) from None
             deps.rate_limiter.check(identity.subject, "calls")
             result = await deps.core.create_map(identity.call, inp.optimization_id)
-            return success_result(with_map_language(result, map_language(inp.language)))
+            # Echo optimization_id so tool_call logs are not null (Core map body omits it).
+            echoed = MapCreated.model_validate(
+                {**result.model_dump(mode="json"), "optimization_id": inp.optimization_id}
+            )
+            return success_result(with_map_language(echoed, map_language(inp.language)))
 
         return await instrumented("create_optimization_map", ctx, deps, handle)
 
