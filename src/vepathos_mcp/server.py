@@ -25,7 +25,7 @@ def build_auth_settings(settings: Settings) -> AuthSettings:
         issuer_url=settings.oauth_issuer if oauth else settings.core_base_url,  # type: ignore[arg-type]
         # Protected Resource Metadata (RFC 9728) is only advertised when OAuth is enabled.
         resource_server_url=settings.resource_url if oauth else None,  # type: ignore[arg-type]
-        required_scopes=[settings.oauth_scope],
+        required_scopes=settings.oauth_advertised_scopes,
         # The verifier checks the audience itself (and API keys carry no audience).
         validate_token_resource=False if oauth else None,
     )

@@ -65,7 +65,14 @@ class Settings(BaseSettings):
     auth_modes_raw: str = Field("service", validation_alias=_env("AUTH_MODES"))
     oauth_issuer: str = Field("https://api.vepathos.com", validation_alias=_env("OAUTH_ISSUER"))
     oauth_jwks_url: str = Field("https://api.vepathos.com/api/jwks", validation_alias=_env("OAUTH_JWKS_URL"))
+    # Required on every bearer (verifier + Auth.js token exchange). Prefer mcp:optimize in new
+    # deployments; "optimize" remains the historical ChatGPT connector value.
     oauth_scope: str = Field("optimize", validation_alias=_env("OAUTH_SCOPE"))
+    # Scopes advertised in Protected Resource Metadata. Defaults to oauth_scope when unset so a
+    # single-var deploy still works; set OAUTH_ADVERTISED_SCOPES when announcing ≠ requiring.
+    oauth_advertised_scopes_raw: str = Field(
+        "", validation_alias=_env("OAUTH_ADVERTISED_SCOPES")
+    )
     service_credential: SecretStr | None = Field(None, validation_alias=_env("VEPATHOS_SERVICE_CREDENTIAL"))
     dev_bearer_token: SecretStr | None = Field(None, validation_alias=_env("MCP_DEV_BEARER_TOKEN"))
     account_hash_salt: SecretStr = Field(
@@ -113,6 +120,16 @@ class Settings(BaseSettings):
     def resource_url(self) -> str:
         """Canonical MCP resource URI (RFC 8707 / RFC 9728), e.g. https://mcp.vepathos.com/mcp."""
         return self.public_url.rstrip("/") + self.mcp_path
+
+    @property
+    def oauth_advertised_scopes(self) -> list[str]:
+        """Scopes listed in PRM / AuthSettings. Defaults to the required oauth_scope alone."""
+
+        raw = self.oauth_advertised_scopes_raw.strip()
+        if not raw:
+            return [self.oauth_scope]
+        scopes = [part.strip() for part in raw.replace(",", " ").split() if part.strip()]
+        return scopes or [self.oauth_scope]
 
     @property
     def allowed_host_list(self) -> list[str]:
