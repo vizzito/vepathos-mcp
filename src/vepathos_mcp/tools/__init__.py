@@ -27,6 +27,26 @@ from vepathos_mcp.tools.geocode import (
     make_geocode_tool,
     make_get_geocode_tool,
 )
+from vepathos_mcp.tools.import_tools import (
+    GET_IMPORT_TOOL,
+    IMPORT_FILE_TOOL,
+    IMPORT_TEXT_TOOL,
+    LIST_DATASETS_TOOL,
+    OPTIMIZE_DATASET_TOOL,
+    UPDATE_MAPPING_TOOL,
+    GetImportInput,
+    ImportFileInput,
+    ImportTextInput,
+    ListDatasetsInput,
+    OptimizeDatasetInput,
+    UpdateMappingInput,
+    make_get_import_tool,
+    make_import_file_tool,
+    make_import_text_tool,
+    make_list_datasets_tool,
+    make_optimize_dataset_tool,
+    make_update_mapping_tool,
+)
 from vepathos_mcp.tools.optimize import TOOL_NAME as OPTIMIZE_TOOL
 from vepathos_mcp.tools.optimize import make_optimize_tool
 from vepathos_mcp.tools.results import TOOL_NAME as GET_RESULT_TOOL
@@ -45,118 +65,158 @@ def optimize_schema(*, confirm_before_optimize: bool) -> dict[str, Any]:
     return {**schema, "properties": properties}
 
 
+def _tool(
+    fn: Any,
+    *,
+    name: str,
+    title: str,
+    description: str,
+    schema_model: type,
+    read_only: bool,
+    confirm_before_optimize: bool | None = None,
+) -> Tool:
+    tool = Tool.from_function(
+        fn,
+        name=name,
+        title=title,
+        description=description,
+        annotations=ToolAnnotations(
+            title=title,
+            read_only_hint=read_only,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        structured_output=True,
+    )
+    if confirm_before_optimize is not None and name == OPTIMIZE_TOOL:
+        tool.parameters = optimize_schema(confirm_before_optimize=confirm_before_optimize)
+    elif confirm_before_optimize is not None and name == OPTIMIZE_DATASET_TOOL:
+        schema = inline_model_schema(schema_model)
+        if not confirm_before_optimize:
+            schema = {
+                **schema,
+                "properties": {k: v for k, v in schema["properties"].items() if k != "confirmed"},
+            }
+        tool.parameters = schema
+    else:
+        tool.parameters = inline_model_schema(schema_model)
+    return tool
+
+
 def build_tools(deps: ToolDeps) -> list[Tool]:
-    confirm_before_optimize = deps.settings.confirm_before_optimize
-    optimize = Tool.from_function(
-        make_optimize_tool(deps),
-        name=OPTIMIZE_TOOL,
-        title=descriptions.OPTIMIZE_TITLE,
-        description=descriptions.optimize_description(confirm_before_optimize=confirm_before_optimize),
-        annotations=ToolAnnotations(
+    confirm = deps.settings.confirm_before_optimize
+    tools = [
+        _tool(
+            make_optimize_tool(deps),
+            name=OPTIMIZE_TOOL,
             title=descriptions.OPTIMIZE_TITLE,
-            read_only_hint=False,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.optimize_description(confirm_before_optimize=confirm),
+            schema_model=OptimizeInput,
+            read_only=False,
+            confirm_before_optimize=confirm,
         ),
-        structured_output=True,
-    )
-    # Handlers read and validate the raw arguments themselves (strict, with structured errors);
-    # the published schema is the strict model's schema.
-    optimize.parameters = optimize_schema(confirm_before_optimize=confirm_before_optimize)
-
-    get_result = Tool.from_function(
-        make_get_result_tool(deps),
-        name=GET_RESULT_TOOL,
-        title=descriptions.GET_RESULT_TITLE,
-        description=descriptions.GET_RESULT_DESCRIPTION,
-        annotations=ToolAnnotations(
+        _tool(
+            make_get_result_tool(deps),
+            name=GET_RESULT_TOOL,
             title=descriptions.GET_RESULT_TITLE,
-            read_only_hint=True,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.GET_RESULT_DESCRIPTION,
+            schema_model=GetResultInput,
+            read_only=True,
         ),
-        structured_output=True,
-    )
-    get_result.parameters = inline_model_schema(GetResultInput)
-
-    geocode = Tool.from_function(
-        make_geocode_tool(deps),
-        name=GEOCODE_TOOL,
-        title=descriptions.GEOCODE_TITLE,
-        description=descriptions.GEOCODE_DESCRIPTION,
-        annotations=ToolAnnotations(
+        _tool(
+            make_import_file_tool(deps),
+            name=IMPORT_FILE_TOOL,
+            title=descriptions.IMPORT_FILE_TITLE,
+            description=descriptions.IMPORT_FILE_DESCRIPTION,
+            schema_model=ImportFileInput,
+            read_only=False,
+        ),
+        _tool(
+            make_import_text_tool(deps),
+            name=IMPORT_TEXT_TOOL,
+            title=descriptions.IMPORT_TEXT_TITLE,
+            description=descriptions.IMPORT_TEXT_DESCRIPTION,
+            schema_model=ImportTextInput,
+            read_only=False,
+        ),
+        _tool(
+            make_get_import_tool(deps),
+            name=GET_IMPORT_TOOL,
+            title=descriptions.GET_IMPORT_TITLE,
+            description=descriptions.GET_IMPORT_DESCRIPTION,
+            schema_model=GetImportInput,
+            read_only=True,
+        ),
+        _tool(
+            make_update_mapping_tool(deps),
+            name=UPDATE_MAPPING_TOOL,
+            title=descriptions.UPDATE_MAPPING_TITLE,
+            description=descriptions.UPDATE_MAPPING_DESCRIPTION,
+            schema_model=UpdateMappingInput,
+            read_only=False,
+        ),
+        _tool(
+            make_optimize_dataset_tool(deps),
+            name=OPTIMIZE_DATASET_TOOL,
+            title=descriptions.OPTIMIZE_DATASET_TITLE,
+            description=descriptions.optimize_dataset_description(confirm_before_optimize=confirm),
+            schema_model=OptimizeDatasetInput,
+            read_only=False,
+            confirm_before_optimize=confirm,
+        ),
+        _tool(
+            make_list_datasets_tool(deps),
+            name=LIST_DATASETS_TOOL,
+            title=descriptions.LIST_DATASETS_TITLE,
+            description=descriptions.LIST_DATASETS_DESCRIPTION,
+            schema_model=ListDatasetsInput,
+            read_only=True,
+        ),
+        _tool(
+            make_geocode_tool(deps),
+            name=GEOCODE_TOOL,
             title=descriptions.GEOCODE_TITLE,
-            read_only_hint=False,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.GEOCODE_DESCRIPTION,
+            schema_model=GeocodeInput,
+            read_only=False,
         ),
-        structured_output=True,
-    )
-    geocode.parameters = inline_model_schema(GeocodeInput)
-
-    get_geocode = Tool.from_function(
-        make_get_geocode_tool(deps),
-        name=GET_GEOCODE_TOOL,
-        title=descriptions.GET_GEOCODE_TITLE,
-        description=descriptions.GET_GEOCODE_DESCRIPTION,
-        annotations=ToolAnnotations(
+        _tool(
+            make_get_geocode_tool(deps),
+            name=GET_GEOCODE_TOOL,
             title=descriptions.GET_GEOCODE_TITLE,
-            read_only_hint=True,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.GET_GEOCODE_DESCRIPTION,
+            schema_model=GetGeocodeInput,
+            read_only=True,
         ),
-        structured_output=True,
-    )
-    get_geocode.parameters = inline_model_schema(GetGeocodeInput)
-
-    get_account = Tool.from_function(
-        make_get_account_tool(deps),
-        name=GET_ACCOUNT_TOOL,
-        title=descriptions.GET_ACCOUNT_TITLE,
-        description=descriptions.GET_ACCOUNT_DESCRIPTION,
-        annotations=ToolAnnotations(
+        _tool(
+            make_get_account_tool(deps),
+            name=GET_ACCOUNT_TOOL,
             title=descriptions.GET_ACCOUNT_TITLE,
-            read_only_hint=True,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.GET_ACCOUNT_DESCRIPTION,
+            schema_model=GetAccountInput,
+            read_only=True,
         ),
-        structured_output=True,
-    )
-    get_account.parameters = inline_model_schema(GetAccountInput)
-
-    list_fleet = Tool.from_function(
-        make_list_fleet_tool(deps),
-        name=LIST_FLEET_TOOL,
-        title=descriptions.LIST_FLEET_TITLE,
-        description=descriptions.LIST_FLEET_DESCRIPTION,
-        annotations=ToolAnnotations(
+        _tool(
+            make_list_fleet_tool(deps),
+            name=LIST_FLEET_TOOL,
             title=descriptions.LIST_FLEET_TITLE,
-            read_only_hint=True,
-            destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            description=descriptions.LIST_FLEET_DESCRIPTION,
+            schema_model=ListFleetInput,
+            read_only=True,
         ),
-        structured_output=True,
-    )
-    list_fleet.parameters = inline_model_schema(ListFleetInput)
-
-    tools = [optimize, get_result, geocode, get_geocode, get_account, list_fleet]
+    ]
     if deps.settings.map_shares_enabled:
         from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
 
-        share = Tool.from_function(
-            make_map_tool(deps), name="create_optimization_map", title="Create route map",
-            description=DESCRIPTION,
-            annotations=ToolAnnotations(
-                read_only_hint=False, destructive_hint=False,
-                idempotent_hint=True, open_world_hint=False,
-            ), structured_output=True,
+        tools.append(
+            _tool(
+                make_map_tool(deps),
+                name="create_optimization_map",
+                title="Create route map",
+                description=DESCRIPTION,
+                schema_model=CreateMapInput,
+                read_only=False,
+            )
         )
-        share.parameters = inline_model_schema(CreateMapInput)
-        tools.append(share)
     return tools

@@ -1,4 +1,20 @@
-"""The instructions and descriptions are product surface and cost tokens in every conversation."""
+"""Model-facing text. Descriptions are part of the product: precise, factual, no promotion.
+
+Two audiences, no overlap:
+
+- server_instructions(): the order of work and when to ask the user. Read once per session, and some
+  clients truncate or never show it, so nothing here may be the only place a rule lives.
+- Tool descriptions: what one tool does and when to call it. These always reach the model, so every
+  rule that governs a single tool belongs in that tool's description.
+
+Both are sent in every conversation, so they are written to be short.
+
+Text about confirming a charge follows `MCP_CONFIRM_BEFORE_OPTIMIZE`, so it is built per server rather
+than fixed: a client told its first call is free, when the server optimizes and charges on it,
+reports a real charged plan as a preview.
+
+Keep them consistent with the Core capability matrix (docs/tools.md).
+"""
 
 from __future__ import annotations
 
@@ -6,16 +22,16 @@ import pytest
 
 from vepathos_mcp.tools import descriptions as d
 
-# Roughly 1,600 tokens. Raising this is a decision, not an accident: every conversation pays it.
-# Raised from 6,000 to buy the confirmation preflight in the optimize description: optimizing spends
-# the user's stops, and the rule that guards that has to reach clients which hide server instructions.
-MAX_TOTAL_CHARS = 6_400
-MAX_INSTRUCTION_CHARS = 2_000
+# Roughly 2,000 tokens. Raised with import/dataset tools (0.4.0); every conversation pays it.
+MAX_TOTAL_CHARS = 9_500
+MAX_INSTRUCTION_CHARS = 2_400
 
 TOOL_NAMES = (
     "geocode_addresses",
     "list_fleet",
     "get_account",
+    "import_delivery_file",
+    "optimize_dataset",
     "optimize_delivery_routes",
     "get_optimization_result",
 )
@@ -36,6 +52,7 @@ def all_text(gate: bool) -> dict[str, str]:
         **fixed,
         "server_instructions": d.server_instructions(confirm_before_optimize=gate),
         "optimize_description": d.optimize_description(confirm_before_optimize=gate),
+        "optimize_dataset_description": d.optimize_dataset_description(confirm_before_optimize=gate),
     }
 
 
@@ -56,17 +73,17 @@ def test_instructions_order_the_work_around_the_real_tools(gate: bool) -> None:
 @EACH_GATE_SETTING
 def test_instructions_state_when_to_ask_instead_of_guessing(gate: bool) -> None:
     text = d.server_instructions(confirm_before_optimize=gate).lower()
-    assert "depot, when it is not known" in text
+    assert "depot when unknown" in text
     assert "one question at the moment it matters" in text
-    # Offering a constraint the plan lacks produces a rejection the user cannot act on.
     assert "only when get_account lists that feature" in text
+    assert "min_stops" in text
 
 
 def test_tool_rules_live_in_the_tool_description_clients_always_receive() -> None:
-    # Clients may truncate or hide server instructions, so these must not depend on them.
     assert "do not invent coordinates" in d.GEOCODE_DESCRIPTION.lower()
     assert "empty=true" in d.LIST_FLEET_DESCRIPTION
     assert "connected apps" in d.GET_ACCOUNT_DESCRIPTION.lower()
+    assert "fileparams" in d.IMPORT_FILE_DESCRIPTION.lower() or "attachment" in d.IMPORT_FILE_DESCRIPTION.lower()
 
 
 @EACH_GATE_SETTING
@@ -80,8 +97,6 @@ def test_a_gated_server_describes_the_two_calls() -> None:
     assert "confirmed=false" in optimize and "confirmed=true" in optimize
 
 
-def test_an_ungated_server_never_promises_a_free_call() -> None:
-    # With the gate off every call optimizes and charges. A text that still says confirmed=false is
-    # free makes the agent report a real, charged optimization as a preview (2026-09-16).
-    assert "confirmed" not in d.optimize_description(confirm_before_optimize=False).lower()
-    assert "confirmed" not in d.server_instructions(confirm_before_optimize=False).lower()
+def test_direct_server_does_not_promise_a_free_first_call() -> None:
+    optimize = d.optimize_description(confirm_before_optimize=False).lower()
+    assert "confirmed=false" not in optimize

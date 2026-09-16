@@ -81,6 +81,7 @@ class CoreGeocodedStop(CoreModel):
     lng: float | None = None
     band: Literal["valid", "review", "needs_geocoding"] | None = None
     confidence: float | None = None
+    matched_address: str | None = None
 
 
 class CoreGeocodeCreated(CoreModel):

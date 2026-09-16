@@ -21,34 +21,34 @@ _INSTRUCTIONS_HEAD = (
     "vehicles and sequences each route from one depot, from dozens to thousands of stops. Units: "
     "kilograms, cubic meters, kilometers, minutes, local HH:MM times.\n"
     "Order of work:\n"
-    "1. Street addresses: call geocode_addresses first and confirm the pins it flags. Never invent "
-    "coordinates.\n"
-    "2. Planning a real delivery day: call list_fleet and use the account's own vehicles and "
-    "capacities. Invent a fleet only for what-if questions, and say that is what it is.\n"
-    "3. Before a large or first optimization: call get_account and compare the stop count with the "
-    "plan's maximum. Say the limit and offer options before geocoding or optimizing, not after a "
-    "rejection.\n"
+    "1. Large files (hundreds+ stops): call import_delivery_file with the attachment (never paste "
+    "rows), then get_import_result until dataset_id is ready, then optimize_dataset. "
+    "optimize_delivery_routes with stops[] is only for small plans.\n"
+    "2. Street addresses: call geocode_addresses first and confirm the pins it flags "
+    "(matched_address). Never invent coordinates.\n"
+    "3. Planning a real delivery day: call list_fleet and use the account's own vehicles. Never "
+    "invent vehicle_id. Invent a fleet only for what-if questions, and say so.\n"
+    "4. Always ask for route_start_time (depot departure). Never invent 08:00. Never reuse stops "
+    "from an earlier plan. Never use a depot the user did not give or geocode_addresses did not return.\n"
+    "5. Before a large or first optimization: call get_account and compare the stop count with the "
+    "plan's maximum.\n"
 )
 _STEP_4_CONFIRMED = (
-    "4. Then optimize_delivery_routes with confirmed=false, show the preflight it returns and get a "
-    "yes, call it again with confirmed=true, and get_optimization_result while it runs.\n"
+    "6. Then optimize (optimize_dataset or optimize_delivery_routes) with confirmed=false, show the "
+    "preflight, get a yes, call again with confirmed=true, and get_optimization_result while it runs.\n"
 )
 _STEP_4_DIRECT = (
-    "4. Then say how many stops the optimization charges and how many remain, get a yes, call "
-    "optimize_delivery_routes once, and get_optimization_result while it runs.\n"
+    "6. Then say how many stops it charges and how many remain (or that a dataset replan is free), "
+    "get a yes, call optimize once, and get_optimization_result while it runs.\n"
 )
 _INSTRUCTIONS_TAIL = (
-    "Ask the user only what the tools cannot answer and what changes the plan: the depot, when it "
-    "is not known; which fleet to use, when the account fleet does not match what they asked for; "
-    "whether the weights or volumes in their data are the real load, when capacity matters. Ask one "
-    "question at the moment it matters, not a list up front. Offer weight, volume or time-window "
-    "constraints only when get_account lists that feature for the plan; when the data has them and "
-    "the plan does not, say so rather than proposing it. For everything else choose a sensible "
-    "default and state it (service time, objective) instead of asking.\n"
-    "Every call runs on the Vepathos account the connector is signed in to, and that account's plan "
-    "sets every limit. When a request is rejected for the plan, the quota or authorization, tell "
-    "the user which account is connected: the usual cause is a different account than they mean, "
-    "not a limit that has to be raised."
+    "Ask the user only what the tools cannot answer: the depot when unknown; which fleet when the "
+    "account fleet does not match; whether weights/volumes are real when capacity matters. Ask one "
+    "question at the moment it matters. Offer weight, volume or time-window constraints only when "
+    "get_account lists that feature. Do not send min_stops near max_stops unless the user asks. "
+    "For everything else choose a sensible default and state it.\n"
+    "Every call runs on the Vepathos account the connector is signed in to. When a request is "
+    "rejected for the plan, quota or authorization, tell the user which account is connected."
 )
 
 
@@ -121,13 +121,10 @@ GET_ACCOUNT_DESCRIPTION = (
 GET_RESULT_TITLE = "Get optimization result"
 GEOCODE_TITLE = "Geocode addresses"
 GEOCODE_DESCRIPTION = (
-    "Turn street addresses into latitude/longitude using Vepathos Smart Import (the account's own "
-    "geocoder, not a guessed coordinate). Requires a depot lat/lng or a city so the map region is known. "
-    "Charges the Smart Import address quota, not route stops. When complete, unresolved_stop_ids has "
-    "rows with no pin; review_stop_ids has pins that are band=review or confidence below 0.8. If "
-    "needs_confirmation is true, tell the user which ids are missing or uncertain and wait for "
-    "confirmation before optimize_delivery_routes. Do not invent coordinates. Returns a geocode_id; "
-    "if the job is still running, use get_geocode_result."
+    "Turn street addresses into latitude/longitude using Vepathos Smart Import. Requires a depot "
+    "lat/lng or a city. Each stop includes matched_address (what the gazetteer matched) — use it to "
+    "catch bad pins. Charges Smart Import quota, not route stops. When needs_confirmation is true, "
+    "tell the user which ids are missing or uncertain before optimizing. Do not invent coordinates."
 )
 
 GET_GEOCODE_TITLE = "Get geocode result"
@@ -138,10 +135,56 @@ GET_GEOCODE_DESCRIPTION = (
 )
 
 GET_RESULT_DESCRIPTION = (
-    "Get the status and outcome of a route optimization started with optimize_delivery_routes. While it runs, "
-    "returns status and progress (waiting briefly for completion). When complete, detail=summary returns totals "
-    "(stops assigned and unassigned, vehicles used, distance, duration, time-window compliance) and a page of "
-    "per-route metrics; detail=stops returns the ordered stop_ids with estimated arrival times for one route "
-    "(route_id) or all routes page by page; detail=unassigned lists stops that could not be routed. Read-only; "
-    "it does not consume plan stops."
+    "Get the status and outcome of a route optimization started with optimize_delivery_routes or "
+    "optimize_dataset. While it runs, returns status and progress. When complete, detail=summary "
+    "returns totals and per-route metrics; detail=stops returns ordered stop_ids with arrival times "
+    "(driver clock; duration_minutes also counts service). Read-only; does not consume plan stops."
+)
+
+IMPORT_FILE_TITLE = "Import delivery file"
+IMPORT_FILE_DESCRIPTION = (
+    "Upload a delivery file (Excel, CSV, JSON, text) via ChatGPT attachment "
+    "(_meta openai/fileParams) or a public https url. Starts Smart Import; returns import_id. "
+    "Never paste thousands of stops into optimize_delivery_routes. Poll get_import_result."
+)
+
+IMPORT_TEXT_TITLE = "Import pasted deliveries"
+IMPORT_TEXT_DESCRIPTION = (
+    "Import a short pasted delivery list through the same Smart Import pipeline as a file. "
+    "Returns import_id; use get_import_result. Prefer import_delivery_file for large files."
+)
+
+GET_IMPORT_TITLE = "Get import result"
+GET_IMPORT_DESCRIPTION = (
+    "Status and summary of an import_delivery_file / import_delivery_text job. When complete: "
+    "dataset_id, expires_at, summary (counts, mapping, sample, needs_confirmation). Never returns "
+    "all rows. Then call optimize_dataset."
+)
+
+UPDATE_MAPPING_TITLE = "Update import mapping"
+UPDATE_MAPPING_DESCRIPTION = (
+    "Correct Smart Import column mapping as {source_column: vepathos_field} without re-uploading. "
+    "Returns the updated summary."
+)
+
+OPTIMIZE_DATASET_TITLE = "Optimize imported dataset"
+def optimize_dataset_description(*, confirm_before_optimize: bool) -> str:
+    charge = (
+        "With confirmed=false returns a preflight and charges nothing; then confirmed=true. "
+        if confirm_before_optimize
+        else "Confirm the charge (or free replan) with the user, then call once. "
+    )
+    return (
+        "Optimize a previously imported dataset by dataset_id (from get_import_result). Pass depot, "
+        "vehicles and per-run options (exclude_stop_ids, use_weight/volume/time_windows, "
+        "service_time, max_route_minutes, min_stops/max_stops). Variants of the same dataset may use "
+        "free replans (preflight/billing say how many remain). " + charge +
+        "Use get_optimization_result while it runs."
+    )
+
+
+LIST_DATASETS_TITLE = "List datasets"
+LIST_DATASETS_DESCRIPTION = (
+    "List delivery datasets available to optimize_dataset: imports from this chat and (when Core "
+    "exposes them) the web app. Read-only."
 )

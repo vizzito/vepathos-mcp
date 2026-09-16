@@ -51,6 +51,13 @@ class Vehicle(StrictModel):
         examples=["van-small"],
     )
     count: int = Field(1, ge=1, le=500, description="Number of identical vehicles of this type available.")
+    min_stops: int | None = Field(
+        None,
+        ge=0,
+        le=10_000,
+        description="Minimum stops one vehicle should serve. Default when omitted is 1 (not 80% of max). "
+        "Keep min ≤ floor(max_stops × 0.8) unless the user asks for a tight band; tight bands warn.",
+    )
     max_stops: int | None = Field(
         None, ge=1, le=10_000, description="Maximum number of stops one vehicle may serve on its route."
     )
@@ -120,6 +127,13 @@ class Schedule(StrictModel):
     )
     service_time_minutes: float | None = Field(
         None, ge=0, le=240, description="Minutes spent at each stop (unloading, hand-off)."
+    )
+    max_route_minutes: float | None = Field(
+        None,
+        ge=30,
+        le=24 * 60,
+        description="Maximum journey length per route in minutes (travel + service). "
+        "Activates the engine time cap when set.",
     )
 
     @field_validator("date")
@@ -200,6 +214,17 @@ class OptimizeInput(StrictModel):
                 "route_start_time_required",
                 "schedule.route_start_time is required when any stop has a time_window",
             )
+        for vehicle in self.vehicles:
+            if (
+                vehicle.min_stops is not None
+                and vehicle.max_stops is not None
+                and vehicle.min_stops > vehicle.max_stops
+            ):
+                raise PydanticCustomError(
+                    "min_stops_gt_max",
+                    "min_stops must be less than or equal to max_stops for vehicle_id {vehicle_id}",
+                    {"vehicle_id": vehicle.vehicle_id},
+                )
         return self
 
     @property

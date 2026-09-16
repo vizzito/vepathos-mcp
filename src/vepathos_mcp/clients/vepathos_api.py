@@ -204,6 +204,52 @@ class VepathosApiClient:
         )
         return self._parse(CoreCatalog, data)
 
+    async def create_import(
+        self, call: CallContext, body: dict[str, Any], idempotency_key: str | None = None
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/imports",
+            call,
+            operation="import_submit",
+            json_body=body,
+            idempotency_key=idempotency_key or f"import:{uuid.uuid4().hex}",
+            request_timeout=self._submit_timeout,
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def get_import(self, call: CallContext, import_id: str) -> dict[str, Any]:
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/imports/{_segment(import_id)}",
+            call,
+            operation="import_status",
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def update_import_mapping(
+        self, call: CallContext, import_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "PUT",
+            f"{BASE_PATH}/imports/{_segment(import_id)}",
+            call,
+            operation="import_mapping",
+            json_body=body,
+            request_timeout=self._submit_timeout,
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def list_datasets(self, call: CallContext, *, limit: int = 20) -> dict[str, Any]:
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/datasets",
+            call,
+            operation="datasets",
+            params={"limit": limit},
+        )
+        return data if isinstance(data, dict) else {"datasets": []}
+
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""
 

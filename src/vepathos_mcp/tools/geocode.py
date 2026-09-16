@@ -79,6 +79,7 @@ def _map_stops(rows: list[CoreGeocodedStop] | None) -> list[GeocodedStop] | None
             longitude=row.lng,
             band=row.band,
             confidence=row.confidence,
+            matched_address=row.matched_address,
         )
         for row in rows
     ]

@@ -29,64 +29,117 @@ class FullTrialApplied(OutputModel):
 
 
 class TimeWindowStats(OutputModel):
-    stops_with_window: int | None = None
-    met: int | None = None
-    violated: int | None = None
+    stops_with_window: int | None = Field(
+        None, description="Stops that had a time_window in the request."
+    )
+    met: int | None = Field(None, description="Assigned stops whose arrival falls inside the window.")
+    violated: int | None = Field(
+        None, description="Assigned stops whose arrival is outside the window (late or early)."
+    )
 
 
 class ResultSummary(OutputModel):
-    stops_submitted: int | None = None
-    stops_assigned: int | None = None
-    stops_unassigned: int | None = None
-    vehicles_available: int | None = None
-    vehicles_used: int | None = None
-    total_distance_km: float | None = None
-    total_duration_minutes: float | None = None
-    time_windows: TimeWindowStats | None = None
-    charged_stops: int | None = Field(None, description="Stops charged to the plan for this optimization.")
+    stops_submitted: int | None = Field(
+        None, description="Stops sent in this optimization (after exclude_stop_ids, if any)."
+    )
+    stops_assigned: int | None = Field(
+        None, description="Stops placed on a route. Prefer this over vehicles_available for sizing talk."
+    )
+    stops_unassigned: int | None = Field(
+        None,
+        description="Stops the optimizer could not place. Use detail=unassigned for their ids.",
+    )
+    vehicles_available: int | None = Field(
+        None, description="Fleet units declared in the request (sum of vehicles[].count)."
+    )
+    vehicles_used: int | None = Field(
+        None,
+        description="Routes that actually received stops. Often less than vehicles_available "
+        "when force_vehicles_fleet_match is off or demand is low.",
+    )
+    total_distance_km: float | None = Field(
+        None, description="Sum of per-route distance_km (driving distance only)."
+    )
+    total_duration_minutes: float | None = Field(
+        None,
+        description="Sum of per-route duration_minutes: driving plus service_time at every stop "
+        "(and return to depot when the engine includes it). Not last_arrival − first_arrival.",
+    )
+    time_windows: TimeWindowStats | None = Field(
+        None, description="Present when any stop had a time_window; null otherwise."
+    )
+    charged_stops: int | None = Field(
+        None,
+        description="Stops billed to the plan for this job. May be 0 on a free dataset replan or trial.",
+    )
 
 
 class RouteMetrics(OutputModel):
-    route_id: str
-    vehicle_id: str | None = None
-    stops: int | None = Field(None, description="Number of stops on the route.")
-    distance_km: float | None = None
-    duration_minutes: float | None = None
-    weight_kg: float | None = None
-    volume_m3: float | None = None
+    route_id: str = Field(description="Stable id for this route within the optimization.")
+    vehicle_id: str | None = Field(
+        None, description="vehicles[].vehicle_id that drives this route (echoed from the request)."
+    )
+    stops: int | None = Field(None, description="Number of stops on the route (excludes the depot).")
+    distance_km: float | None = Field(None, description="Driving distance for this route, kilometres.")
+    duration_minutes: float | None = Field(
+        None,
+        description="Route working time in minutes: driving plus schedule.service_time_minutes "
+        "at each stop. Larger than the clock span of arrival_time when service time is set.",
+    )
+    weight_kg: float | None = Field(
+        None, description="Total stop weight on this route, kilograms (null if weight unused)."
+    )
+    volume_m3: float | None = Field(
+        None, description="Total stop volume on this route, cubic metres (null if volume unused)."
+    )
 
 
 class StopVisit(OutputModel):
     route_id: str
     sequence: int = Field(description="1-based position of the stop on its route.")
     stop_id: str
-    arrival_time: str | None = Field(None, description="Estimated arrival, local HH:MM.")
+    arrival_time: str | None = Field(
+        None,
+        description="Estimated clock time at this stop, local HH:MM, anchored on "
+        "schedule.route_start_time. What the driver sees. The span from first to last "
+        "arrival is travel between stops, not duration_minutes (which also counts service).",
+    )
 
 
 class Page(OutputModel):
-    offset: int
-    limit: int
-    total: int | None = None
-    next_offset: int | None = Field(None, description="Pass as offset to get the next page; null when done.")
+    offset: int = Field(description="Index of the first item in this page.")
+    limit: int = Field(description="Page size requested.")
+    total: int | None = Field(None, description="Total items available for this detail view.")
+    next_offset: int | None = Field(
+        None, description="Pass as offset to get the next page; null when done."
+    )
 
 
 class OptimizationResult(OutputModel):
     """Output of get_optimization_result."""
 
-    optimization_id: str | None = None
-    status: JobStatus | None = None
-    detail: Literal["summary", "stops", "unassigned"] | None = None
-    progress: Progress | None = None
+    optimization_id: str | None = Field(None, description="Same handle returned by optimize.")
+    status: JobStatus | None = Field(None, description="queued / running / completed / failed.")
+    detail: Literal["summary", "stops", "unassigned"] | None = Field(
+        None, description="Which slice of the result this payload carries."
+    )
+    progress: Progress | None = Field(None, description="Present while queued or running.")
     poll_after_seconds: int | None = Field(
         None, description="When status is queued or running, call again after about this many seconds."
     )
     expires_at: str | None = Field(None, description="When results stop being available (UTC).")
-    summary: ResultSummary | None = None
-    routes: list[RouteMetrics] | None = None
-    stops: list[StopVisit] | None = None
-    unassigned_stop_ids: list[str] | None = None
-    page: Page | None = None
-    error: dict[str, Any] | None = None
+    summary: ResultSummary | None = Field(None, description="Present when detail=summary and completed.")
+    routes: list[RouteMetrics] | None = Field(
+        None, description="Per-route metrics page when detail=summary."
+    )
+    stops: list[StopVisit] | None = Field(
+        None, description="Ordered visits when detail=stops (no coordinates echoed)."
+    )
+    unassigned_stop_ids: list[str] | None = Field(
+        None, description="Ids that could not be routed when detail=unassigned."
+    )
+    page: Page | None = Field(None, description="Pagination for routes or stops.")
+    error: dict[str, Any] | None = Field(None, description="Structured error when the tool call failed.")
 
     @model_validator(mode="after")
     def validate_variant(self) -> OptimizationResult:
@@ -100,10 +153,12 @@ class PreflightPlan(OutputModel):
     """The connected plan's side of the check. Absent when the account could not be read."""
 
     account_label: str | None = Field(None, description="Account that would be charged.")
-    plan_name: str | None = None
-    max_stops_per_request: int | None = Field(None, description="Null means unlimited on this plan.")
+    plan_name: str | None = Field(None, description="Plan name as shown in Vepathos, e.g. Free.")
+    max_stops_per_request: int | None = Field(None, description="Stops allowed in one call. Null: unlimited.")
     stops_remaining: int | None = Field(None, description="Before this optimization. Null: unlimited.")
-    stops_remaining_after: int | None = Field(None, description="Projected, if it is charged.")
+    stops_remaining_after: int | None = Field(
+        None, description="Projected remaining if this run is charged (not a free replan)."
+    )
     fits: bool | None = Field(None, description="False when the plan would reject this request.")
     missing_features: list[str] | None = Field(
         None, description="Constraints this request needs that the plan does not include."
@@ -111,53 +166,75 @@ class PreflightPlan(OutputModel):
 
 
 class Preflight(OutputModel):
-    """What optimize_delivery_routes would send, returned instead of optimizing when confirmed is false."""
+    """What optimize would send, returned instead of optimizing when confirmed is false."""
 
     stops: int = Field(description="Stops that would be sent.")
-    charges_stops: int = Field(description="Stops this would charge against the plan's period.")
-    total_weight_kg: float | None = Field(None, description="Null when no stop declares weight.")
-    total_volume_m3: float | None = None
-    stops_with_time_window: int = 0
-    depot: dict[str, float] | None = None
-    vehicle_types: int | None = None
-    vehicle_units: int | None = Field(None, description="Total vehicles available across all types.")
+    charges_stops: int = Field(
+        description="Stops this would charge against the plan. 0 when a free dataset replan applies."
+    )
+    total_weight_kg: float | None = Field(None, description="Sum of stop weights. Null when weight unused.")
+    total_volume_m3: float | None = Field(None, description="Sum of stop volumes. Null when volume unused.")
+    stops_with_time_window: int = Field(
+        0, description="How many stops carry a time_window in this request."
+    )
+    depot: dict[str, float] | None = Field(
+        None, description="Depot lat/lng that would be sent (keys latitude, longitude)."
+    )
+    vehicle_types: int | None = Field(None, description="Distinct vehicles[] entries.")
+    vehicle_units: int | None = Field(None, description="Total vehicles available (sum of count).")
     constraints_enforced: list[str] = Field(
-        default_factory=list, description="Empty means distance only: no capacity or window is enforced."
+        default_factory=list,
+        description="Empty means distance only: no capacity or window is enforced.",
     )
     objective: str | None = Field(None, description="Objective this would run with.")
-    schedule_date: str | None = None
+    schedule_date: str | None = Field(None, description="Delivery date YYYY-MM-DD (defaults to today in TZ).")
     route_start_time: str | None = Field(
         None, description="Null means the result carries no wall-clock arrival times."
     )
-    time_zone: str | None = None
-    service_time_minutes: float | None = None
-    stops_identity: str | None = Field(
-        None, description="Identity of the depot and stop set, shared by every variant of this day."
+    time_zone: str | None = Field(None, description="IANA TZ for windows and arrival times.")
+    service_time_minutes: float | None = Field(
+        None, description="Minutes spent at each stop; added into duration_minutes."
     )
-    plan: PreflightPlan | None = None
+    stops_identity: str | None = Field(
+        None,
+        description="Fingerprint of depot+stops (or dataset:…). Same identity → free replan may apply.",
+    )
+    plan: PreflightPlan | None = Field(None, description="Plan/quota check; absent if account lookup failed.")
+    warnings: list[dict[str, Any]] | None = Field(
+        None,
+        description="Non-blocking issues: stop near depot, unknown vehicle_id, tight min/max stops, etc.",
+    )
     confirm_with: str = Field(
         description="What to do next: show this to the user and call again with confirmed=true."
     )
 
 
 class OptimizeResult(OutputModel):
-    """Output of optimize_delivery_routes."""
+    """Output of optimize_delivery_routes / optimize_dataset."""
 
     optimization_id: str | None = Field(None, description="Handle for get_optimization_result.")
-    status: JobStatus | None = None
+    status: JobStatus | None = Field(
+        None, description="queued / running / completed / failed. Absent on a preflight-only reply."
+    )
     idempotent_replay: bool = Field(
         False, description="True when identical arguments returned an optimization that already existed."
     )
-    submitted_stops: int | None = None
-    vehicles_available: int | None = None
-    schedule_date: str | None = None
-    expires_at: str | None = None
+    submitted_stops: int | None = Field(None, description="Stops accepted into this job.")
+    vehicles_available: int | None = Field(
+        None, description="Fleet units declared (sum of vehicles[].count)."
+    )
+    schedule_date: str | None = Field(None, description="Date used for the run, YYYY-MM-DD.")
+    expires_at: str | None = Field(None, description="When results stop being available (UTC).")
     stops_remaining_this_period: int | None = Field(
         None, description="Stops left in the plan's current billing period (null means unlimited)."
     )
-    full_trial_applied: FullTrialApplied | None = None
-    progress: Progress | None = None
-    poll_after_seconds: int | None = None
+    full_trial_applied: FullTrialApplied | None = Field(
+        None, description="Present when this job used the one-time MCP full trial."
+    )
+    progress: Progress | None = Field(None, description="Present while queued or running.")
+    poll_after_seconds: int | None = Field(
+        None, description="Call get_optimization_result again after about this many seconds."
+    )
     result: OptimizationResult | None = Field(
         None, description="Present when the optimization finished within the call."
     )
@@ -166,7 +243,7 @@ class OptimizeResult(OutputModel):
         description="Present instead of an optimization when confirmed was false: nothing ran, "
         "nothing was charged.",
     )
-    error: dict[str, Any] | None = None
+    error: dict[str, Any] | None = Field(None, description="Structured error when the tool call failed.")
 
     @model_validator(mode="after")
     def validate_variant(self) -> OptimizeResult:
@@ -185,21 +262,25 @@ class OptimizeResult(OutputModel):
 
 
 class GeocodedStop(OutputModel):
-    stop_id: str
-    latitude: float | None = None
-    longitude: float | None = None
+    stop_id: str = Field(description="Same id sent in the geocode request.")
+    latitude: float | None = Field(None, description="Null when band is needs_geocoding.")
+    longitude: float | None = Field(None, description="Null when band is needs_geocoding.")
     band: Literal["valid", "review", "needs_geocoding"] | None = Field(
         None, description="valid: use as-is. review: check. needs_geocoding: no pin."
     )
     confidence: float | None = Field(None, description="Smart Import score, 0-1. Below 0.8 is review.")
+    matched_address: str | None = Field(
+        None,
+        description="Address the gazetteer matched. Prefer this over confidence alone when reviewing pins.",
+    )
 
 
 class GeocodeResult(OutputModel):
     """Output of geocode_addresses and get_geocode_result."""
 
     geocode_id: str | None = Field(None, description="Handle for get_geocode_result.")
-    status: JobStatus | None = None
-    submitted_stops: int | None = None
+    status: JobStatus | None = Field(None, description="queued / running / completed / failed.")
+    submitted_stops: int | None = Field(None, description="Addresses sent to Smart Import.")
     resolved_stops: int | None = Field(None, description="Stops that received a latitude and longitude.")
     unresolved_stop_ids: list[str] | None = Field(
         None, description="Stops with no pin. Do not invent coordinates. Ask before optimizing."
@@ -212,10 +293,14 @@ class GeocodeResult(OutputModel):
         None,
         description="True when any stop is unresolved or in review. Wait for the user before optimize.",
     )
-    poll_after_seconds: int | None = None
-    progress: Progress | None = None
-    stops: list[GeocodedStop] | None = None
-    error: dict[str, Any] | None = None
+    poll_after_seconds: int | None = Field(
+        None, description="Call get_geocode_result again after about this many seconds."
+    )
+    progress: Progress | None = Field(None, description="Present while the geocode job is running.")
+    stops: list[GeocodedStop] | None = Field(
+        None, description="Per-stop pins when status is completed (includes matched_address)."
+    )
+    error: dict[str, Any] | None = Field(None, description="Structured error when the tool call failed.")
 
     @model_validator(mode="after")
     def validate_variant(self) -> GeocodeResult:

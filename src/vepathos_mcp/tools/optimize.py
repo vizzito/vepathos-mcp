@@ -24,6 +24,7 @@ from vepathos_mcp.schemas.mapping import (
     stops_identity,
     to_core_request,
 )
+from vepathos_mcp.schemas.preflight_checks import collect_warnings, reject_impossible
 from vepathos_mcp.schemas.outputs import (
     FullTrialApplied,
     OptimizeResult,
@@ -86,10 +87,21 @@ async def build_preflight(
     schedule_date: str,
 ) -> Preflight:
     facts = preflight_facts(inp, schedule_date)
+    fleet_ids: set[str] | None = None
+    try:
+        catalog = await deps.core.get_catalog(identity.call)
+        fleet_ids = {v.vehicle_id for v in catalog.vehicles}
+        for fleet in catalog.fleets:
+            for v in fleet.vehicles:
+                fleet_ids.add(v.vehicle_id)
+    except Exception:
+        fleet_ids = None
+    warnings = collect_warnings(inp, fleet_vehicle_ids=fleet_ids)
     return Preflight(
         **facts,
         stops_identity=stops_identity(body),
         plan=await _plan_check(deps, identity, inp),
+        warnings=warnings or None,
         confirm_with=CONFIRM_WITH,
     )
 
@@ -98,6 +110,7 @@ def make_optimize_tool(deps: ToolDeps) -> Any:
     async def optimize_delivery_routes(ctx: Context) -> Annotated[CallToolResult, OptimizeResult]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
             inp = parse_optimize_input(arguments)
+            reject_impossible(inp)
             schedule_date = resolve_schedule_date(inp)
             body = to_core_request(inp, schedule_date)
 

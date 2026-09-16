@@ -39,6 +39,7 @@ def to_core_request(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
                 {
                     "id": v.vehicle_id,
                     "count": v.count,
+                    "min_stops": v.min_stops,
                     "max_stops": v.max_stops,
                     "max_weight_kg": v.max_weight_kg,
                     "max_volume_m3": v.max_volume_m3,
@@ -67,6 +68,7 @@ def to_core_request(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
                 "route_start_time": schedule.route_start_time if schedule else None,
                 "time_zone": schedule.time_zone if schedule else "UTC",
                 "service_time_minutes": schedule.service_time_minutes if schedule else None,
+                "max_route_minutes": schedule.max_route_minutes if schedule else None,
             }
         ),
     }

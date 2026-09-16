@@ -56,6 +56,8 @@ class FakeCoreState:
     used_stops: dict[str, int] = field(default_factory=dict)
     trial_used: set[str] = field(default_factory=set)
     geocode_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    imports: dict[str, dict[str, Any]] = field(default_factory=dict)
+    datasets: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_seconds: float = 3.0
     company_name: str | None = None
     fleets: list[dict[str, Any]] = field(default_factory=list)
@@ -205,6 +207,21 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             return JSONResponse(created, status_code=202)
 
         stops = body.get("stops") or []
+        billing = "plan"
+        if not stops and body.get("dataset_id"):
+            ds = state.datasets.get(str(body["dataset_id"]))
+            if ds is None or ds["account"] != account:
+                return _error(404, "DATASET_NOT_FOUND", "Unknown dataset.")
+            stops = list(ds["stops"])
+            exclude = set(body.get("exclude_stop_ids") or [])
+            if exclude:
+                stops = [s for s in stops if s["id"] not in exclude]
+            body = {**body, "stops": stops}
+            body.pop("dataset_id", None)
+            body.pop("exclude_stop_ids", None)
+            if ds["replan_count"] < 5:
+                billing = "mcp_dataset_replan"
+                ds["replan_count"] += 1
         features = sorted(
             {"weight_capacity" for v in body.get("vehicles", []) if "max_weight_kg" in v}
             | {"volume_capacity" for v in body.get("vehicles", []) if "max_volume_m3" in v}
@@ -213,7 +230,6 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         plan = state.plan
         too_many = plan.max_stops_per_request is not None and len(stops) > plan.max_stops_per_request
         missing = [f for f in features if f not in plan.features]
-        billing = "plan"
         if too_many or missing:
             trial_ok = (
                 account not in state.trial_used and len(stops) <= 2000 and (len(stops) > 500 or bool(missing))
@@ -397,6 +413,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                     "lng": -58.4 + digest[1] / 2550.0,
                     "band": "valid",
                     "confidence": 0.8,
+                    "matched_address": stop.get("address"),
                 }
             )
         return JSONResponse(
@@ -409,6 +426,108 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             }
         )
 
+    async def create_import(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        body = await request.json()
+        if not any(k in body for k in ("content_base64", "text", "url")):
+            return _error(
+                422,
+                "INVALID_INPUT",
+                "Provide content_base64, text, or url. The delivery file did not arrive.",
+            )
+        import_id = "mcpi_" + hashlib.sha256(f"{account}:{json.dumps(body, sort_keys=True)}".encode()).hexdigest()[:24]
+        dataset_id = "mcp_ds_" + hashlib.sha256(import_id.encode()).hexdigest()[:24]
+        stops = [
+            {"id": f"S{i}", "lat": -34.6 + i * 0.001, "lng": -58.4 + i * 0.001}
+            for i in range(1, 6)
+        ]
+        state.datasets[dataset_id] = {
+            "account": account,
+            "import_id": import_id,
+            "filename": body.get("filename") or "upload.bin",
+            "stops": stops,
+            "replan_count": 0,
+            "expires_at": _iso(state.clock() + 86400),
+        }
+        state.imports[import_id] = {"account": account, "dataset_id": dataset_id}
+        return JSONResponse(
+            {
+                "import_id": import_id,
+                "dataset_id": dataset_id,
+                "status": "completed",
+                "poll_after_ms": 200,
+                "expires_at": state.datasets[dataset_id]["expires_at"],
+            },
+            status_code=202,
+        )
+
+    async def get_import(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        import_id = request.path_params["import_id"]
+        row = state.imports.get(import_id)
+        if row is None or row["account"] != account:
+            return _error(404, "IMPORT_NOT_FOUND", "Unknown import.")
+        ds = state.datasets[row["dataset_id"]]
+        return JSONResponse(
+            {
+                "import_id": import_id,
+                "dataset_id": row["dataset_id"],
+                "status": "completed",
+                "filename": ds["filename"],
+                "expires_at": ds["expires_at"],
+                "free_replans_remaining": max(0, 5 - ds["replan_count"]),
+                "summary": {
+                    "rows_read": len(ds["stops"]),
+                    "stops": len(ds["stops"]),
+                    "packages": len(ds["stops"]),
+                    "coordinates_found": len(ds["stops"]),
+                    "coordinates_geocoded": 0,
+                    "rows_to_review": [],
+                    "suggested_mapping": {},
+                    "unmapped_columns": [],
+                    "sample_rows": [],
+                    "units": {"weight": "kg", "volume": "m3"},
+                    "total_weight_kg": None,
+                    "total_volume_m3": None,
+                    "time_windows": {"count": 0, "dates": [], "cross_midnight": 0},
+                    "needs_confirmation": False,
+                },
+            }
+        )
+
+    async def put_import_mapping(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        import_id = request.path_params["import_id"]
+        row = state.imports.get(import_id)
+        if row is None or row["account"] != account:
+            return _error(404, "IMPORT_NOT_FOUND", "Unknown import.")
+        return await get_import(request)
+
+    async def list_datasets(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        items = [
+            {
+                "dataset_id": did,
+                "filename": ds["filename"],
+                "source": "file",
+                "status": "ready",
+                "stops": len(ds["stops"]),
+                "expires_at": ds["expires_at"],
+                "free_replans_remaining": max(0, 5 - ds["replan_count"]),
+            }
+            for did, ds in state.datasets.items()
+            if ds["account"] == account
+        ]
+        return JSONResponse({"datasets": items})
+
     return Starlette(
         routes=[
             Route("/api/mcp/v1/health", health, methods=["GET"]),
@@ -419,6 +538,10 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/optimization/jobs/{job_id}/result", get_result, methods=["GET"]),
             Route("/api/mcp/v1/geocode", create_geocode, methods=["POST"]),
             Route("/api/mcp/v1/geocode/{job_id}", get_geocode, methods=["GET"]),
+            Route("/api/mcp/v1/imports", create_import, methods=["POST"]),
+            Route("/api/mcp/v1/imports/{import_id}", get_import, methods=["GET"]),
+            Route("/api/mcp/v1/imports/{import_id}", put_import_mapping, methods=["PUT"]),
+            Route("/api/mcp/v1/datasets", list_datasets, methods=["GET"]),
         ]
     )
 
