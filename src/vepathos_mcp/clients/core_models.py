@@ -27,6 +27,26 @@ class CoreBilling(CoreModel):
     mode: str | None = None
     quota_charged: bool | None = None
     stops_remaining_this_period: int | None = None
+    # Dataset jobs only: replans left for the next variant (0 until the dataset's first billed run).
+    free_replans_remaining: int | None = None
+
+
+class CoreDataset(CoreModel):
+    """`GET /datasets/{dataset_id}`: counts only, never the stops."""
+
+    dataset_id: str
+    status: str | None = None
+    filename: str | None = None
+    stops: int = 0
+    with_weight: int | None = None
+    with_volume: int | None = None
+    with_time_window: int | None = None
+    total_weight_kg: float | None = None
+    total_volume_m3: float | None = None
+    needs_confirmation: bool | None = None
+    expires_at: str | None = None
+    first_optimize_charged: bool | None = None
+    free_replans_remaining: int | None = None
 
 
 class CoreFullTrial(CoreModel):

@@ -63,7 +63,7 @@ class ResultSummary(OutputModel):
     total_duration_minutes: float | None = Field(
         None,
         description="Sum of per-route duration_minutes: driving plus service_time at every stop "
-        "(and return to depot when the engine includes it). Not last_arrival − first_arrival.",
+        "(and return to depot when the engine includes it). Not last_arrival - first_arrival.",
     )
     time_windows: TimeWindowStats | None = Field(
         None, description="Present when any stop had a time_window; null otherwise."
@@ -227,6 +227,12 @@ class OptimizeResult(OutputModel):
     expires_at: str | None = Field(None, description="When results stop being available (UTC).")
     stops_remaining_this_period: int | None = Field(
         None, description="Stops left in the plan's current billing period (null means unlimited)."
+    )
+    quota_charged: bool | None = Field(
+        None, description="optimize_dataset: false when this run was a free replan or the trial."
+    )
+    free_replans_remaining: int | None = Field(
+        None, description="optimize_dataset: free variants of this dataset left for the next run."
     )
     full_trial_applied: FullTrialApplied | None = Field(
         None, description="Present when this job used the one-time MCP full trial."

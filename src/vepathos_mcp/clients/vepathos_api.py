@@ -29,6 +29,7 @@ from vepathos_mcp.clients.breaker import CircuitBreaker
 from vepathos_mcp.clients.core_models import (
     CoreAccount,
     CoreCatalog,
+    CoreDataset,
     CoreGeocodeCreated,
     CoreGeocodeResult,
     CoreJobCreated,
@@ -249,6 +250,17 @@ class VepathosApiClient:
             params={"limit": limit},
         )
         return data if isinstance(data, dict) else {"datasets": []}
+
+    async def get_dataset(self, call: CallContext, dataset_id: str) -> CoreDataset:
+        """Counts for one dataset and whether its next optimization is billed. Never the stops."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/datasets/{_segment(dataset_id)}",
+            call,
+            operation="dataset",
+        )
+        return self._parse(CoreDataset, data)
 
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""

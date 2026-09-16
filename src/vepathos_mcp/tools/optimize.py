@@ -24,7 +24,6 @@ from vepathos_mcp.schemas.mapping import (
     stops_identity,
     to_core_request,
 )
-from vepathos_mcp.schemas.preflight_checks import collect_warnings, reject_impossible
 from vepathos_mcp.schemas.outputs import (
     FullTrialApplied,
     OptimizeResult,
@@ -32,6 +31,7 @@ from vepathos_mcp.schemas.outputs import (
     PreflightPlan,
     Progress,
 )
+from vepathos_mcp.schemas.preflight_checks import collect_warnings, reject_impossible
 from vepathos_mcp.telemetry import metrics
 from vepathos_mcp.telemetry.logging import log_event
 from vepathos_mcp.tools.account import account_label
@@ -47,8 +47,19 @@ CONFIRM_WITH = (
 )
 
 
-async def _plan_check(deps: ToolDeps, identity: RequestIdentity, inp: OptimizeInput) -> PreflightPlan | None:
-    """The plan's side of the preflight. Never raises: a preflight must not be what blocks a user."""
+async def plan_check(
+    deps: ToolDeps,
+    identity: RequestIdentity,
+    *,
+    stops: int,
+    charges_stops: int,
+    constraints: list[str],
+) -> PreflightPlan | None:
+    """The plan's side of the preflight. Never raises: a preflight must not be what blocks a user.
+
+    `stops` is checked against the plan's per-request limit even when `charges_stops` is 0: a free
+    dataset replan waives the quota, not the plan limits.
+    """
 
     try:
         account = await deps.core.get_account(identity.call)
@@ -58,22 +69,21 @@ async def _plan_check(deps: ToolDeps, identity: RequestIdentity, inp: OptimizeIn
     label = account_label(account)
     deps.account_labels.put(identity.subject, label or "", deps.clock())
     plan = account.plan
-    stops = len(inp.stops)
     # Core sends null for "unlimited"; only the flag distinguishes that from "unknown".
     maximum = None if plan.unlimited_stops_per_request else plan.max_stops_per_request
     remaining = account.usage.stops_remaining
-    missing = [f for f in constraints_enforced(inp) if f not in (plan.features or [])]
+    missing = [f for f in constraints if f not in (plan.features or [])]
     fits = not missing
     if maximum is not None and stops > maximum:
         fits = False
-    if remaining is not None and stops > remaining:
+    if remaining is not None and charges_stops > remaining:
         fits = False
     return PreflightPlan(
         account_label=label,
         plan_name=plan.name,
         max_stops_per_request=maximum,
         stops_remaining=remaining,
-        stops_remaining_after=None if remaining is None else remaining - stops,
+        stops_remaining_after=None if remaining is None else remaining - charges_stops,
         fits=fits,
         missing_features=missing or None,
     )
@@ -100,7 +110,13 @@ async def build_preflight(
     return Preflight(
         **facts,
         stops_identity=stops_identity(body),
-        plan=await _plan_check(deps, identity, inp),
+        plan=await plan_check(
+            deps,
+            identity,
+            stops=len(inp.stops),
+            charges_stops=len(inp.stops),
+            constraints=constraints_enforced(inp),
+        ),
         warnings=warnings or None,
         confirm_with=CONFIRM_WITH,
     )

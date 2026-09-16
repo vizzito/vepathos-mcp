@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from mcp.server.mcpserver.context import Context
 from mcp_types import CallToolResult
 from pydantic import Field, ValidationError
 
+from vepathos_mcp.clients.core_models import CoreDataset
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.schemas.inputs import (
-  StrictModel,
-  coerce_json_fields,
-  validation_error_to_domain,
+    StrictModel,
+    coerce_json_fields,
+    validation_error_to_domain,
 )
-from vepathos_mcp.schemas.outputs import OptimizeResult, OutputModel
+from vepathos_mcp.schemas.outputs import OptimizeResult, OutputModel, Preflight
 from vepathos_mcp.telemetry.logging import log_event
 from vepathos_mcp.tools.rendering import success_result
 from vepathos_mcp.tools.results import POLL_AFTER_SECONDS
@@ -86,7 +87,7 @@ class DatasetVehicle(StrictModel):
         ge=0,
         le=10_000,
         description="Minimum stops per vehicle. Default 1 when omitted. "
-        "Keep min ≤ floor(max × 0.8) unless the user asks for a tight band.",
+        "Keep min <= floor(max x 0.8) unless the user asks for a tight band.",
     )
     max_stops: int | None = Field(None, ge=1, le=10_000)
     max_weight_kg: float | None = Field(None, gt=0)
@@ -140,7 +141,12 @@ class ImportResultView(OutputModel):
     status: str | None = None
     summary: dict[str, Any] | None = None
     expires_at: str | None = None
-    free_replans_remaining: int | None = None
+    first_optimize_charged: bool | None = Field(
+        None, description="True: the next optimize_dataset on this dataset charges its stops."
+    )
+    free_replans_remaining: int | None = Field(
+        None, description="Free variants left after the first charged run (0 until that run)."
+    )
     poll_after_seconds: int | None = None
     progress: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
@@ -153,6 +159,7 @@ class DatasetListItem(OutputModel):
     status: str | None = None
     stops: int | None = None
     expires_at: str | None = None
+    first_optimize_charged: bool | None = None
     free_replans_remaining: int | None = None
 
 
@@ -222,9 +229,7 @@ def make_import_file_tool(deps: ToolDeps) -> Any:
     async def import_delivery_file(ctx: Context) -> Annotated[CallToolResult, ImportCreated]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
             try:
-                inp = ImportFileInput.model_validate(
-                    coerce_json_fields(arguments or {}, "file")
-                )
+                inp = ImportFileInput.model_validate(coerce_json_fields(arguments or {}, "file"))
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
 
@@ -238,9 +243,7 @@ def make_import_file_tool(deps: ToolDeps) -> Any:
             if file_ref and file_ref.download_url:
                 data = await _download_bytes(deps, file_ref.download_url, max_bytes=MAX_IMPORT_BYTES)
                 body["content_base64"] = base64.b64encode(data).decode("ascii")
-                body["filename"] = (
-                    inp.filename or file_ref.file_name or "attachment.bin"
-                )[:200]
+                body["filename"] = (inp.filename or file_ref.file_name or "attachment.bin")[:200]
                 if file_ref.mime_type:
                     body["mime_type"] = file_ref.mime_type
             elif inp.url:
@@ -319,6 +322,7 @@ def make_get_import_tool(deps: ToolDeps) -> Any:
                     status=status,
                     summary=result.get("summary"),
                     expires_at=result.get("expires_at"),
+                    first_optimize_charged=result.get("first_optimize_charged"),
                     free_replans_remaining=result.get("free_replans_remaining"),
                     poll_after_seconds=None if terminal else POLL_AFTER_SECONDS,
                     progress=result.get("progress"),
@@ -334,9 +338,7 @@ def make_update_mapping_tool(deps: ToolDeps) -> Any:
     async def update_import_mapping(ctx: Context) -> Annotated[CallToolResult, ImportResultView]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
             try:
-                inp = UpdateMappingInput.model_validate(
-                    coerce_json_fields(arguments or {}, "mapping")
-                )
+                inp = UpdateMappingInput.model_validate(coerce_json_fields(arguments or {}, "mapping"))
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
             deps.rate_limiter.check(identity.subject, "calls")
@@ -380,13 +382,113 @@ def make_list_datasets_tool(deps: ToolDeps) -> Any:
     return list_datasets
 
 
+def dataset_constraints(inp: OptimizeDatasetInput, dataset: CoreDataset) -> list[str]:
+    """What Core will enforce. Windows follow the stored stops, not use_time_windows: Core enforces
+    every window a dataset carries."""
+
+    constraints = []
+    if inp.use_weight and any(v.max_weight_kg is not None for v in inp.vehicles):
+        constraints.append("weight_capacity")
+    if inp.use_volume and any(v.max_volume_m3 is not None for v in inp.vehicles):
+        constraints.append("volume_capacity")
+    if dataset.with_time_window:
+        constraints.append("time_windows")
+    return constraints
+
+
+def dataset_warnings(inp: OptimizeDatasetInput, dataset: CoreDataset) -> list[dict[str, Any]]:
+    """Problems Core would reject the run for, or the user should hear about before paying for it."""
+
+    warnings: list[dict[str, Any]] = []
+    constraints = dataset_constraints(inp, dataset)
+    for used, key, counted, code in (
+        ("weight_capacity", "weight_kg", dataset.with_weight, "stops_without_weight"),
+        ("volume_capacity", "volume_m3", dataset.with_volume, "stops_without_volume"),
+    ):
+        missing = dataset.stops - counted if counted is not None else 0
+        if used in constraints and missing > 0:
+            warnings.append(
+                {
+                    "code": code,
+                    "count": missing,
+                    "message": f"{missing} stop(s) have no {key}; Core rejects this capacity "
+                    "unless every stop has one.",
+                }
+            )
+    if dataset.with_time_window and not inp.route_start_time:
+        warnings.append(
+            {
+                "code": "route_start_time_required",
+                "count": dataset.with_time_window,
+                "message": f"{dataset.with_time_window} stop(s) carry a time window, so route_start_time "
+                "is required.",
+            }
+        )
+    if dataset.needs_confirmation:
+        warnings.append(
+            {
+                "code": "import_needs_confirmation",
+                "message": "The import flagged rows or columns to review; confirm them with the user first.",
+            }
+        )
+    return warnings
+
+
+async def dataset_preflight(
+    deps: ToolDeps,
+    identity: RequestIdentity,
+    inp: OptimizeDatasetInput,
+    depot_lat: float,
+    depot_lng: float,
+) -> Preflight:
+    """Stops and charge of a dataset run, from Core's counts. A free replan charges 0 stops but still
+    has to fit the plan's limits."""
+
+    from vepathos_mcp.tools.optimize import CONFIRM_WITH, plan_check
+
+    dataset = await deps.core.get_dataset(identity.call, inp.dataset_id)
+    excluded = len(set(inp.exclude_stop_ids or []))
+    stops = max(0, dataset.stops - excluded)
+    # An older Core omits first_optimize_charged: then assume the run is billed.
+    free_replan = dataset.first_optimize_charged is False and (dataset.free_replans_remaining or 0) > 0
+    charges = 0 if free_replan else stops
+    constraints = dataset_constraints(inp, dataset)
+    if free_replan:
+        billing_note = " This is a free replan of the dataset: no stops are charged, plan limits still apply."
+    elif dataset.first_optimize_charged:
+        billing_note = " This first run of the dataset is charged; later variants of it are free replans."
+    else:
+        billing_note = ""
+    # Totals cover the whole dataset, so they are only exact when nothing is excluded.
+    whole = not excluded
+    return Preflight(
+        stops=stops,
+        charges_stops=charges,
+        total_weight_kg=dataset.total_weight_kg if whole and "weight_capacity" in constraints else None,
+        total_volume_m3=dataset.total_volume_m3 if whole and "volume_capacity" in constraints else None,
+        stops_with_time_window=dataset.with_time_window or 0,
+        depot={"latitude": depot_lat, "longitude": depot_lng},
+        vehicle_types=len(inp.vehicles),
+        vehicle_units=sum(v.count for v in inp.vehicles),
+        constraints_enforced=constraints,
+        objective="minimize_distance",
+        schedule_date=inp.date,
+        route_start_time=inp.route_start_time,
+        time_zone=inp.time_zone,
+        service_time_minutes=inp.service_time_minutes,
+        stops_identity=f"dataset:{inp.dataset_id}",
+        plan=await plan_check(deps, identity, stops=stops, charges_stops=charges, constraints=constraints),
+        warnings=dataset_warnings(inp, dataset) or None,
+        confirm_with=CONFIRM_WITH + billing_note,
+    )
+
+
 def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
+    from vepathos_mcp.schemas.mapping import request_fingerprint
     from vepathos_mcp.schemas.outputs import FullTrialApplied
-    from vepathos_mcp.tools.optimize import CONFIRM_WITH
+    from vepathos_mcp.telemetry import metrics
     from vepathos_mcp.tools.results import failure_error, fetch_result_view
     from vepathos_mcp.tools.runtime import wait_for_terminal
-    from vepathos_mcp.schemas.mapping import request_fingerprint
-    from vepathos_mcp.telemetry import metrics
 
     async def optimize_dataset(ctx: Context) -> Annotated[CallToolResult, OptimizeResult]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
@@ -405,24 +507,25 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
                         suggestion="Pass depot coordinates, or an address to geocode.",
                     )
                 # Geocode a single depot address through the existing tool path.
+                address = inp.depot.address
                 geo_body = {
-                    "stops": [{"id": "depot", "address": inp.depot.address}],
-                    "city": inp.depot.address.split(",")[-1].strip() if "," in inp.depot.address else inp.depot.address,
+                    "stops": [{"id": "depot", "address": address}],
+                    "city": address.split(",")[-1].strip() if "," in address else address,
                 }
-                created = await deps.core.create_geocode(
+                geo_job = await deps.core.create_geocode(
                     identity.call, geo_body, f"depot-{inp.dataset_id[:24]}"
                 )
-                geo = await deps.core.get_geocode(identity.call, created.job_id)
+                geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
                 # Brief poll
                 if not geo.is_terminal and deps.settings.optimize_inline_wait_seconds > 0:
                     import anyio
 
                     for _ in range(5):
                         await anyio.sleep(1.5)
-                        geo = await deps.core.get_geocode(identity.call, created.job_id)
+                        geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
                         if geo.is_terminal:
                             break
-                pin = (geo.stops or [None])[0]
+                pin = geo.stops[0] if geo.stops else None
                 if pin is None or pin.lat is None or pin.lng is None:
                     raise DomainError(
                         ErrorCode.INVALID_INPUT,
@@ -474,57 +577,12 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
             if inp.exclude_stop_ids:
                 body["exclude_stop_ids"] = inp.exclude_stop_ids
 
-            # Preflight without expanding stops locally: show dataset id + fleet decisions.
+            # The preflight reads the dataset's counts from Core instead of expanding its stops here.
             if deps.settings.confirm_before_optimize and not inp.confirmed:
                 deps.rate_limiter.check(identity.subject, "calls")
-                from vepathos_mcp.schemas.outputs import Preflight, PreflightPlan
-                from vepathos_mcp.tools.account import account_label
-
-                plan = None
-                try:
-                    account = await deps.core.get_account(identity.call)
-                    plan = PreflightPlan(
-                        account_label=account_label(account),
-                        plan_name=account.plan.name,
-                        max_stops_per_request=(
-                            None
-                            if account.plan.unlimited_stops_per_request
-                            else account.plan.max_stops_per_request
-                        ),
-                        stops_remaining=account.usage.stops_remaining,
-                        fits=True,
-                    )
-                except Exception:
-                    plan = None
                 return success_result(
                     OptimizeResult(
-                        preflight=Preflight(
-                            stops=0,
-                            charges_stops=0,
-                            vehicle_types=len(inp.vehicles),
-                            vehicle_units=sum(v.count for v in inp.vehicles),
-                            constraints_enforced=[
-                                n
-                                for n, on in (
-                                    ("weight_capacity", inp.use_weight),
-                                    ("volume_capacity", inp.use_volume),
-                                    ("time_windows", inp.use_time_windows),
-                                )
-                                if on
-                            ],
-                            objective="minimize_distance",
-                            schedule_date=inp.date,
-                            route_start_time=inp.route_start_time,
-                            time_zone=inp.time_zone,
-                            service_time_minutes=inp.service_time_minutes,
-                            depot={"latitude": depot_lat, "longitude": depot_lng},
-                            stops_identity=f"dataset:{inp.dataset_id}",
-                            plan=plan,
-                            confirm_with=(
-                                CONFIRM_WITH
-                                + f" dataset_id={inp.dataset_id}. Free replans may apply on this dataset."
-                            ),
-                        )
+                        preflight=await dataset_preflight(deps, identity, inp, depot_lat, depot_lng)
                     )
                 )
 
@@ -537,6 +595,8 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
                 metrics.OPTIMIZATION_STOPS.observe(created.submitted_stops)
 
             output = OptimizeResult(
+                quota_charged=created.billing.quota_charged if created.billing else None,
+                free_replans_remaining=(created.billing.free_replans_remaining if created.billing else None),
                 optimization_id=created.job_id,
                 status=created.status,
                 idempotent_replay=created.idempotent_replay,
@@ -570,9 +630,7 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
                 raise failure_error(status)
             if status.status == "completed":
                 output.status = "completed"
-                output.result = await fetch_result_view(
-                    deps, identity, created.job_id, detail="summary"
-                )
+                output.result = await fetch_result_view(deps, identity, created.job_id, detail="summary")
             else:
                 output.status = status.status
                 output.poll_after_seconds = POLL_AFTER_SECONDS

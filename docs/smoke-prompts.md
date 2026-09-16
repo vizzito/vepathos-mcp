@@ -17,10 +17,12 @@ incident shipped with a green gate and a broken ChatGPT experience.
 
 Staging checklist:
 
-1. Connect ChatGPT Apps connector to staging MCP.
+1. Connect ChatGPT Apps connector to staging MCP, with `MCP_IMPORT_TOOLS_ENABLED=true` for the import cases.
 2. Cases 1 and 5 below (small optimize + file import).
 3. Confirm preflight vs charged run matches `MCP_CONFIRM_BEFORE_OPTIMIZE`.
-4. Record client build + date.
+4. Import path: the first `optimize_dataset` is charged and the agent says so; a variant (other vehicles
+   or `exclude_stop_ids`) is a free replan and the agent says that too.
+5. Record client build + date. Only then set `MCP_IMPORT_TOOLS_ENABLED=true` in production.
 
 ## Cases
 

@@ -72,10 +72,13 @@ flowchart TB
 
 ## 2. Datasets (P1 — large payloads)
 
-**Status (2026-09-16): implemented in working trees, not committed and not deployed.** Core side:
-`src/server/mcp/datasets.ts`, `app/api/mcp/v1/imports/`, `app/api/mcp/v1/datasets/`, migration
-`20260916180000_mcp_datasets`, the `dataset_id` branch of `optimization/jobs/route.ts`. Adapter side:
-`tools/import_tools.py`. Production today only has inline `optimize_delivery_routes`.
+**Status (2026-09-16): not deployed.** Production today only has inline `optimize_delivery_routes`.
+
+| Side | Where | State |
+|---|---|---|
+| Core | `src/server/mcp/datasets.ts`, `app/api/mcp/v1/imports/`, `app/api/mcp/v1/datasets/`, migration `20260916180000_mcp_datasets`, `dataset_id` branch of `optimization/jobs/route.ts` | Pushed to `develop` (`ce5bc03`). That commit fails `next build` (typecheck) and has the billing hole: **do not deploy api-doc** until the P0-1 fix commit is pushed on top |
+| Core P0-1 fix | billing, typecheck, `GET /datasets/{id}`, migration `20260916210000_mcp_dataset_billed_at` | Working tree, tested (`tsc` clean, unit tests green), not committed |
+| Adapter 0.4.0 | `tools/import_tools.py` and the rest of the release | Committed locally, not pushed. P0-1 adapter side + `MCP_IMPORT_TOOLS_ENABLED` in working tree, not committed |
 
 ~1 005 stops worked inline; ~8 200 did not (model argument budget), not the solver.
 
@@ -108,12 +111,12 @@ sequenceDiagram
 3. Model: chooses next tool from summary; does not “fix” the binary.
 4. Optimize only when dataset status is ready.
 
-**Billing as implemented in the working tree (must change, see P0-1)**
+**Billing**
 
 - `MCP_CONFIRM_BEFORE_OPTIMIZE=false` in prod: one optimize call runs and charges; the model should still ask in chat.
-- Free replans: `MCP_FREE_REPLANS_PER_DATASET` (5). **Current code applies them from the very first
-  optimize of a new dataset** and, while any remain, skips both the quota and the plan entitlement
-  check (stops per request, features, fleet size, stops per route).
+- Free replans: `MCP_FREE_REPLANS_PER_DATASET` (5). The pushed commit `ce5bc03` applies them from the
+  very first optimize of a new dataset and, while any remain, skips both the quota and the plan
+  entitlement check. The P0-1 fix (section 3) bills the first run and keeps plan limits on replans.
 - Import / geocode do **not** consume route-stop quota.
 
 Shortcut (keep forever): single file, no edits → `import_*` → `optimize_dataset` without an orderset.
@@ -125,20 +128,52 @@ Shortcut (keep forever): single file, no edits → `import_*` → `optimize_data
 These change code that has not shipped yet. The inline `optimize_delivery_routes` path in production
 does not go through any of them (it only activates when the body carries `dataset_id`).
 
+| Item | Needed for | State (2026-09-16) |
+|---|---|---|
+| P0-1 Billing of datasets | Import tools 0.4.0 | **Implemented**, not committed (Core + adapter) |
+| P0-1 Real preflight for `optimize_dataset` | Import tools 0.4.0 | **Implemented** (`GET /datasets/{id}`), not committed |
+| `MCP_IMPORT_TOOLS_ENABLED` flag | Deploying 0.4.0 without publishing tools | **Implemented**, not committed |
+| P0-2 Rows keep address fields and rows without coordinates | Orderset filters | Pending |
+| P0-3 Ids namespaced per source | Orderset merge | Pending |
+| P0-4 Retention cron | Storage hygiene (datasets today, ordersets later) | Pending |
+
 ### P0-1 Billing of datasets
 
 - The **first** optimize of a stop set is charged and passes the plan entitlement check.
+  *Implemented:* `McpDataset.billedAt` is set by the first run charged to the quota; the trial does
+  not set it.
 - A free replan skips the **quota only**. Plan limits (stops per request, features, fleet, stops per
-  route) are always enforced.
+  route) are always enforced, and a free replan never consumes the one-time trial. *Implemented.*
+- Replans are claimed atomically (`updateMany … replanCount < N`), so concurrent requests cannot
+  exceed the cap, and are given back when the request is rejected or never reaches the engine.
+  *Implemented.*
 - The replan counter belongs to a **lineage**: the imported dataset itself, or the orderset a dataset
   was confirmed from. Otherwise every confirm would hand out five new free optimizations.
+  *Dataset lineage implemented; orderset lineage comes with ordersets.*
 - A replan is free only when its stops are a subset of stops already billed in that lineage
   (exclusions, parameter changes, re-ordering). Adding stops charges again (phase 2: charge only the
-  added stops). **Product decision to confirm.**
-- `exclude_stop_ids` is rejected when `dataset_id` is absent (today it is accepted and ignored with
-  inline `stops`, breaking “unknown fields are never silently ignored”).
-- Adapter: the `optimize_dataset` preflight reports `stops=0, charges_stops=0`. It must report the
-  dataset's real stop count and whether this run is charged or a free replan.
+  added stops). **Product decision to confirm.** A dataset variant can only exclude stops, so this
+  holds for datasets by construction.
+- `exclude_stop_ids` without `dataset_id`, and `stops` together with `dataset_id`, are
+  `422 INVALID_INPUT` (before, `exclude_stop_ids` was accepted and ignored with inline `stops`,
+  breaking “unknown fields are never silently ignored”). *Implemented.*
+- Import and dataset views report `first_optimize_charged` and `free_replans_remaining` (0 until the
+  first billed run); job responses report `billing.free_replans_remaining`. *Implemented.*
+- Adapter: the `optimize_dataset` preflight reported `stops=0, charges_stops=0`, which told the user
+  nothing was charged. It now reads `GET /datasets/{id}` and reports the real stops (minus
+  `exclude_stop_ids`), `charges_stops` (0 on a free replan), the plan check against both, and warnings
+  for runs Core would reject. *Implemented.*
+
+**Known gaps found while implementing P0-1**
+
+- A first run accepted by the engine and then failed (and refunded) still leaves `billedAt` set, so
+  the next runs are free replans. Rare; fix by setting `billedAt` when the charged job completes.
+- `use_time_windows=false` does not strip the windows stored in a dataset: Core enforces every window
+  it expands. The preflight reports `time_windows` as enforced and warns when `route_start_time` is
+  missing. Stripping them needs a Core option.
+- `flatCsvToStops` omits `weight_kg` / `volume_m3` when the value is 0 or absent, so a dataset with a
+  single zero-weight row fails `use_weight` (“every stop needs weight_kg”). The preflight warns
+  (`stops_without_weight`); Core should store an explicit 0 when the column is mapped.
 
 ### P0-2 Dataset rows keep what filters need
 
@@ -234,6 +269,7 @@ status           needs_geo | ready | excluded
 ```
 
 `excluded` is a soft remove: the row stays, is counted, is skipped by confirm and can be restored.
+There is no `pending` status: an item either has coordinates (`ready`) or not (`needs_geo`).
 
 ### Merge policy (add)
 
@@ -522,13 +558,20 @@ Must pass before prod:
 11. **ChatGPT staging:** cases in [smoke-prompts.md](smoke-prompts.md) extended with multi-file + remove + confirm; recorded in compatibility matrix (T19).
 12. **Regression:** inline `optimize_delivery_routes` unchanged; import → `optimize_dataset` shortcut green in adapter contract tests.
 
+**Already automated for datasets (P0-1):** the dataset side of criteria 4 and 6 —
+`tests/contract/test_import_tools.py` (first run charged, variant free, free replan still rejected
+above the plan limit, preflight with real stops and charge, warnings for runs Core would reject) and
+api-doc `tests/unit/mcp/datasets.test.ts` / `validate.test.ts`. The Core route's claim/release path has
+no route-level test yet: verify it in the local stack before deploying.
+
 ### Rollout order
 
-1. Core P0 (section 3) deployed first. Inert for production traffic: nothing sends `dataset_id` yet.
-2. Adapter import tools behind a flag (`MCP_IMPORT_TOOLS_ENABLED`, default off, like
-   `MCP_MAP_SHARES_ENABLED`), so deploying the code does not expose them.
+1. Core P0-1 deployed first (fix commit on top of `ce5bc03`). Inert for production traffic: nothing
+   sends `dataset_id` yet. The migration only adds a table and a nullable column.
+2. Adapter 0.4.0 with import tools behind `MCP_IMPORT_TOOLS_ENABLED` (default off, like
+   `MCP_MAP_SHARES_ENABLED`), so deploying the code does not expose them. *Flag implemented.*
 3. Turn the flag on locally / on staging, run the ChatGPT smoke (T19), then in prod.
-4. Orderset routes and tools follow the same order.
+4. P0-2, P0-3 and P0-4, then orderset routes and tools, in the same order.
 
 ### Phase 2 (explicitly out of MVP)
 

@@ -56,7 +56,7 @@ class Vehicle(StrictModel):
         ge=0,
         le=10_000,
         description="Minimum stops one vehicle should serve. Default when omitted is 1 (not 80% of max). "
-        "Keep min ≤ floor(max_stops × 0.8) unless the user asks for a tight band; tight bands warn.",
+        "Keep min ≤ floor(max_stops x 0.8) unless the user asks for a tight band; tight bands warn.",
     )
     max_stops: int | None = Field(
         None, ge=1, le=10_000, description="Maximum number of stops one vehicle may serve on its route."

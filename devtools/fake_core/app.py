@@ -76,6 +76,16 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, UTC).isoformat().replace("+00:00", "Z")
 
 
+def _replan_state(dataset: dict[str, Any]) -> dict[str, Any]:
+    """Same rule as Core: nothing is free until the dataset's first billed optimization."""
+
+    billed = bool(dataset["billed"])
+    return {
+        "first_optimize_charged": not billed,
+        "free_replans_remaining": max(0, 5 - dataset["replan_count"]) if billed else 0,
+    }
+
+
 def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
     state = state or FakeCoreState()
 
@@ -167,7 +177,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             "expires_at": _iso(job.created_at + 86400),
             "billing": {
                 "mode": job.body.get("_billing", "plan"),
-                "quota_charged": job.body.get("_billing") != "mcp_full_trial",
+                "quota_charged": job.body.get("_billing", "plan") == "plan",
             },
         }
         if progress:
@@ -208,10 +218,12 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
 
         stops = body.get("stops") or []
         billing = "plan"
+        dataset: dict[str, Any] | None = None
         if not stops and body.get("dataset_id"):
             ds = state.datasets.get(str(body["dataset_id"]))
             if ds is None or ds["account"] != account:
                 return _error(404, "DATASET_NOT_FOUND", "Unknown dataset.")
+            dataset = ds
             stops = list(ds["stops"])
             exclude = set(body.get("exclude_stop_ids") or [])
             if exclude:
@@ -219,9 +231,9 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             body = {**body, "stops": stops}
             body.pop("dataset_id", None)
             body.pop("exclude_stop_ids", None)
-            if ds["replan_count"] < 5:
+            # The first optimization of a dataset is billed; replans are free only after it.
+            if ds["billed"] and ds["replan_count"] < 5:
                 billing = "mcp_dataset_replan"
-                ds["replan_count"] += 1
         features = sorted(
             {"weight_capacity" for v in body.get("vehicles", []) if "max_weight_kg" in v}
             | {"volume_capacity" for v in body.get("vehicles", []) if "max_volume_m3" in v}
@@ -231,8 +243,12 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         too_many = plan.max_stops_per_request is not None and len(stops) > plan.max_stops_per_request
         missing = [f for f in features if f not in plan.features]
         if too_many or missing:
+            # A free replan waives the quota only: plan limits still apply and it never uses the trial.
             trial_ok = (
-                account not in state.trial_used and len(stops) <= 2000 and (len(stops) > 500 or bool(missing))
+                billing == "plan"
+                and account not in state.trial_used
+                and len(stops) <= 2000
+                and (len(stops) > 500 or bool(missing))
             )
             if trial_ok:
                 billing = "mcp_full_trial"
@@ -294,8 +310,13 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         state.jobs[job_id] = job
         if billing == "plan":
             state.used_stops[account] = used + len(stops)
-        else:
+        elif billing == "mcp_full_trial":
             state.trial_used.add(account)
+        if dataset is not None:
+            if billing == "mcp_dataset_replan":
+                dataset["replan_count"] += 1
+            elif billing == "plan":
+                dataset["billed"] = True
         created = job_status(job) | {
             "idempotent_replay": False,
             "vehicles_available": _fleet(body),
@@ -305,6 +326,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             None if plan.monthly_stops is None else plan.monthly_stops - state.used_stops.get(account, 0)
         )
         created["billing"]["stops_remaining_this_period"] = remaining
+        if dataset is not None:
+            created["billing"]["free_replans_remaining"] = _replan_state(dataset)["free_replans_remaining"]
         if billing == "mcp_full_trial":
             created["full_trial_applied"] = {
                 "max_stops": 2000,
@@ -437,7 +460,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "INVALID_INPUT",
                 "Provide content_base64, text, or url. The delivery file did not arrive.",
             )
-        import_id = "mcpi_" + hashlib.sha256(f"{account}:{json.dumps(body, sort_keys=True)}".encode()).hexdigest()[:24]
+        fingerprint = f"{account}:{json.dumps(body, sort_keys=True)}"
+        import_id = "mcpi_" + hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
         dataset_id = "mcp_ds_" + hashlib.sha256(import_id.encode()).hexdigest()[:24]
         stops = [
             {"id": f"S{i}", "lat": -34.6 + i * 0.001, "lng": -58.4 + i * 0.001}
@@ -448,6 +472,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             "import_id": import_id,
             "filename": body.get("filename") or "upload.bin",
             "stops": stops,
+            "billed": False,
             "replan_count": 0,
             "expires_at": _iso(state.clock() + 86400),
         }
@@ -479,7 +504,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "status": "completed",
                 "filename": ds["filename"],
                 "expires_at": ds["expires_at"],
-                "free_replans_remaining": max(0, 5 - ds["replan_count"]),
+                **_replan_state(ds),
                 "summary": {
                     "rows_read": len(ds["stops"]),
                     "stops": len(ds["stops"]),
@@ -521,12 +546,39 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "status": "ready",
                 "stops": len(ds["stops"]),
                 "expires_at": ds["expires_at"],
-                "free_replans_remaining": max(0, 5 - ds["replan_count"]),
+                **_replan_state(ds),
             }
             for did, ds in state.datasets.items()
             if ds["account"] == account
         ]
         return JSONResponse({"datasets": items})
+
+    async def get_dataset(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        dataset_id = request.path_params["dataset_id"]
+        ds = state.datasets.get(dataset_id)
+        if ds is None or ds["account"] != account:
+            return _error(404, "DATASET_NOT_FOUND", "Unknown dataset.")
+        stops = ds["stops"]
+        return JSONResponse(
+            {
+                "dataset_id": dataset_id,
+                "filename": ds["filename"],
+                "source": "file",
+                "status": "ready",
+                "stops": len(stops),
+                "with_weight": sum(1 for s in stops if "weight_kg" in s),
+                "with_volume": sum(1 for s in stops if "volume_m3" in s),
+                "with_time_window": sum(1 for s in stops if "time_window" in s),
+                "total_weight_kg": None,
+                "total_volume_m3": None,
+                "needs_confirmation": False,
+                "expires_at": ds["expires_at"],
+                **_replan_state(ds),
+            }
+        )
 
     return Starlette(
         routes=[
@@ -542,6 +594,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/imports/{import_id}", get_import, methods=["GET"]),
             Route("/api/mcp/v1/imports/{import_id}", put_import_mapping, methods=["PUT"]),
             Route("/api/mcp/v1/datasets", list_datasets, methods=["GET"]),
+            Route("/api/mcp/v1/datasets/{dataset_id}", get_dataset, methods=["GET"]),
         ]
     )
 

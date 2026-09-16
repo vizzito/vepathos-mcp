@@ -30,14 +30,15 @@ TOOL_NAMES = (
     "geocode_addresses",
     "list_fleet",
     "get_account",
-    "import_delivery_file",
-    "optimize_dataset",
     "optimize_delivery_routes",
     "get_optimization_result",
 )
+IMPORT_TOOL_NAMES = ("import_delivery_file", "get_import_result", "optimize_dataset")
 
 # A server sends the texts for one gate setting, never both, so each setting is budgeted on its own.
 EACH_GATE_SETTING = pytest.mark.parametrize("gate", [True, False], ids=["gate_on", "gate_off"])
+# Same for MCP_IMPORT_TOOLS_ENABLED: the instructions only name the tools that server publishes.
+EACH_IMPORT_SETTING = pytest.mark.parametrize("imports", [True, False], ids=["imports_on", "imports_off"])
 
 
 def all_text(gate: bool) -> dict[str, str]:
@@ -50,7 +51,7 @@ def all_text(gate: bool) -> dict[str, str]:
     }
     return {
         **fixed,
-        "server_instructions": d.server_instructions(confirm_before_optimize=gate),
+        "server_instructions": d.server_instructions(confirm_before_optimize=gate, import_tools=True),
         "optimize_description": d.optimize_description(confirm_before_optimize=gate),
         "optimize_dataset_description": d.optimize_dataset_description(confirm_before_optimize=gate),
     }
@@ -60,19 +61,41 @@ def all_text(gate: bool) -> dict[str, str]:
 def test_model_facing_text_stays_within_budget(gate: bool) -> None:
     total = sum(len(text) for text in all_text(gate).values())
     assert total <= MAX_TOTAL_CHARS, f"{total} characters of tool text sent every conversation"
-    assert len(d.server_instructions(confirm_before_optimize=gate)) <= MAX_INSTRUCTION_CHARS
+    assert len(d.server_instructions(confirm_before_optimize=gate, import_tools=True)) <= MAX_INSTRUCTION_CHARS
 
 
 @EACH_GATE_SETTING
-def test_instructions_order_the_work_around_the_real_tools(gate: bool) -> None:
-    instructions = d.server_instructions(confirm_before_optimize=gate)
+@EACH_IMPORT_SETTING
+def test_instructions_order_the_work_around_the_real_tools(gate: bool, imports: bool) -> None:
+    instructions = d.server_instructions(confirm_before_optimize=gate, import_tools=imports)
     for tool in TOOL_NAMES:
         assert tool in instructions, f"instructions never mention {tool}"
+    for tool in IMPORT_TOOL_NAMES:
+        assert (tool in instructions) is imports, f"{tool} mentioned with import tools {imports}"
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+def test_instructions_number_their_steps_in_order(gate: bool, imports: bool) -> None:
+    instructions = d.server_instructions(confirm_before_optimize=gate, import_tools=imports)
+    steps = [line.split(".", 1)[0] for line in instructions.splitlines() if line[:1].isdigit()]
+    assert steps == [str(number) for number in range(1, len(steps) + 1)]
+
+
+def test_get_result_description_names_no_optional_tool() -> None:
+    for tool in IMPORT_TOOL_NAMES:
+        assert tool not in d.GET_RESULT_DESCRIPTION
+
+
+def test_dataset_description_says_the_first_run_is_charged() -> None:
+    for gate in (True, False):
+        text = d.optimize_dataset_description(confirm_before_optimize=gate).lower()
+        assert "first run" in text and "free replans" in text and "first_optimize_charged" in text
 
 
 @EACH_GATE_SETTING
 def test_instructions_state_when_to_ask_instead_of_guessing(gate: bool) -> None:
-    text = d.server_instructions(confirm_before_optimize=gate).lower()
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=True).lower()
     assert "depot when unknown" in text
     assert "one question at the moment it matters" in text
     assert "only when get_account lists that feature" in text

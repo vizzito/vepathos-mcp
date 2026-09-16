@@ -1,7 +1,9 @@
 # Tools
 
-# Vepathos MCP exposes twelve tools (six read/plan + six import/dataset). There is intentionally
-# no cancel tool: a submitted optimization always runs to completion.
+# Vepathos MCP exposes six read/plan tools, plus six import/dataset tools when
+# `MCP_IMPORT_TOOLS_ENABLED=true` (off by default, so deploying the code publishes nothing new; the
+# server instructions only name the tools a server publishes). There is intentionally no cancel tool:
+# a submitted optimization always runs to completion.
 
 | Tool | Title | Annotations |
 |---|---|---|
@@ -30,8 +32,16 @@ instead of pasting `stops[]`. See [large-payloads.md](large-payloads.md).
 Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. Returns `import_id`.
 Poll `get_import_result` for `dataset_id`, `summary` (never all rows), and `needs_confirmation`.
 `update_import_mapping` corrects columns without re-upload. `list_datasets` lists ready handles.
-`optimize_dataset` shares billing/idempotency with optimize; free replans (default 5) apply per
-`dataset_id`.
+`optimize_dataset` shares billing/idempotency with optimize. The first run of a dataset is charged;
+after it, up to 5 variants are free replans, which waive the quota but not the plan limits.
+`get_import_result` and `list_datasets` report `first_optimize_charged` and `free_replans_remaining`;
+a run reports `quota_charged` and `free_replans_remaining`.
+
+With `confirmed: false`, `optimize_dataset` reads `GET /datasets/{dataset_id}` and its preflight states
+the real stop count (minus `exclude_stop_ids`), `charges_stops` (0 on a free replan), the plan check,
+and warnings for runs Core would reject: capacity enforced while some stops lack that value
+(`stops_without_weight` / `stops_without_volume`), time windows without `route_start_time`, or an
+import that still needs confirmation. Time windows stored in a dataset are always enforced.
 
 ## `list_fleet`
 

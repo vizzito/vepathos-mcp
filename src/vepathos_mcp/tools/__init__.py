@@ -124,6 +124,63 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=GetResultInput,
             read_only=True,
         ),
+    ]
+    if deps.settings.import_tools_enabled:
+        tools.extend(_import_tools(deps, confirm))
+    tools += [
+        _tool(
+            make_geocode_tool(deps),
+            name=GEOCODE_TOOL,
+            title=descriptions.GEOCODE_TITLE,
+            description=descriptions.GEOCODE_DESCRIPTION,
+            schema_model=GeocodeInput,
+            read_only=False,
+        ),
+        _tool(
+            make_get_geocode_tool(deps),
+            name=GET_GEOCODE_TOOL,
+            title=descriptions.GET_GEOCODE_TITLE,
+            description=descriptions.GET_GEOCODE_DESCRIPTION,
+            schema_model=GetGeocodeInput,
+            read_only=True,
+        ),
+        _tool(
+            make_get_account_tool(deps),
+            name=GET_ACCOUNT_TOOL,
+            title=descriptions.GET_ACCOUNT_TITLE,
+            description=descriptions.GET_ACCOUNT_DESCRIPTION,
+            schema_model=GetAccountInput,
+            read_only=True,
+        ),
+        _tool(
+            make_list_fleet_tool(deps),
+            name=LIST_FLEET_TOOL,
+            title=descriptions.LIST_FLEET_TITLE,
+            description=descriptions.LIST_FLEET_DESCRIPTION,
+            schema_model=ListFleetInput,
+            read_only=True,
+        ),
+    ]
+    if deps.settings.map_shares_enabled:
+        from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
+
+        tools.append(
+            _tool(
+                make_map_tool(deps),
+                name="create_optimization_map",
+                title="Create route map",
+                description=DESCRIPTION,
+                schema_model=CreateMapInput,
+                read_only=False,
+            )
+        )
+    return tools
+
+
+def _import_tools(deps: ToolDeps, confirm: bool) -> list[Tool]:
+    """File import and optimize-by-dataset. Published only with MCP_IMPORT_TOOLS_ENABLED."""
+
+    return [
         _tool(
             make_import_file_tool(deps),
             name=IMPORT_FILE_TOOL,
@@ -173,50 +230,4 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=ListDatasetsInput,
             read_only=True,
         ),
-        _tool(
-            make_geocode_tool(deps),
-            name=GEOCODE_TOOL,
-            title=descriptions.GEOCODE_TITLE,
-            description=descriptions.GEOCODE_DESCRIPTION,
-            schema_model=GeocodeInput,
-            read_only=False,
-        ),
-        _tool(
-            make_get_geocode_tool(deps),
-            name=GET_GEOCODE_TOOL,
-            title=descriptions.GET_GEOCODE_TITLE,
-            description=descriptions.GET_GEOCODE_DESCRIPTION,
-            schema_model=GetGeocodeInput,
-            read_only=True,
-        ),
-        _tool(
-            make_get_account_tool(deps),
-            name=GET_ACCOUNT_TOOL,
-            title=descriptions.GET_ACCOUNT_TITLE,
-            description=descriptions.GET_ACCOUNT_DESCRIPTION,
-            schema_model=GetAccountInput,
-            read_only=True,
-        ),
-        _tool(
-            make_list_fleet_tool(deps),
-            name=LIST_FLEET_TOOL,
-            title=descriptions.LIST_FLEET_TITLE,
-            description=descriptions.LIST_FLEET_DESCRIPTION,
-            schema_model=ListFleetInput,
-            read_only=True,
-        ),
     ]
-    if deps.settings.map_shares_enabled:
-        from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
-
-        tools.append(
-            _tool(
-                make_map_tool(deps),
-                name="create_optimization_map",
-                title="Create route map",
-                description=DESCRIPTION,
-                schema_model=CreateMapInput,
-                read_only=False,
-            )
-        )
-    return tools

@@ -43,15 +43,10 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
     async with await mcp_client() as client:
         listed = await client.list_tools()
     tools = {t.name: t for t in listed.tools}
+    # Import/dataset tools stay unpublished unless MCP_IMPORT_TOOLS_ENABLED (tests/contract/test_import_tools.py).
     assert set(tools) == {
         "optimize_delivery_routes",
         "get_optimization_result",
-        "import_delivery_file",
-        "import_delivery_text",
-        "get_import_result",
-        "update_import_mapping",
-        "optimize_dataset",
-        "list_datasets",
         "geocode_addresses",
         "get_geocode_result",
         "get_account",

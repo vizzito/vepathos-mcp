@@ -56,7 +56,10 @@ def build_server(
         title=SERVER_TITLE,
         version=__version__,
         description="Large-scale delivery and fleet route optimization for AI agents.",
-        instructions=server_instructions(confirm_before_optimize=settings.confirm_before_optimize),
+        instructions=server_instructions(
+            confirm_before_optimize=settings.confirm_before_optimize,
+            import_tools=settings.import_tools_enabled,
+        ),
         website_url="https://vepathos.com",
         token_verifier=CompositeTokenVerifier(settings, jwks_verifier=jwks_verifier),
         auth=build_auth_settings(settings),

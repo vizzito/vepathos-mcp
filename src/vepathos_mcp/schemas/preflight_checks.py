@@ -168,7 +168,7 @@ def collect_warnings(
                     "stop_ids": [],
                     "message": (
                         f"min_stops {vehicle.min_stops} is above the recommended "
-                        f"floor(max_stops×{STOP_MARGIN_RATIO})={floor} for {vehicle.vehicle_id} "
+                        f"floor(max_stops x {STOP_MARGIN_RATIO})={floor} for {vehicle.vehicle_id} "
                         f"({strength}; {units} vehicle units)."
                     ),
                     "vehicle_id": vehicle.vehicle_id,

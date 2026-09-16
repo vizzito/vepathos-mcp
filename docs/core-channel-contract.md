@@ -309,7 +309,7 @@ Optional: `timezone`, `depot_country`, `mime_type`. Max size `MCP_IMPORT_MAX_BYT
 ## `GET /api/mcp/v1/imports/{import_id}`
 
 Poll. When ready: `dataset_id`, `expires_at`, `summary` (counts, mapping, sample, units,
-`needs_confirmation`), `free_replans_remaining`. **Never returns all rows.**
+`needs_confirmation`), `first_optimize_charged`, `free_replans_remaining`. **Never returns all rows.**
 
 ## `PUT /api/mcp/v1/imports/{import_id}`
 
@@ -330,19 +330,58 @@ List datasets for the account (MCP imports; web-app datasets when exposed). Quer
       "status": "ready",
       "stops": 8200,
       "expires_at": "…",
-      "free_replans_remaining": 5
+      "first_optimize_charged": true,
+      "free_replans_remaining": 0
     }
   ]
 }
 ```
 
+## `GET /api/mcp/v1/datasets/{dataset_id}`
+
+One dataset's counts, for a preflight to state the stops and the charge. **Never returns the stops.**
+
+```json
+{
+  "dataset_id": "mcp_ds_…",
+  "filename": "orders.xlsx",
+  "source": "file",
+  "status": "ready",
+  "stops": 8200,
+  "with_weight": 8200,
+  "with_volume": 0,
+  "with_time_window": 1200,
+  "total_weight_kg": 10450.5,
+  "total_volume_m3": null,
+  "needs_confirmation": false,
+  "created_at": "…",
+  "expires_at": "…",
+  "first_optimize_charged": true,
+  "free_replans_remaining": 0
+}
+```
+
+`with_*` count the stops carrying that value: a capacity the request enforces needs it on every stop,
+and stored time windows are always enforced. Unknown, expired or other-account id →
+`404 DATASET_NOT_FOUND`.
+
 ## `POST /api/mcp/v1/optimization/jobs` — `dataset_id`
 
 In addition to inline `stops[]`, the body may carry `dataset_id` (and optional `exclude_stop_ids`).
 Core expands the stored stops before entitlement checks. Same preflight / idempotency / billing as
-inline jobs. When `dataset_id` is present and free replans remain, Core may bill
-`mcp_dataset_replan` and skip quota (`MCP_FREE_REPLANS_PER_DATASET`, default 5). Response may include
-`free_replans_remaining` and `dataset_id`. Do not send both `stops` and `dataset_id`.
+inline jobs. Sending both `stops` and `dataset_id`, or `exclude_stop_ids` without `dataset_id`, is
+`422 INVALID_INPUT`.
+
+Billing of a dataset:
+
+- The **first** optimization is billed like an inline job (`billing.mode = plan`, quota charged, or the
+  one-time trial). `first_optimize_charged: true` on the import and dataset views means this is still ahead.
+- After it, up to `MCP_FREE_REPLANS_PER_DATASET` (default 5) variants of the same dataset (other
+  vehicles, schedule, `exclude_stop_ids`) are billed `mcp_dataset_replan`: the quota is not charged.
+- A free replan waives the quota only. Plan limits (stops per request, features, fleet size, stops per
+  route) are always enforced, so a replan the plan cannot run is `403 PLAN_UPGRADE_REQUIRED`.
+- The job response carries `billing.free_replans_remaining` and `billing.dataset_id`: the replans left
+  for the next run (0 while the dataset has not been billed yet).
 
 `vehicles[].min_stops` defaults to 1 when omitted. `schedule.max_route_minutes` turns on
 `rebalance_by_time` for that job only.

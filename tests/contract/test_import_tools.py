@@ -21,9 +21,12 @@ async def mcp_client(
 
     async def connect(**settings_overrides: Any) -> Client:
         settings = make_settings(
-            MCP_TRANSPORT="stdio",
-            MCP_CONFIRM_BEFORE_OPTIMIZE="false",
-            **settings_overrides,
+            **{
+                "MCP_TRANSPORT": "stdio",
+                "MCP_CONFIRM_BEFORE_OPTIMIZE": "false",
+                "MCP_IMPORT_TOOLS_ENABLED": "true",
+                **settings_overrides,
+            }
         )
         core = core_client_factory()
         clients.append(core)
@@ -76,3 +79,91 @@ async def test_import_text_then_optimize_dataset(mcp_client: Callable[..., Any])
         assert not is_error, opt
         assert opt["optimization_id"].startswith("mcp_")
         assert opt["submitted_stops"] == 5
+
+
+DEPOT = {"latitude": -34.6, "longitude": -58.4}
+VEHICLES = [{"vehicle_id": "van", "count": 1, "max_stops": 20}]
+
+
+async def _import(client: Client) -> str:
+    is_error, created = await call(client, "import_delivery_text", {"text": "id,address\n1,Calle Falsa 123"})
+    assert not is_error, created
+    return str(created["dataset_id"])
+
+
+async def test_dataset_first_run_is_charged_and_variants_are_free_replans(
+    mcp_client: Callable[..., Any], clock: FakeClock
+) -> None:
+    async with await mcp_client() as client:
+        dataset_id = await _import(client)
+        _, listed = await call(client, "list_datasets", {})
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == dataset_id)
+        assert row["first_optimize_charged"] is True and row["free_replans_remaining"] == 0
+
+        args = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": VEHICLES}
+        is_error, first = await call(client, "optimize_dataset", args)
+        assert not is_error, first
+        assert first["quota_charged"] is True and first["free_replans_remaining"] == 5
+
+        clock.now += 10  # the fake plan runs one optimization at a time
+        variant = {**args, "vehicles": [{"vehicle_id": "van", "count": 2, "max_stops": 20}]}
+        is_error, second = await call(client, "optimize_dataset", variant)
+        assert not is_error, second
+        assert second["quota_charged"] is False and second["free_replans_remaining"] == 4
+
+
+async def test_free_replan_still_has_to_fit_the_plan(mcp_client: Callable[..., Any], core_state: Any) -> None:
+    async with await mcp_client() as client:
+        dataset_id = await _import(client)
+        args = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": VEHICLES}
+        is_error, first = await call(client, "optimize_dataset", args)
+        assert not is_error, first
+        core_state.plan.max_stops_per_request = 3  # the dataset has 5 stops
+        variant = {**args, "exclude_stop_ids": ["S5"]}
+        is_error, rejected = await call(client, "optimize_dataset", variant)
+    assert is_error
+    assert rejected["error"]["code"] == "PLAN_UPGRADE_REQUIRED"
+
+
+async def test_dataset_preflight_states_the_real_stops_and_charge(
+    mcp_client: Callable[..., Any],
+) -> None:
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="true") as client:
+        dataset_id = await _import(client)
+        args = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": VEHICLES}
+        is_error, preview = await call(client, "optimize_dataset", {**args, "exclude_stop_ids": ["S1"]})
+        assert not is_error, preview
+        preflight = preview["preflight"]
+        assert preflight["stops"] == 4 and preflight["charges_stops"] == 4
+        assert preflight["plan"]["stops_remaining_after"] == preflight["plan"]["stops_remaining"] - 4
+        assert "first run" in preflight["confirm_with"]
+
+        is_error, ran = await call(client, "optimize_dataset", {**args, "confirmed": True})
+        assert not is_error and ran["quota_charged"] is True
+
+        is_error, replan = await call(client, "optimize_dataset", {**args, "service_time_minutes": 5})
+        assert not is_error, replan
+        assert replan["preflight"]["stops"] == 5 and replan["preflight"]["charges_stops"] == 0
+        assert "free replan" in replan["preflight"]["confirm_with"]
+
+
+async def test_dataset_preflight_warns_before_a_run_core_would_reject(
+    mcp_client: Callable[..., Any], core_state: Any
+) -> None:
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="true") as client:
+        dataset_id = await _import(client)
+        stops = core_state.datasets[dataset_id]["stops"]
+        stops[0]["weight_kg"] = 2.0
+        stops[1]["time_window"] = {"start": "09:00", "end": "12:00"}
+        vehicles = [{"vehicle_id": "van", "count": 1, "max_weight_kg": 500}]
+        is_error, preview = await call(
+            client,
+            "optimize_dataset",
+            {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": vehicles, "use_weight": True},
+        )
+    assert not is_error, preview
+    preflight = preview["preflight"]
+    codes = {w["code"]: w for w in preflight["warnings"]}
+    assert codes["stops_without_weight"]["count"] == 4
+    assert "route_start_time_required" in codes
+    assert preflight["constraints_enforced"] == ["weight_capacity", "time_windows"]
