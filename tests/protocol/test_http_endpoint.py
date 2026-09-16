@@ -192,3 +192,50 @@ async def test_metrics_with_bearer_token(http: Callable[..., Any]) -> None:
         assert (await client.get("/metrics")).status_code == 401
         ok = await client.get("/metrics", headers={"Authorization": "Bearer metrics-secret"})
         assert ok.status_code == 200 and "mcp_tool_calls_total" in ok.text
+
+
+async def test_preflight_is_answered_before_authentication(http: Callable[..., Any]) -> None:
+    """A browser sends OPTIONS without credentials; a 401 here blocks the call it precedes."""
+
+    async with http(AUTH_MODES="oauth,api_key") as client:
+        response = await client.options(
+            "/mcp",
+            headers={
+                "Origin": "https://example.test",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+    assert response.status_code == 204
+    assert response.headers["access-control-allow-origin"] == "*"
+    allowed = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed and "mcp-protocol-version" in allowed
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+async def test_the_401_discovery_pointer_is_readable_from_a_browser(http: Callable[..., Any]) -> None:
+    async with http(AUTH_MODES="oauth,api_key") as client:
+        response = await client.post(
+            "/mcp",
+            headers={"Accept": ACCEPT, "Content-Type": "application/json", "Origin": "https://example.test"},
+            json=legacy_initialize(),
+        )
+    assert response.status_code == 401
+    # Cross-origin JavaScript cannot read WWW-Authenticate unless the server exposes it, and without
+    # it the client never learns where the authorization server is.
+    exposed = response.headers.get("access-control-expose-headers", "").lower()
+    assert "www-authenticate" in exposed
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+async def test_resource_metadata_without_the_resource_path_is_recoverable(
+    http: Callable[..., Any],
+) -> None:
+    async with http(AUTH_MODES="oauth") as client:
+        response = await client.get("/.well-known/oauth-protected-resource")
+        assert response.status_code == 307
+        assert response.headers["location"] == "/.well-known/oauth-protected-resource/mcp"
+
+        followed = await client.get("/.well-known/oauth-protected-resource", follow_redirects=True)
+    assert followed.status_code == 200
+    assert followed.json()["resource"].endswith("/mcp")
