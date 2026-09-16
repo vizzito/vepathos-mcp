@@ -41,7 +41,7 @@ echo
 echo "== DCR =="
 registered="$(curl -sS -X POST "${CORE}/oauth/register" \
   -H "Content-Type: application/json" \
-  -d "$(python3 -c 'import json,sys; print(json.dumps({"client_name":"vepathos-local-inspector","redirect_uris":[sys.argv[1]],"token_endpoint_auth_method":"none"}))' "${REDIRECT_URI}")")"
+  -d "$(python3 -c 'import json,sys; print(json.dumps({"client_name":"MCP Inspector (Vepathos local test)","redirect_uris":[sys.argv[1]],"token_endpoint_auth_method":"none"}))' "${REDIRECT_URI}")")"
 echo "${registered}"
 client_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["client_id"])' <<<"${registered}")"
 
