@@ -212,12 +212,16 @@ curl -sS https://api.vepathos.com/.well-known/oauth-authorization-server
 
 ## Configuration that must not change casually
 
-- **`OAUTH_SCOPE`** is both the scope advertised in the resource metadata and the scope every token must
-  carry. Setting it to `optimize offline_access` makes the verifier look for that whole string as one
-  scope and rejects every OAuth token — ChatGPT, Claude and Codex at once.
+- **`OAUTH_SCOPE`** is the scope every token must carry (verifier). **`OAUTH_ADVERTISED_SCOPES`**
+  (optional) is what Protected Resource Metadata announces; when unset it equals `OAUTH_SCOPE`.
+  Setting `OAUTH_SCOPE` to `optimize offline_access` makes the verifier look for that whole string as
+  one scope and rejects every OAuth token — ChatGPT, Claude and Codex at once. To announce multiple
+  scopes without changing the required one, set `OAUTH_ADVERTISED_SCOPES` separately.
 - **`MCP_CONFIRM_BEFORE_OPTIMIZE`** also changes the tool description, the server instructions and the
   input schema. Clients cache tool definitions: after changing it, a client may need its connector
   removed and added again to see the new ones, though one that keeps sending `confirmed` still works.
+  **Do not flip this in prod without [smoke-prompts.md](smoke-prompts.md) on a ChatGPT staging
+  connector (T19).**
 - **An `.env` edit needs a recreated container.** `docker restart` keeps the old environment. Recreate
   with the deploy command in [deploy-api-prod.md § 4](deploy-api-prod.md#4-adapter-container), adding
   `--force-recreate --no-build`, from a shell where `CADDY_VETH_IP` is exported. Then confirm:
@@ -225,6 +229,20 @@ curl -sS https://api.vepathos.com/.well-known/oauth-authorization-server
 ```bash
 docker exec vepathos-mcp-vepathos-mcp-1 env | grep MCP_CONFIRM
 ```
+
+## Connect-loop cron (T21)
+
+Every 15 minutes on api-prod, run the Connect-loop query from this runbook (grants authorized but
+unused in the last window — the 16/09 pattern was ~15:33:46 → 15:35:31). Alert the on-call channel
+configured in the cron host (set recipient when installing). Validate the query against that
+incident window before enabling alerts.
+
+## Engine image provenance (T25)
+
+`route-optimizer-api` may be `api-latest` from CI (`main`) or a local `--build`. Feature work merges
+`feature → develop → main`; rebuilds must set `IMAGE_TAG` explicitly and compare km/geometry against
+a known good job before promoting. Never merge abandoned local `main` commits such as `0560e95`
+(May) into production `main`.
 
 ## Neighbouring services on the same host
 

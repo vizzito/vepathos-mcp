@@ -1,10 +1,16 @@
 # Tools
 
-Vepathos MCP exposes six tools. There is intentionally no cancel tool: a submitted
-optimization always runs to completion.
+# Vepathos MCP exposes twelve tools (six read/plan + six import/dataset). There is intentionally
+# no cancel tool: a submitted optimization always runs to completion.
 
 | Tool | Title | Annotations |
 |---|---|---|
+| `import_delivery_file` | Import delivery file | `readOnlyHint: false` |
+| `import_delivery_text` | Import pasted deliveries | `readOnlyHint: false` |
+| `get_import_result` | Get import result | `readOnlyHint: true` |
+| `update_import_mapping` | Update import mapping | `readOnlyHint: false` |
+| `optimize_dataset` | Optimize imported dataset | `readOnlyHint: false` |
+| `list_datasets` | List datasets | `readOnlyHint: true` |
 | `geocode_addresses` | Geocode addresses | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `get_geocode_result` | Get geocode result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `optimize_delivery_routes` | Optimize delivery routes | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
@@ -15,6 +21,17 @@ optimization always runs to completion.
 `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
+
+Large files (hundreds+ stops): use `import_delivery_file` → `get_import_result` → `optimize_dataset`
+instead of pasting `stops[]`. See [large-payloads.md](large-payloads.md).
+
+## `import_delivery_file` / `import_delivery_text`
+
+Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. Returns `import_id`.
+Poll `get_import_result` for `dataset_id`, `summary` (never all rows), and `needs_confirmation`.
+`update_import_mapping` corrects columns without re-upload. `list_datasets` lists ready handles.
+`optimize_dataset` shares billing/idempotency with optimize; free replans (default 5) apply per
+`dataset_id`.
 
 ## `list_fleet`
 
@@ -64,6 +81,7 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `vehicles[]` | array (1–50) | yes | Vehicle types. |
 | `vehicles[].vehicle_id` | string | yes | `[A-Za-z0-9_.-]`, max 32, unique (case-insensitive). Echoed on routes. |
 | `vehicles[].count` | integer 1–500 | no (1) | Identical units available. |
+| `vehicles[].min_stops` | integer | no (1) | Soft floor per route. Warns if > floor(max×0.8). |
 | `vehicles[].max_stops` | integer | no | Maximum stops per vehicle route. |
 | `vehicles[].max_weight_kg` | number > 0 | no | Setting it on any vehicle **enforces** weight capacity. Every vehicle and stop must then carry weight. |
 | `vehicles[].max_volume_m3` | number > 0 | no | Same rule for volume. |
@@ -77,6 +95,7 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `schedule.route_start_time` | `HH:MM` | conditional | Required when any stop has a time window. |
 | `schedule.time_zone` | IANA name | no (`UTC`) | e.g. `America/New_York`. |
 | `schedule.service_time_minutes` | number 0–240 | no | Minutes spent at each stop. |
+| `schedule.max_route_minutes` | number 30–1440 | no | Soft journey cap; turns on `rebalance_by_time` for this job only. |
 | `idempotency_key` | string 8–128 | no | Override the automatic deduplication key. |
 | `confirmed` | boolean | no (`false`) | `false` returns a preflight and charges nothing. `true` submits the job. |
 
@@ -194,9 +213,15 @@ While running, the tool waits up to about 20 seconds for completion, then return
 }
 ```
 
+`duration_minutes` / `total_duration_minutes` is driving plus service time at every stop
+(and return to depot when included). It is not `last_arrival − first_arrival`.
+
 ### `detail=stops`
 
-Ordered `stop_id`s with estimated arrival (`HH:MM`). Coordinates are never echoed.
+Ordered `stop_id`s with estimated arrival (`HH:MM`, anchored on `schedule.route_start_time`).
+That clock is what the driver sees; the span between the first and last arrival is travel
+between stops, not the route's `duration_minutes` (which also counts service). Coordinates
+are never echoed.
 
 ### `detail=unassigned`
 

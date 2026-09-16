@@ -239,6 +239,15 @@ While the job is not completed, it returns the status payload above with no resu
 
 Metrics the engine does not produce are omitted, never invented.
 
+**`duration_minutes` vs `arrival_time`.** They measure different things and can both be
+correct. `duration_minutes` (and `total_duration_minutes`) is the route's working time:
+driving plus `service_time_minutes` at every stop (and return to depot when the engine
+includes it). `arrival_time` is the driver's clock at each stop (`HH:MM`, anchored on
+`schedule.route_start_time`). The span from first to last arrival is travel between those
+stops, not the working duration — e.g. seven stops with 10 minutes of service each can
+show arrivals ~26 minutes apart and `duration_minutes` ≈ 96 (travel + 70 minutes of
+service). Do not treat `last_arrival − first_arrival` as `duration_minutes`.
+
 ### `view=stops`
 
 ```json
@@ -252,7 +261,8 @@ Metrics the engine does not produce are omitted, never invented.
 }
 ```
 
-Coordinates are not echoed (the caller already has them).
+Coordinates are not echoed (the caller already has them). `arrival_time` is local clock
+time at the stop; see the note above for how it relates to `duration_minutes`.
 
 ### `view=unassigned`
 
@@ -265,10 +275,83 @@ Coordinates are not echoed (the caller already has them).
 }
 ```
 
+## `POST /api/mcp/v1/imports`
+
+Upload a delivery file for Smart Import and keep it as an MCP dataset (24 h TTL). Unlike geocode,
+the SI job is **not** deleted when complete — Core materializes normalized stops for
+`optimize_dataset`.
+
+Body (one of):
+
+| Field | Description |
+|---|---|
+| `content_base64` + `filename` | File bytes from the adapter (ChatGPT `fileParams` downloaded server-side). |
+| `text` + optional `filename` | Pasted delivery list (`import_delivery_text`). |
+| `url` + optional `filename` | Public `https` download; private/metadata hosts rejected (SSRF). |
+
+Optional: `timezone`, `depot_country`, `mime_type`. Max size `MCP_IMPORT_MAX_BYTES` (8 MiB).
+
+### Response `202 Accepted`
+
+```json
+{
+  "import_id": "si-job.hmac",
+  "dataset_id": "mcp_ds_…",
+  "status": "running",
+  "poll_after_ms": 1500,
+  "expires_at": "2026-09-17T12:00:00Z"
+}
+```
+
+`status` may be `running`, `needs_mapping`, or `completed`. Missing file / bad URL / too large →
+`422 INVALID_INPUT`.
+
+## `GET /api/mcp/v1/imports/{import_id}`
+
+Poll. When ready: `dataset_id`, `expires_at`, `summary` (counts, mapping, sample, units,
+`needs_confirmation`), `free_replans_remaining`. **Never returns all rows.**
+
+## `PUT /api/mcp/v1/imports/{import_id}`
+
+Body `{ "mapping": { "SourceCol": "vepathos_field", … } }` — correct Smart Import column mapping
+without re-upload. Returns updated summary + status.
+
+## `GET /api/mcp/v1/datasets`
+
+List datasets for the account (MCP imports; web-app datasets when exposed). Query `limit` (1–100).
+
+```json
+{
+  "datasets": [
+    {
+      "dataset_id": "mcp_ds_…",
+      "filename": "orders.xlsx",
+      "source": "file",
+      "status": "ready",
+      "stops": 8200,
+      "expires_at": "…",
+      "free_replans_remaining": 5
+    }
+  ]
+}
+```
+
+## `POST /api/mcp/v1/optimization/jobs` — `dataset_id`
+
+In addition to inline `stops[]`, the body may carry `dataset_id` (and optional `exclude_stop_ids`).
+Core expands the stored stops before entitlement checks. Same preflight / idempotency / billing as
+inline jobs. When `dataset_id` is present and free replans remain, Core may bill
+`mcp_dataset_replan` and skip quota (`MCP_FREE_REPLANS_PER_DATASET`, default 5). Response may include
+`free_replans_remaining` and `dataset_id`. Do not send both `stops` and `dataset_id`.
+
+`vehicles[].min_stops` defaults to 1 when omitted. `schedule.max_route_minutes` turns on
+`rebalance_by_time` for that job only.
+
 ## `POST /api/mcp/v1/geocode`
 
 Start a Smart Import geocode job. Requires a `depot` `{lat,lng}` or `city`. `stops[]` are
-`id` + `address` (optional city/region/postcode/country). Max 500 stops.
+`id` + `address` (optional city/region/postcode/country). Max 500 stops. **Geocode deletes the SI
+job when finished** (quota only); use `/imports` to keep a dataset.
 
 ### Response `202 Accepted`
 
@@ -284,7 +367,8 @@ Start a Smart Import geocode job. Requires a `depot` `{lat,lng}` or `city`. `sto
 ## `GET /api/mcp/v1/geocode/{job_id}`
 
 Poll. `running` while Smart Import works; `completed` includes `stops[]` with `id`, `lat`, `lng`,
-`band` (`valid` | `review` | `needs_geocoding`), `confidence`. Usable pins are charged to the
+`band` (`valid` | `review` | `needs_geocoding`), `confidence`, and `matched_address` (gazetteer
+match text — prefer over confidence alone when reviewing pins). Usable pins are charged to the
 account Smart Import quota. Unknown / other-account handle → `404 GEOCODE_NOT_FOUND`.
 
 ## Errors
@@ -315,6 +399,7 @@ Every error has the same envelope:
 | 401 | `SERVICE_UNAUTHORIZED` | — (service key missing/invalid; an operator problem) |
 | 404 | `OPTIMIZATION_NOT_FOUND` | — (unknown job or owned by another account) |
 | 404 | `GEOCODE_NOT_FOUND` | — |
+| 404 | `IMPORT_NOT_FOUND` / `DATASET_NOT_FOUND` | — (wrong account or expired) |
 | 410 | `GEOCODE_EXPIRED` | — |
 | 410 | `OPTIMIZATION_EXPIRED` | — |
 | 404 | `CHANNEL_DISABLED` | — |
