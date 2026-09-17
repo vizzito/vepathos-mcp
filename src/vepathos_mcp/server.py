@@ -55,7 +55,10 @@ def build_server(
         name=SERVER_NAME,
         title=SERVER_TITLE,
         version=__version__,
-        description="Large-scale delivery and fleet route optimization for AI agents.",
+        description=(
+            "Delivery dispatch for the connected Vepathos account: fleet, imports, optimized routes "
+            "and results."
+        ),
         instructions=server_instructions(
             confirm_before_optimize=settings.confirm_before_optimize,
             import_tools=settings.import_tools_enabled,

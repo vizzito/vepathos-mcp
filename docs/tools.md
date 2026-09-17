@@ -6,6 +6,23 @@
 # `MCP_MAP_SHARES_ENABLED=true`. There is intentionally no cancel tool: a submitted optimization always
 # runs to completion.
 
+## Server instructions
+
+`server_instructions()` in `src/vepathos_mcp/tools/descriptions.py` is sent in the `initialize` result
+(`instructions`) and makes any client work as the user's dispatcher: inspect, propose with numbers, run
+after an explicit yes, summarize. It is one text for every client of `https://mcp.vepathos.com/mcp`:
+
+- ChatGPT, Claude, Gemini, Cursor and Codex read it from `initialize` (how much of it each client shows
+  the model varies, so rules for one tool also live in that tool's description).
+- Vepathos AI (`vepathos-router-client`, `/ai`) calls the OpenAI Responses API, which forwards only the
+  tool list from an MCP server, so the Agent API has to put this same text in the Responses
+  `instructions`, next to its own account context (email, plan, language). Read it from `initialize`
+  instead of copying it.
+
+It never carries an account, company, tenant or user id: the connection binds the account. It changes
+with `MCP_CONFIRM_BEFORE_OPTIMIZE`, `MCP_IMPORT_TOOLS_ENABLED` and `MCP_MAP_SHARES_ENABLED`, so it only
+names tools the server publishes.
+
 | Tool | Title | Annotations |
 |---|---|---|
 | `import_delivery_file` | Import delivery file | `readOnlyHint: false` |

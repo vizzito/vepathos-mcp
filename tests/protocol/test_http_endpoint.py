@@ -112,7 +112,7 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
         assert "mcp-session-id" not in init.headers  # stateless: no session affinity required
         body = parse_rpc(init)
         assert body["result"]["serverInfo"]["name"] == "vepathos"
-        assert "Vepathos solves vehicle routing problems" in body["result"]["instructions"]
+        assert "Vepathos plans delivery operations" in body["result"]["instructions"]
 
         listed = await client.post(
             "/mcp",

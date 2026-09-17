@@ -23,9 +23,11 @@ import pytest
 from vepathos_mcp.tools import descriptions as d
 from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 
-# Roughly 2,000 tokens. Raised with import/dataset tools (0.4.0); every conversation pays it.
-MAX_TOTAL_CHARS = 9_500
-MAX_INSTRUCTION_CHARS = 2_400
+# Roughly 2,800 tokens; every conversation pays it. Raised with import/dataset tools (0.4.0), then for the
+# dispatcher instructions (0.6.0): one text for external clients and Vepathos AI, with the account binding,
+# the data rules and the inspect → propose → yes → run → summarize loop.
+MAX_TOTAL_CHARS = 11_200
+MAX_INSTRUCTION_CHARS = 4_100
 
 TOOL_NAMES = (
     "geocode_addresses",
@@ -200,6 +202,41 @@ def test_a_short_fleet_is_offered_as_more_vehicles_not_a_test(gate: bool) -> Non
     text = d.server_instructions(confirm_before_optimize=gate, import_tools=True).lower()
     assert "increase the vehicle count" in text
     assert "do not call it a test or hypothetical fleet" in text
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+def test_the_account_comes_from_the_connection_never_from_the_model(gate: bool, imports: bool) -> None:
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports, map_shares=True).lower()
+    assert "already signed in" in text and "no tool takes an account, company, tenant or user id" in text
+    assert "never ask for one, guess one or pass one" in text and "never ask the user to sign in" in text
+    # No example identifiers: nothing the model could copy into a call.
+    for field in ("company_id", "tenant_id", "user_id", "workspace_id"):
+        assert field not in text
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+def test_files_reach_the_model_as_summaries_and_ids(gate: bool, imports: bool) -> None:
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports).lower()
+    assert "never ask for or repeat rows, addresses, coordinates, customer names or the spreadsheet" in text
+    assert "a summary of a file uploaded in vepathos is already imported" in text
+    assert ("never as rows into optimize_delivery_routes" in text) is imports
+
+
+@EACH_GATE_SETTING
+def test_the_dispatcher_inspects_proposes_and_runs_only_after_a_yes(gate: bool) -> None:
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=True).lower()
+    order = [
+        text.index(step)
+        for step in ("inspect before proposing", "propose with numbers", "run only after an explicit yes")
+    ]
+    assert order == sorted(order)
+    assert "raise stops per vehicle" in text and "split the batch" in text
+    assert "addresses need review" in text
+    assert "unassigned stops" in text and "offer the next step" in text
+    assert "in the user's language" in text
+    assert "do not mention mcp, oauth, tokens, tool or parameter names" in text
 
 
 def test_dataset_texts_offer_the_last_run() -> None:
