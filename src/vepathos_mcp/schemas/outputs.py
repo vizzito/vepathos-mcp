@@ -81,8 +81,7 @@ class RouteMetrics(OutputModel):
     distance_km: float | None = Field(None, description="Driving distance for this route, kilometres.")
     duration_minutes: float | None = Field(
         None,
-        description="Route working time in minutes: driving plus schedule.service_time_minutes "
-        "at each stop.",
+        description="Route working time in minutes: driving plus schedule.service_time_minutes at each stop.",
     )
     weight_kg: float | None = Field(
         None, description="Total stop weight on this route, kilograms (null if weight unused)."

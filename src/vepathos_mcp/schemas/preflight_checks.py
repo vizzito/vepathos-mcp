@@ -166,6 +166,37 @@ def reject_impossible(inp: OptimizeInput) -> None:
                 )
 
 
+OUTLIER_MIN_METERS = 10_000.0
+OUTLIER_MEDIAN_FACTOR = 5.0
+
+
+def outlier_stop_warnings(inp: OptimizeInput) -> list[dict[str, Any]]:
+    """Stops far from all the others: a wrong geocode (Boston Common from memory, a pin in another
+    city) sits well outside the cloud. Flags stops more than 10 km and 5x the median distance from
+    the stops' centroid."""
+
+    if len(inp.stops) < 4:
+        return []
+    clat = sum(s.latitude for s in inp.stops) / len(inp.stops)
+    clng = sum(s.longitude for s in inp.stops) / len(inp.stops)
+    distances = [(haversine_m(clat, clng, s.latitude, s.longitude), s.stop_id) for s in inp.stops]
+    ordered = sorted(d for d, _ in distances)
+    median = ordered[len(ordered) // 2]
+    threshold = max(OUTLIER_MIN_METERS, OUTLIER_MEDIAN_FACTOR * median)
+    far = [stop_id for d, stop_id in distances if d > threshold]
+    # Half the stops "far" is two clusters, not outliers.
+    if not far or len(far) * 2 >= len(inp.stops):
+        return []
+    return [
+        {
+            "code": "stop_far_from_rest",
+            "stop_ids": far[:50],
+            "message": f"{len(far)} stop(s) are more than {round(threshold / 1000)} km from the rest; "
+            "check their coordinates.",
+        }
+    ]
+
+
 def collect_warnings(
     inp: OptimizeInput,
     *,
@@ -225,6 +256,8 @@ def collect_warnings(
         )
 
     warnings.extend(stop_band_warnings(inp.vehicles, len(inp.stops)))
+
+    warnings.extend(outlier_stop_warnings(inp))
 
     # Depot far from the stop cloud (rough: > 50 km from centroid).
     if inp.stops:
