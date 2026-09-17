@@ -71,6 +71,17 @@ def to_core_request(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
                 "max_route_minutes": schedule.max_route_minutes if schedule else None,
             }
         ),
+        # Only the flags the caller set: an omitted one lets Core follow the data, and leaving it out
+        # keeps the request fingerprint of calls that never used flags unchanged.
+        **(
+            {"constraints": flags}
+            if (
+                flags := _drop_none(
+                    {"weight": inp.use_weight, "volume": inp.use_volume, "time_windows": inp.use_time_windows}
+                )
+            )
+            else {}
+        ),
     }
 
 

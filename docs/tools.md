@@ -98,9 +98,10 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `vehicles[]` | array (1–50) | yes | Vehicle types. |
 | `vehicles[].vehicle_id` | string | yes | `[A-Za-z0-9_.-]`, max 32, unique (case-insensitive). Echoed on routes. |
 | `vehicles[].count` | integer 1–500 | no (1) | Identical units available. |
-| `vehicles[].min_stops` | integer | no (1) | Soft floor per route. Warns if > floor(max×0.8). |
+| `vehicles[].min_stops` | integer | no (50% of `max_stops`) | Floor per route. The engine lowers it to floor(max×0.9) when higher, and lowers the fleet's minimums when they add up to more than 95% of the stops; the preflight warns (`stop_band_margin`, `fleet_min_above_stops`). |
 | `vehicles[].max_stops` | integer | no | Maximum stops per vehicle route. |
-| `vehicles[].max_weight_kg` | number > 0 | no | Setting it on any vehicle **enforces** weight capacity. Every vehicle and stop must then carry weight. |
+| `vehicles[].max_weight_kg` | number > 0 | no | Setting it on any vehicle **enforces** weight capacity unless `use_weight=false`. Every vehicle and stop must then carry weight. |
+| `use_weight` / `use_volume` / `use_time_windows` | boolean | no (follow the data) | The flag decides what the engine applies. `false` keeps weights, volumes or windows for reference without optimizing by them; `true` needs the matching vehicle capacity. |
 | `vehicles[].max_volume_m3` | number > 0 | no | Same rule for volume. |
 | `stops[]` | array (≥ 1) | yes | Coordinates are required; addresses are not geocoded. |
 | `stops[].stop_id` | string | yes | Max 64 chars, unique. Echoed in results. |

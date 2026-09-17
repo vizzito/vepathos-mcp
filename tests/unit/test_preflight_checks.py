@@ -6,7 +6,12 @@ import pytest
 
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.schemas.inputs import OptimizeInput
-from vepathos_mcp.schemas.preflight_checks import STOP_MARGIN_RATIO, collect_warnings, reject_impossible
+from vepathos_mcp.schemas.preflight_checks import (
+    collect_warnings,
+    reject_impossible,
+    resolve_stop_band,
+    stop_band_warnings,
+)
 
 
 def _base(**overrides):
@@ -75,23 +80,42 @@ def test_rejects_window_ending_before_route_start() -> None:
     assert "time window" in exc.value.message.lower()
 
 
-def test_warns_on_tight_min_stops_margin() -> None:
+def test_mirrors_the_engine_stop_band() -> None:
+    assert resolve_stop_band(None, 100) == (50, "default")
+    assert resolve_stop_band(90, 100) == (90, None)
+    assert resolve_stop_band(95, 100) == (90, "margin")
+    assert resolve_stop_band(6, 6) == (5, "margin")
+    assert resolve_stop_band(5, None) == (5, None)
+
+
+def test_warns_when_the_engine_will_lower_min_stops() -> None:
     inp = _base(
-        vehicles=[
-            {
-                "vehicle_id": "van",
-                "count": 25,
-                "min_stops": 90,
-                "max_stops": 100,
-            }
-        ],
-        stops=[{"stop_id": f"s{i}", "latitude": -34.6 + i * 0.001, "longitude": -58.4} for i in range(10)],
+        vehicles=[{"vehicle_id": "van", "count": 2, "min_stops": 95, "max_stops": 100}],
+        stops=[{"stop_id": f"s{i}", "latitude": -34.6 + i * 0.001, "longitude": -58.4} for i in range(300)],
     )
-    warnings = collect_warnings(inp)
-    codes = {w["code"] for w in warnings}
-    assert "tight_stop_margin" in codes
-    floor = int(100 * STOP_MARGIN_RATIO)
-    assert floor == 80
+    warning = next(w for w in collect_warnings(inp) if w["code"] == "stop_band_margin")
+    assert warning["vehicle_id"] == "van"
+    assert "will run as 90" in warning["message"]
+
+
+def test_warns_when_the_fleet_minimums_exceed_the_stops() -> None:
+    # 20 vans with max 150 and no min: the engine uses 75 each, 1500 stops for 300.
+    inp = _base(
+        vehicles=[{"vehicle_id": "van", "count": 20, "max_stops": 150}],
+        stops=[{"stop_id": f"s{i}", "latitude": -34.6 + i * 0.0001, "longitude": -58.4} for i in range(300)],
+    )
+    codes = [w["code"] for w in stop_band_warnings(inp.vehicles, len(inp.stops))]
+    assert codes == ["fleet_min_above_stops"]
+
+
+def test_a_comfortable_band_says_nothing() -> None:
+    inp = _base(
+        vehicles=[{"vehicle_id": "van", "count": 80, "min_stops": 80, "max_stops": 150}],
+        stops=[
+            {"stop_id": f"s{i}", "latitude": -34.6 + i * 0.00001, "longitude": -58.4} for i in range(8200)
+        ],
+    )
+    assert stop_band_warnings(inp.vehicles, len(inp.stops)) == []
 
 
 def test_warns_missing_route_start_and_near_depot() -> None:

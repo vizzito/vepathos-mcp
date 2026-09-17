@@ -19,6 +19,7 @@ from vepathos_mcp.schemas.inputs import (
     validation_error_to_domain,
 )
 from vepathos_mcp.schemas.outputs import OptimizeResult, OutputModel, Preflight
+from vepathos_mcp.schemas.preflight_checks import stop_band_warnings
 from vepathos_mcp.telemetry.logging import log_event
 from vepathos_mcp.tools.rendering import success_result
 from vepathos_mcp.tools.results import POLL_AFTER_SECONDS
@@ -87,8 +88,8 @@ class DatasetVehicle(StrictModel):
         None,
         ge=0,
         le=10_000,
-        description="Minimum stops per vehicle. Default 1 when omitted. "
-        "Keep min <= floor(max x 0.8) unless the user asks for a tight band.",
+        description="Minimum stops per vehicle. Omitted: 50% of max_stops. It must stay at least 10% under "
+        "max_stops; a higher value is lowered to floor(max_stops x 0.9), with a warning.",
     )
     max_stops: int | None = Field(None, ge=1, le=10_000)
     max_weight_kg: float | None = Field(None, gt=0)
@@ -110,9 +111,21 @@ class OptimizeDatasetInput(StrictModel):
     depot: DatasetDepot
     vehicles: list[DatasetVehicle] = Field(min_length=1, max_length=50)
     exclude_stop_ids: list[str] | None = Field(None, max_length=25_000)
-    use_weight: bool = False
-    use_volume: bool = False
-    use_time_windows: bool = False
+    use_weight: bool | None = Field(
+        None,
+        description="Optimize by weight. Omit to follow the vehicles' max_weight_kg; "
+        "false keeps weights for reference.",
+    )
+    use_volume: bool | None = Field(
+        None,
+        description="Optimize by volume. Omit to follow the vehicles' max_volume_m3; "
+        "false keeps volumes for reference.",
+    )
+    use_time_windows: bool | None = Field(
+        None,
+        description="Respect the dataset's time windows. Omit to follow the data; "
+        "false keeps them for reference.",
+    )
     route_start_time: str | None = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     time_zone: str = Field("UTC", max_length=64)
     service_time_minutes: float | None = Field(None, ge=0, le=240)
@@ -412,15 +425,18 @@ def make_list_datasets_tool(deps: ToolDeps) -> Any:
 
 
 def dataset_constraints(inp: OptimizeDatasetInput, dataset: CoreDataset) -> list[str]:
-    """What Core will enforce. Windows follow the stored stops, not use_time_windows: Core enforces
-    every window a dataset carries."""
+    """What the engine will apply. A flag decides; an omitted flag follows the data (a vehicle capacity,
+    the windows the dataset carries), the same rule Core applies to `constraints`."""
+
+    def applied(flag: bool | None, declared: bool) -> bool:
+        return declared if flag is None else flag
 
     constraints = []
-    if inp.use_weight and any(v.max_weight_kg is not None for v in inp.vehicles):
+    if applied(inp.use_weight, any(v.max_weight_kg is not None for v in inp.vehicles)):
         constraints.append("weight_capacity")
-    if inp.use_volume and any(v.max_volume_m3 is not None for v in inp.vehicles):
+    if applied(inp.use_volume, any(v.max_volume_m3 is not None for v in inp.vehicles)):
         constraints.append("volume_capacity")
-    if dataset.with_time_window:
+    if dataset.with_time_window and applied(inp.use_time_windows, True):
         constraints.append("time_windows")
     return constraints
 
@@ -444,7 +460,7 @@ def dataset_warnings(inp: OptimizeDatasetInput, dataset: CoreDataset) -> list[di
                     "unless every stop has one.",
                 }
             )
-    if dataset.with_time_window and not inp.route_start_time:
+    if "time_windows" in constraints and not inp.route_start_time:
         warnings.append(
             {
                 "code": "route_start_time_required",
@@ -453,6 +469,7 @@ def dataset_warnings(inp: OptimizeDatasetInput, dataset: CoreDataset) -> list[di
                 "is required.",
             }
         )
+    warnings.extend(stop_band_warnings(inp.vehicles, dataset.stops - len(set(inp.exclude_stop_ids or []))))
     if dataset.needs_confirmation:
         warnings.append(
             {
@@ -586,8 +603,8 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
                             "count": veh.count,
                             "min_stops": veh.min_stops,
                             "max_stops": veh.max_stops,
-                            "max_weight_kg": veh.max_weight_kg if inp.use_weight else None,
-                            "max_volume_m3": veh.max_volume_m3 if inp.use_volume else None,
+                            "max_weight_kg": veh.max_weight_kg,
+                            "max_volume_m3": veh.max_volume_m3,
                         }.items()
                         if v is not None
                     }
@@ -607,6 +624,17 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
             }
             if inp.exclude_stop_ids:
                 body["exclude_stop_ids"] = inp.exclude_stop_ids
+            flags = {
+                k: v
+                for k, v in {
+                    "weight": inp.use_weight,
+                    "volume": inp.use_volume,
+                    "time_windows": inp.use_time_windows,
+                }.items()
+                if v is not None
+            }
+            if flags:
+                body["constraints"] = flags
 
             # The preflight reads the dataset's counts from Core instead of expanding its stops here.
             if deps.settings.confirm_before_optimize and not inp.confirmed:

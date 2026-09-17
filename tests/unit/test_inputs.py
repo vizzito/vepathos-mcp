@@ -83,6 +83,32 @@ def test_time_windows_require_route_start_time() -> None:
     assert parse_optimize_input(args).uses_time_windows
 
 
+def test_a_flag_set_false_keeps_the_data_without_enforcing_it() -> None:
+    args = sample_arguments(stops=2)
+    args["vehicles"] = [{"vehicle_id": "van", "count": 2, "max_weight_kg": 900, "max_volume_m3": 3}]
+    args["stops"][0]["time_window"] = {"start": "09:00", "end": "12:00"}
+    args["schedule"].pop("route_start_time", None)
+    args.update({"use_weight": False, "use_volume": False, "use_time_windows": False})
+    inp = parse_optimize_input(args)
+    assert not (inp.uses_weight or inp.uses_volume or inp.uses_time_windows)
+
+
+def test_a_flag_set_true_needs_a_capacity_to_apply() -> None:
+    args = sample_arguments(stops=2)
+    args["use_volume"] = True
+    err = expect_error(args, ErrorCode.INVALID_INPUT)
+    assert "max_volume_m3" in err.message + str(err.details) + str(err.suggestion)
+
+
+def test_only_the_flags_the_caller_set_reach_core() -> None:
+    from vepathos_mcp.schemas.mapping import to_core_request
+
+    args = sample_arguments(stops=2)
+    assert "constraints" not in to_core_request(parse_optimize_input(args), "2026-09-17")
+    args["use_time_windows"] = False
+    assert to_core_request(parse_optimize_input(args), "2026-09-17")["constraints"] == {"time_windows": False}
+
+
 def test_time_window_order_and_format() -> None:
     args = sample_arguments(stops=1)
     args["schedule"]["route_start_time"] = "08:00"

@@ -189,6 +189,32 @@ async def test_dataset_preflight_warns_before_a_run_core_would_reject(
     assert preflight["constraints_enforced"] == ["weight_capacity", "time_windows"]
 
 
+async def test_dataset_flags_keep_capacities_and_windows_for_reference(
+    mcp_client: Callable[..., Any], core_state: Any
+) -> None:
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="true") as client:
+        dataset_id = await _import(client)
+        core_state.datasets[dataset_id]["stops"][1]["time_window"] = {"start": "09:00", "end": "12:00"}
+        vehicles = [{"vehicle_id": "van", "count": 1, "max_weight_kg": 500, "min_stops": 5, "max_stops": 5}]
+        is_error, preview = await call(
+            client,
+            "optimize_dataset",
+            {
+                "dataset_id": dataset_id,
+                "depot": DEPOT,
+                "vehicles": vehicles,
+                "use_weight": False,
+                "use_time_windows": False,
+            },
+        )
+    assert not is_error, preview
+    preflight = preview["preflight"]
+    codes = {w["code"] for w in preflight["warnings"] or []}
+    assert preflight["constraints_enforced"] == []
+    assert "stops_without_weight" not in codes and "route_start_time_required" not in codes
+    assert "stop_band_margin" in codes
+
+
 async def test_a_new_chat_can_repeat_the_last_run_of_a_dataset(
     mcp_client: Callable[..., Any], clock: FakeClock
 ) -> None:

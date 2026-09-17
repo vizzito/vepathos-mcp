@@ -55,8 +55,8 @@ class Vehicle(StrictModel):
         None,
         ge=0,
         le=10_000,
-        description="Minimum stops one vehicle should serve. Default when omitted is 1 (not 80% of max). "
-        "Keep min ≤ floor(max_stops x 0.8) unless the user asks for a tight band; tight bands warn.",
+        description="Minimum stops one vehicle should serve. Omitted: 50% of max_stops. It must stay at "
+        "least 10% under max_stops; a higher value is lowered to floor(max_stops x 0.9), with a warning.",
     )
     max_stops: int | None = Field(
         None, ge=1, le=10_000, description="Maximum number of stops one vehicle may serve on its route."
@@ -66,14 +66,14 @@ class Vehicle(StrictModel):
         gt=0,
         le=1_000_000,
         description="Payload capacity per vehicle in kilograms. Setting it on any vehicle enforces weight "
-        "capacity: every vehicle and every stop must then include weight.",
+        "capacity (every vehicle and stop then needs weight) unless use_weight=false.",
     )
     max_volume_m3: float | None = Field(
         None,
         gt=0,
         le=10_000,
         description="Cargo volume capacity per vehicle in cubic meters. Setting it on any vehicle enforces "
-        "volume capacity: every vehicle and every stop must then include volume.",
+        "volume capacity (every vehicle and stop then needs volume) unless use_volume=false.",
     )
 
 
@@ -169,6 +169,20 @@ class OptimizeInput(StrictModel):
         min_length=1, max_length=MAX_STOPS, description="Stops to assign and sequence (at least 1)."
     )
     schedule: Schedule | None = Field(None, description="Optional date, departure time and time zone.")
+    use_weight: bool | None = Field(
+        None,
+        description="Optimize by weight capacity. Omit to follow the data; "
+        "false keeps weights for reference.",
+    )
+    use_volume: bool | None = Field(
+        None,
+        description="Optimize by volume capacity. Omit to follow the data; "
+        "false keeps volumes for reference.",
+    )
+    use_time_windows: bool | None = Field(
+        None,
+        description="Respect stop time windows. Omit to follow the data; false keeps windows for reference.",
+    )
     idempotency_key: str | None = Field(
         None,
         pattern=IDEMPOTENCY_KEY_PATTERN,
@@ -204,12 +218,22 @@ class OptimizeInput(StrictModel):
                 )
             seen_stops.add(stop.stop_id)
 
-        _require_complete("max_weight_kg", "weight_kg", self.vehicles, self.stops)
-        _require_complete("max_volume_m3", "volume_m3", self.vehicles, self.stops)
-
-        if any(stop.time_window is not None for stop in self.stops) and (
-            self.schedule is None or self.schedule.route_start_time is None
+        for flag, on, vehicle_field in (
+            ("use_weight", self.uses_weight, "max_weight_kg"),
+            ("use_volume", self.uses_volume, "max_volume_m3"),
         ):
+            if on and not any(getattr(v, vehicle_field) is not None for v in self.vehicles):
+                raise PydanticCustomError(
+                    "constraint_without_capacity",
+                    "{flag} is true but no vehicle has {vehicle_field}",
+                    {"flag": flag, "vehicle_field": vehicle_field},
+                )
+        if self.uses_weight:
+            _require_complete("max_weight_kg", "weight_kg", self.vehicles, self.stops)
+        if self.uses_volume:
+            _require_complete("max_volume_m3", "volume_m3", self.vehicles, self.stops)
+
+        if self.uses_time_windows and (self.schedule is None or self.schedule.route_start_time is None):
             raise PydanticCustomError(
                 "route_start_time_required",
                 "schedule.route_start_time is required when any stop has a time_window",
@@ -227,17 +251,26 @@ class OptimizeInput(StrictModel):
                 )
         return self
 
+    # The flag decides what the engine applies; an omitted flag follows the data. Data kept with a flag
+    # off still reaches Core for reference but does not shape the routes (Core `constraints`).
     @property
     def uses_weight(self) -> bool:
+        if self.use_weight is not None:
+            return self.use_weight
         return any(v.max_weight_kg is not None for v in self.vehicles)
 
     @property
     def uses_volume(self) -> bool:
+        if self.use_volume is not None:
+            return self.use_volume
         return any(v.max_volume_m3 is not None for v in self.vehicles)
 
     @property
     def uses_time_windows(self) -> bool:
-        return any(s.time_window is not None for s in self.stops)
+        has_windows = any(s.time_window is not None for s in self.stops)
+        if self.use_time_windows is not None:
+            return self.use_time_windows and has_windows
+        return has_windows
 
     @property
     def vehicles_available(self) -> int:

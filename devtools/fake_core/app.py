@@ -254,10 +254,23 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             # The first optimization of a dataset is billed; replans are free only after it.
             if ds["billed"] and ds["replan_count"] < state.plan.free_replans:
                 billing = "mcp_dataset_replan"
+        # Same rule as Core's resolveConstraints: an explicit flag decides, an omitted one follows the data.
+        flags = body.get("constraints") or {}
+        declared = {
+            "weight_capacity": any("max_weight_kg" in v for v in body.get("vehicles", [])),
+            "volume_capacity": any("max_volume_m3" in v for v in body.get("vehicles", [])),
+            "time_windows": any("time_window" in s for s in stops),
+        }
+        flag_names = {
+            "weight_capacity": "weight",
+            "volume_capacity": "volume",
+            "time_windows": "time_windows",
+        }
         features = sorted(
-            {"weight_capacity" for v in body.get("vehicles", []) if "max_weight_kg" in v}
-            | {"volume_capacity" for v in body.get("vehicles", []) if "max_volume_m3" in v}
-            | {"time_windows" for s in stops if "time_window" in s}
+            name
+            for name, present in declared.items()
+            if (flags.get(flag_names[name]) if flags.get(flag_names[name]) is not None else present)
+            and (name != "time_windows" or present)
         )
         plan = state.plan
         too_many = plan.max_stops_per_request is not None and len(stops) > plan.max_stops_per_request

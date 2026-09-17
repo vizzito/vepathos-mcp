@@ -175,9 +175,9 @@ does not go through any of them (it only activates when the body carries `datase
 
 - A first run accepted by the engine and then failed (and refunded) still leaves `billedAt` set, so
   the next runs are free replans. Rare; fix by setting `billedAt` when the charged job completes.
-- `use_time_windows=false` does not strip the windows stored in a dataset: Core enforces every window
-  it expands. The preflight reports `time_windows` as enforced and warns when `route_start_time` is
-  missing. Stripping them needs a Core option.
+- Fixed 2026-09-17: `use_time_windows=false` now sends Core `constraints.time_windows=false`, so the
+  windows stay in the dataset for reference and the engine does not optimize by them. The same flag
+  rule covers `use_weight` and `use_volume`.
 - `flatCsvToStops` omits `weight_kg` / `volume_m3` when the value is 0 or absent, so a dataset with a
   single zero-weight row fails `use_weight` (“every stop needs weight_kg”). The preflight warns
   (`stops_without_weight`); Core should store an explicit 0 when the column is mapped.
