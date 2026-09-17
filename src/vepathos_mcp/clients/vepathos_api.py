@@ -159,8 +159,11 @@ class VepathosApiClient:
     async def create_map(self, call: CallContext, job_id: str) -> MapCreated:
         # Core deduplicates permanently per account/job; retries never extend the TTL.
         data = await self._request(
-            "POST", f"{BASE_PATH}/optimization/jobs/{_segment(job_id)}/map",
-            call, operation="map_create", json_body={},
+            "POST",
+            f"{BASE_PATH}/optimization/jobs/{_segment(job_id)}/map",
+            call,
+            operation="map_create",
+            json_body={},
             idempotency_key=f"map:{job_id}",
         )
         return self._parse(MapCreated, data)

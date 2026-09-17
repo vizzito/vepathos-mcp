@@ -116,7 +116,9 @@ def test_api_key_callers_are_not_told_to_reconnect_a_connector() -> None:
             credential_kind=kind,
         )
 
-    key_error = explain_auth_failure(identity("api_key"), from_core_error(401, envelope("INVALID_CREDENTIALS")))
+    key_error = explain_auth_failure(
+        identity("api_key"), from_core_error(401, envelope("INVALID_CREDENTIALS"))
+    )
     assert key_error.suggestion is not None
     # A developer credential has no connector, no consent screen and no grant to revoke.
     assert "reconnect" not in key_error.suggestion.lower().replace("no connector to reconnect", "")
@@ -125,7 +127,9 @@ def test_api_key_callers_are_not_told_to_reconnect_a_connector() -> None:
     assert "test secret does not authenticate against production" in key_error.suggestion
     assert "revoked and reissued" in key_error.suggestion
 
-    oauth_error = explain_auth_failure(identity("oauth"), from_core_error(401, envelope("INVALID_CREDENTIALS")))
+    oauth_error = explain_auth_failure(
+        identity("oauth"), from_core_error(401, envelope("INVALID_CREDENTIALS"))
+    )
     assert oauth_error.suggestion is not None and "Connected apps" in oauth_error.suggestion
 
 

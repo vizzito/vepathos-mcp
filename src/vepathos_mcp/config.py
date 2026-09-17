@@ -70,9 +70,7 @@ class Settings(BaseSettings):
     oauth_scope: str = Field("optimize", validation_alias=_env("OAUTH_SCOPE"))
     # Scopes advertised in Protected Resource Metadata. Defaults to oauth_scope when unset so a
     # single-var deploy still works; set OAUTH_ADVERTISED_SCOPES when announcing ≠ requiring.
-    oauth_advertised_scopes_raw: str = Field(
-        "", validation_alias=_env("OAUTH_ADVERTISED_SCOPES")
-    )
+    oauth_advertised_scopes_raw: str = Field("", validation_alias=_env("OAUTH_ADVERTISED_SCOPES"))
     service_credential: SecretStr | None = Field(None, validation_alias=_env("VEPATHOS_SERVICE_CREDENTIAL"))
     dev_bearer_token: SecretStr | None = Field(None, validation_alias=_env("MCP_DEV_BEARER_TOKEN"))
     account_hash_salt: SecretStr = Field(

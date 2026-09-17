@@ -35,7 +35,9 @@ def test_mask_email_keeps_the_domain_recognisable() -> None:
 
 
 def test_company_name_is_preferred_over_the_email() -> None:
-    assert account_label(core_account(company_name="Vepathos SA", email="martin@stormtech.com")) == "Vepathos SA"
+    assert (
+        account_label(core_account(company_name="Vepathos SA", email="martin@stormtech.com")) == "Vepathos SA"
+    )
 
 
 def test_email_is_masked_and_account_id_is_the_last_resort() -> None:

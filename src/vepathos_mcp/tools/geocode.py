@@ -167,10 +167,7 @@ def make_get_geocode_tool(deps: ToolDeps) -> Any:
             inp = parse_get_geocode_input(arguments)
             deps.rate_limiter.check(identity.subject, "calls")
             status = await deps.core.get_geocode(identity.call, inp.geocode_id)
-            if (
-                not status.is_terminal
-                and deps.settings.result_longpoll_seconds > 0
-            ):
+            if not status.is_terminal and deps.settings.result_longpoll_seconds > 0:
                 status = await _wait_geocode(
                     ctx, deps, identity, inp.geocode_id, deps.settings.result_longpoll_seconds
                 )

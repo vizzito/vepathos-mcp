@@ -205,9 +205,7 @@ async def test_geocode_addresses_returns_pins_from_smart_import_contract(
         )
         assert is_error is False
         assert created["geocode_id"].startswith("mcpg_")
-        is_error, payload = await call(
-            client, "get_geocode_result", {"geocode_id": created["geocode_id"]}
-        )
+        is_error, payload = await call(client, "get_geocode_result", {"geocode_id": created["geocode_id"]})
     assert is_error is False
     assert payload["status"] == "completed"
     assert payload["stops"][0]["stop_id"] == "A1"

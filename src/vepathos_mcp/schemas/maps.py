@@ -41,4 +41,3 @@ class MapOutput(BaseModel):
         if success == (self.error is not None):
             raise ValueError("output must contain either a complete map share or an error")
         return self
-

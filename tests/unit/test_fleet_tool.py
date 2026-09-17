@@ -61,7 +61,11 @@ def test_shaped_vehicles_validate_as_optimize_input() -> None:
                 {
                     "fleet_id": "f1",
                     "vehicles": [
-                        {"vehicle_id": "3f1c9a0e-5b7d-4c2a-9e8f-6b1d2c3a4b5c", "count": 2, "max_weight_kg": 900}
+                        {
+                            "vehicle_id": "3f1c9a0e-5b7d-4c2a-9e8f-6b1d2c3a4b5c",
+                            "count": 2,
+                            "max_weight_kg": 900,
+                        }
                     ],
                 }
             ]

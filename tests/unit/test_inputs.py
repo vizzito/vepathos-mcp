@@ -114,9 +114,7 @@ def test_issue_list_is_capped_and_never_echoes_input() -> None:
 def test_geocode_accepts_inspector_stringified_addresses() -> None:
     inp = parse_geocode_input(
         {
-            "addresses": (
-                '[{"stop_id":"A1","address":"Av. Corrientes 1000","city":"CABA","country":"AR"}]'
-            ),
+            "addresses": ('[{"stop_id":"A1","address":"Av. Corrientes 1000","city":"CABA","country":"AR"}]'),
             "city": "CABA",
             "country": "AR",
         }

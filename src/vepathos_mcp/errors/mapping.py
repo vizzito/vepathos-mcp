@@ -15,9 +15,7 @@ MAX_MESSAGE_CHARS = 400
 
 # Authorization failures are usually a connection problem, not a Vepathos outage: the grant was
 # revoked, the token expired, or the client is connected to a different account than the user means.
-AUTH_MESSAGE = (
-    "The Vepathos connection is not authorized, so no account could be read for this request."
-)
+AUTH_MESSAGE = "The Vepathos connection is not authorized, so no account could be read for this request."
 # The fix differs by how the caller authenticated, and advice for the other path wastes the user's
 # time: an API-key caller has no connector to reconnect, and an OAuth user has no key to reissue.
 AUTH_SUGGESTION = (
@@ -272,9 +270,7 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
             )
 
     if status in (401, 403) and not code_raw:
-        return DomainError(
-            ErrorCode.AUTHENTICATION_REQUIRED, _clip(AUTH_MESSAGE), suggestion=AUTH_SUGGESTION
-        )
+        return DomainError(ErrorCode.AUTHENTICATION_REQUIRED, _clip(AUTH_MESSAGE), suggestion=AUTH_SUGGESTION)
     if status == 413:
         return DomainError(ErrorCode.PAYLOAD_TOO_LARGE, "The optimization request is too large.")
     if status >= 500:

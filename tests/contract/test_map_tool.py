@@ -16,18 +16,28 @@ async def test_map_tool_contract(status: int) -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         if status == 200:
-            return httpx.Response(200, json={
-                "map_url": "https://vepathos.com/shared/routes/opaque",
-                "expires_at": "2026-09-16T12:00:00Z",
-                "access": "anyone_with_link",
-            })
-        return httpx.Response(status, json={"error": {
-            "code": "OPTIMIZATION_EXPIRED" if status == 410 else "BACKEND_UNAVAILABLE",
-            "message": "Map unavailable", "retryable": False,
-        }})
+            return httpx.Response(
+                200,
+                json={
+                    "map_url": "https://vepathos.com/shared/routes/opaque",
+                    "expires_at": "2026-09-16T12:00:00Z",
+                    "access": "anyone_with_link",
+                },
+            )
+        return httpx.Response(
+            status,
+            json={
+                "error": {
+                    "code": "OPTIMIZATION_EXPIRED" if status == 410 else "BACKEND_UNAVAILABLE",
+                    "message": "Map unavailable",
+                    "retryable": False,
+                }
+            },
+        )
 
-    core = VepathosApiClient("http://core", "service-secret", max_attempts=1,
-                            transport=httpx.MockTransport(respond))
+    core = VepathosApiClient(
+        "http://core", "service-secret", max_attempts=1, transport=httpx.MockTransport(respond)
+    )
     try:
         settings = make_settings(MCP_TRANSPORT="stdio", MCP_MAP_SHARES_ENABLED=True)
         async with Client(build_server(settings, core)) as client:
@@ -46,7 +56,9 @@ async def test_map_tool_contract(status: int) -> None:
             assert requests[0].headers["Authorization"].startswith("Bearer ")
             assert requests[0].headers["Idempotency-Key"] == "map:mcp_example123"
             before = len(requests)
-            invalid = await client.call_tool("create_optimization_map", {"optimization_id": "../bad", "user_id": "other"})
+            invalid = await client.call_tool(
+                "create_optimization_map", {"optimization_id": "../bad", "user_id": "other"}
+            )
             assert invalid.is_error
             assert len(requests) == before
     finally:
@@ -58,14 +70,18 @@ async def test_map_tool_language_rides_on_the_link_only() -> None:
 
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, json={
-            "map_url": "https://vepathos.com/shared/routes/opaque",
-            "expires_at": "2026-09-16T12:00:00Z",
-            "access": "anyone_with_link",
-        })
+        return httpx.Response(
+            200,
+            json={
+                "map_url": "https://vepathos.com/shared/routes/opaque",
+                "expires_at": "2026-09-16T12:00:00Z",
+                "access": "anyone_with_link",
+            },
+        )
 
-    core = VepathosApiClient("http://core", "service-secret", max_attempts=1,
-                            transport=httpx.MockTransport(respond))
+    core = VepathosApiClient(
+        "http://core", "service-secret", max_attempts=1, transport=httpx.MockTransport(respond)
+    )
     try:
         settings = make_settings(MCP_TRANSPORT="stdio", MCP_MAP_SHARES_ENABLED=True)
         async with Client(build_server(settings, core)) as client:
