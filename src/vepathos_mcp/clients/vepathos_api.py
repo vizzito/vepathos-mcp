@@ -35,6 +35,8 @@ from vepathos_mcp.clients.core_models import (
     CoreJobCreated,
     CoreJobResult,
     CoreJobStatusResponse,
+    CorePlan,
+    CorePlanList,
 )
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.errors.mapping import from_core_error
@@ -95,6 +97,11 @@ class VepathosApiClient:
     async def create_job(
         self, call: CallContext, body: dict[str, Any], idempotency_key: str
     ) -> CoreJobCreated:
+        """Start an optimization. `body` carries exactly one stop source: `plan_id` (the plan's stops),
+        `dataset_id` (an import's copy) or inline `stops` (a new plan), plus the optional
+        `exclude_stop_ids` (plan or dataset), `plan_name` (inline) and `depot_name`. Every run lives in
+        a plan: the response names it (`plan_id`, `account_url`) and any library rotation."""
+
         data = await self._request(
             "POST",
             f"{BASE_PATH}/optimization/jobs",
@@ -264,6 +271,23 @@ class VepathosApiClient:
             operation="dataset",
         )
         return self._parse(CoreDataset, data)
+
+    async def list_plans(
+        self, call: CallContext, *, limit: int = 20, query: str | None = None
+    ) -> CorePlanList:
+        """The account's plans (newest first, favorites on top) and the library caps. Never the stops."""
+
+        params: dict[str, Any] = {"limit": limit}
+        if query:
+            params["query"] = query
+        data = await self._request("GET", f"{BASE_PATH}/plans", call, operation="plans", params=params)
+        return self._parse(CorePlanList, data)
+
+    async def get_plan(self, call: CallContext, plan_id: str) -> CorePlan:
+        """One plan: counts, depot, what its next run costs and `last_agent_run`. Never the stops."""
+
+        data = await self._request("GET", f"{BASE_PATH}/plans/{_segment(plan_id)}", call, operation="plan")
+        return self._parse(CorePlan, data)
 
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""

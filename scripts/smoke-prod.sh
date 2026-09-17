@@ -32,12 +32,13 @@ if [[ -n "${MCP_SMOKE_BEARER:-}" ]]; then
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
   echo "${body}" | grep -q 'optimize_delivery_routes'
   echo "${body}" | grep -q 'get_optimization_result'
+  echo "${body}" | grep -q 'optimize_plan'
+  echo "${body}" | grep -q 'list_plans'
   if [[ "${EXPECT_IMPORT_TOOLS:-false}" == "true" ]]; then
     echo "${body}" | grep -q 'import_delivery_file'
-    echo "${body}" | grep -q 'optimize_dataset'
-    echo "tools/list contains optimize, result, import and dataset tools"
+    echo "tools/list contains optimize, result, plan and import tools"
   else
-    echo "tools/list contains optimize and result tools (EXPECT_IMPORT_TOOLS=true to require imports)"
+    echo "tools/list contains optimize, result and plan tools (EXPECT_IMPORT_TOOLS=true to require imports)"
   fi
 else
   echo "(set MCP_SMOKE_BEARER to also check tools/list)"

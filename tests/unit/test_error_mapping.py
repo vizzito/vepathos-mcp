@@ -146,3 +146,35 @@ def test_only_authorization_errors_are_rewritten_for_the_credential() -> None:
     )
     quota = from_core_error(403, envelope("QUOTA_EXCEEDED", "", stops_remaining=1, requested=9))
     assert explain_auth_failure(identity, quota).suggestion == quota.suggestion
+
+
+def test_plan_not_found_points_at_list_plans() -> None:
+    err = from_core_error(404, envelope("PLAN_NOT_FOUND", "No plan with this id exists for this account."))
+    assert err.code is ErrorCode.PLAN_NOT_FOUND
+    assert err.retryable is False
+    assert err.suggestion is not None and "list_plans" in err.suggestion
+
+
+def test_plan_busy_is_retryable_after_the_running_optimization() -> None:
+    err = from_core_error(409, envelope("PLAN_BUSY", "This plan is already optimizing."), 30)
+    assert err.code is ErrorCode.PLAN_BUSY
+    assert err.retryable is True and err.retry_after_seconds == 30
+    assert err.suggestion is not None and "get_optimization_result" in err.suggestion
+    # Without Retry-After the agent still gets a wait.
+    assert from_core_error(409, envelope("PLAN_BUSY")).retry_after_seconds == 30
+
+
+def test_import_and_dataset_not_found_are_not_unexpected_responses() -> None:
+    dataset = from_core_error(404, envelope("DATASET_NOT_FOUND"))
+    assert dataset.code is ErrorCode.DATASET_NOT_FOUND
+    assert dataset.suggestion is not None and "plan_id" in dataset.suggestion
+    assert from_core_error(404, envelope("IMPORT_NOT_FOUND")).code is ErrorCode.IMPORT_NOT_FOUND
+
+
+def test_quota_rejection_keeps_why_the_free_retry_did_not_apply() -> None:
+    free_retry = {"next_optimize_charged": True, "charged_because": "stops_changed"}
+    err = from_core_error(
+        429, envelope("QUOTA_EXCEEDED", requested=10, stops_remaining=2, free_retry=free_retry)
+    )
+    assert err.details["free_retry"] == free_retry
+    assert err.suggestion is not None and "same stops or fewer" in err.suggestion

@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from vepathos_mcp.tools import descriptions as d
+from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 
 # Roughly 2,000 tokens. Raised with import/dataset tools (0.4.0); every conversation pays it.
 MAX_TOTAL_CHARS = 9_500
@@ -32,8 +33,10 @@ TOOL_NAMES = (
     "get_account",
     "optimize_delivery_routes",
     "get_optimization_result",
+    "list_plans",
+    "optimize_plan",
 )
-IMPORT_TOOL_NAMES = ("import_delivery_file", "get_import_result", "optimize_dataset")
+IMPORT_TOOL_NAMES = ("import_delivery_file", "get_import_result")
 
 # A server sends the texts for one gate setting, never both, so each setting is budgeted on its own.
 EACH_GATE_SETTING = pytest.mark.parametrize("gate", [True, False], ids=["gate_on", "gate_off"])
@@ -42,7 +45,9 @@ EACH_IMPORT_SETTING = pytest.mark.parametrize("imports", [True, False], ids=["im
 
 
 def all_text(gate: bool) -> dict[str, str]:
-    """Everything one server sends: the fixed texts, plus the ones built for its gate setting."""
+    """Everything one server sends: the fixed texts, plus the ones built for its gate setting.
+
+    Import tools and map shares on: the longest texts a server can send."""
 
     fixed = {
         name: value
@@ -51,9 +56,13 @@ def all_text(gate: bool) -> dict[str, str]:
     }
     return {
         **fixed,
-        "server_instructions": d.server_instructions(confirm_before_optimize=gate, import_tools=True),
+        "server_instructions": d.server_instructions(
+            confirm_before_optimize=gate, import_tools=True, map_shares=True
+        ),
         "optimize_description": d.optimize_description(confirm_before_optimize=gate),
-        "optimize_dataset_description": d.optimize_dataset_description(confirm_before_optimize=gate),
+        "optimize_plan_description": d.optimize_plan_description(
+            confirm_before_optimize=gate, import_tools=True
+        ),
     }
 
 
@@ -61,9 +70,12 @@ def all_text(gate: bool) -> dict[str, str]:
 def test_model_facing_text_stays_within_budget(gate: bool) -> None:
     total = sum(len(text) for text in all_text(gate).values())
     assert total <= MAX_TOTAL_CHARS, f"{total} characters of tool text sent every conversation"
-    assert (
-        len(d.server_instructions(confirm_before_optimize=gate, import_tools=True)) <= MAX_INSTRUCTION_CHARS
-    )
+    for imports in (True, False):
+        for maps in (True, False):
+            instructions = d.server_instructions(
+                confirm_before_optimize=gate, import_tools=imports, map_shares=maps
+            )
+            assert len(instructions) <= MAX_INSTRUCTION_CHARS
 
 
 @EACH_GATE_SETTING
@@ -87,12 +99,66 @@ def test_instructions_number_their_steps_in_order(gate: bool, imports: bool) -> 
 def test_get_result_description_names_no_optional_tool() -> None:
     for tool in IMPORT_TOOL_NAMES:
         assert tool not in d.GET_RESULT_DESCRIPTION
+        assert tool not in d.LIST_PLANS_DESCRIPTION
+        assert tool not in d.optimize_description(confirm_before_optimize=True)
+        assert tool not in d.optimize_plan_description(confirm_before_optimize=True, import_tools=False)
+    assert "dataset_id" not in d.optimize_plan_description(confirm_before_optimize=True, import_tools=False)
+    assert "create_optimization_map" not in d.server_instructions(
+        confirm_before_optimize=True, import_tools=True, map_shares=False
+    )
 
 
-def test_dataset_description_says_the_first_run_is_charged() -> None:
+@EACH_IMPORT_SETTING
+def test_plan_description_states_the_one_free_retry_rule(imports: bool) -> None:
+    # One rule for dashboard and MCP (api-doc billing/free-retry-policy.ts).
     for gate in (True, False):
-        text = d.optimize_dataset_description(confirm_before_optimize=gate).lower()
-        assert "first run" in text and "free replans" in text and "next_optimize_charged" in text
+        text = d.optimize_plan_description(confirm_before_optimize=gate, import_tools=imports).lower()
+        assert "free retry" in text and "24 h" in text and "same stops or fewer" in text
+        assert "next_optimize_charged" in text and "plan limits still apply" in text
+        assert "plan_replaced" in text and "plan_temporary" in text
+        assert "exclude_stop_ids for this run only" in text
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+def test_instructions_explain_plans_and_the_free_retry_on_every_server(gate: bool, imports: bool) -> None:
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports)
+    assert "saved as a plan" in text and "list_plans" in text and "account_url" in text
+    assert "free within 24 h" in text and "same stops or fewer" in text
+    assert "optimize_plan" in text
+
+
+def test_every_run_and_import_tells_the_user_about_a_replaced_or_temporary_plan() -> None:
+    for text in (
+        d.optimize_description(confirm_before_optimize=False),
+        d.optimize_plan_description(confirm_before_optimize=False, import_tools=False),
+        d.GET_IMPORT_DESCRIPTION,
+    ):
+        assert "plan_replaced" in text and "plan_temporary" in text and "the user" in text
+
+
+def test_results_are_the_users_choice_and_the_public_link_is_said_to_be_public() -> None:
+    instructions = d.server_instructions(confirm_before_optimize=False, import_tools=True, map_shares=True)
+    assert "let the user choose" in instructions.lower()
+    assert "account_url" in instructions and "create_optimization_map" in instructions
+    assert "anyone with the link" in instructions
+
+    text = MAP_DESCRIPTION.lower()
+    assert "account_url" in text and "offer both" in text
+    assert "only when the user picks it" in text
+    assert "anyone with the link" in text and "48 hours" in text
+
+
+def test_no_model_facing_text_offers_free_replans_or_variants() -> None:
+    texts = [*all_text(True).values(), *all_text(False).values(), MAP_DESCRIPTION]
+    for imports in (True, False):
+        texts.append(d.optimize_plan_description(confirm_before_optimize=False, import_tools=imports))
+        texts.append(d.server_instructions(confirm_before_optimize=False, import_tools=imports))
+    for text in texts:
+        lowered = text.lower()
+        assert "replan" not in lowered and "variant" not in lowered, text[:80]
+        # Excluded stops stay in the plan (Core restores the draft): no text may say they leave it.
+        assert "leave the plan" not in lowered and "removes those stops" not in lowered, text[:80]
 
 
 @EACH_GATE_SETTING
@@ -139,3 +205,5 @@ def test_a_short_fleet_is_offered_as_more_vehicles_not_a_test(gate: bool) -> Non
 def test_dataset_texts_offer_the_last_run() -> None:
     assert "last_run" in d.LIST_DATASETS_DESCRIPTION
     assert "request" in d.GET_RESULT_DESCRIPTION
+    assert "last_agent_run" in d.LIST_PLANS_DESCRIPTION
+    assert "optimize_plan" in d.LIST_PLANS_DESCRIPTION

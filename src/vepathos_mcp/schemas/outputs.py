@@ -22,6 +22,55 @@ class Progress(OutputModel):
     stage: str | None = Field(None, description="Current stage, e.g. assigning_stops or sequencing_routes.")
 
 
+class ReplacedPlan(OutputModel):
+    plan_id: str = Field(description="Id of the plan that was removed from the library.")
+    name: str | None = Field(None, description="Its name, to tell the user which plan was replaced.")
+
+
+PLAN_ID_DESCRIPTION = "The plan this lives in, in the user's Vepathos account (list_plans)."
+ACCOUNT_URL_DESCRIPTION = (
+    "Opens the plan in the user's Vepathos account. Requires signing in; private to the account."
+)
+PLAN_REPLACED_DESCRIPTION = (
+    "Set when the library was full: this plan was removed to make room. Tell the user its name."
+)
+PLAN_TEMPORARY_DESCRIPTION = (
+    "True when every library slot is kept or favorite: the plan lives outside the library and is "
+    "deleted later. Tell the user."
+)
+
+
+class FreeRetryFields(OutputModel):
+    """What the next optimization of a plan costs (the rule the dashboard shares)."""
+
+    next_optimize_charged: bool | None = Field(
+        None,
+        description="True: the next optimization of this plan charges its stops. False: it is the "
+        "plan's free retry.",
+    )
+    free_retries_allowed: int | None = Field(
+        None, description="Free retries a charged run gives on this account plan."
+    )
+    free_retries_remaining: int | None = Field(
+        None, description="Free retries left in the open 24 h window. 0 when no window is open."
+    )
+    free_retry_window_ends_at: str | None = Field(
+        None, description="When the free retry stops applying (UTC). Null when no window is open."
+    )
+    charged_because: str | None = Field(
+        None,
+        description="Why the next run is charged: no_billed_run, stops_changed (a stop was added or "
+        "moved), allowance_used, window_closed or no_allowance.",
+    )
+
+
+class PlanPlacementFields(OutputModel):
+    plan_id: str | None = Field(None, description=PLAN_ID_DESCRIPTION)
+    account_url: str | None = Field(None, description=ACCOUNT_URL_DESCRIPTION)
+    plan_replaced: ReplacedPlan | None = Field(None, description=PLAN_REPLACED_DESCRIPTION)
+    plan_temporary: bool | None = Field(None, description=PLAN_TEMPORARY_DESCRIPTION)
+
+
 class FullTrialApplied(OutputModel):
     max_stops: int = Field(description="Maximum stops the one-time trial covers.")
     features: list[str] = Field(description="Constraints enabled by the trial for this optimization.")
@@ -68,7 +117,7 @@ class ResultSummary(OutputModel):
     )
     charged_stops: int | None = Field(
         None,
-        description="Stops billed to the plan for this job. May be 0 on a free dataset replan or trial.",
+        description="Stops billed to the account for this job. 0 on a plan's free retry or the trial.",
     )
 
 
@@ -115,6 +164,9 @@ class OptimizationResult(OutputModel):
 
     optimization_id: str | None = Field(None, description="Same handle returned by optimize.")
     status: JobStatus | None = Field(None, description="queued / running / completed / failed.")
+    plan_id: str | None = Field(None, description=PLAN_ID_DESCRIPTION)
+    history_id: str | None = Field(None, description="This run in the plan's history.")
+    account_url: str | None = Field(None, description=ACCOUNT_URL_DESCRIPTION)
     detail: Literal["summary", "stops", "unassigned"] | None = Field(
         None, description="Which slice of the result this payload carries."
     )
@@ -122,7 +174,9 @@ class OptimizationResult(OutputModel):
     poll_after_seconds: int | None = Field(
         None, description="When status is queued or running, call again after about this many seconds."
     )
-    expires_at: str | None = Field(None, description="When results stop being available (UTC).")
+    expires_at: str | None = Field(
+        None, description="When results stop being available (UTC). Absent: kept with the plan."
+    )
     request: dict[str, Any] | None = Field(
         None,
         description="What this optimization ran with: depot, vehicles, schedule, objective, dataset. "
@@ -155,7 +209,7 @@ class PreflightPlan(OutputModel):
     max_stops_per_request: int | None = Field(None, description="Stops allowed in one call. Null: unlimited.")
     stops_remaining: int | None = Field(None, description="Before this optimization. Null: unlimited.")
     stops_remaining_after: int | None = Field(
-        None, description="Projected remaining if this run is charged (not a free replan)."
+        None, description="Projected remaining after this run's charge (unchanged on a free retry)."
     )
     fits: bool | None = Field(None, description="False when the plan would reject this request.")
     missing_features: list[str] | None = Field(
@@ -168,7 +222,7 @@ class Preflight(OutputModel):
 
     stops: int = Field(description="Stops that would be sent.")
     charges_stops: int = Field(
-        description="Stops this would charge against the plan. 0 when a free dataset replan applies."
+        description="Stops this would charge to the account. 0 when the plan's free retry applies."
     )
     total_weight_kg: float | None = Field(None, description="Sum of stop weights. Null when weight unused.")
     total_volume_m3: float | None = Field(None, description="Sum of stop volumes. Null when volume unused.")
@@ -193,7 +247,14 @@ class Preflight(OutputModel):
     )
     stops_identity: str | None = Field(
         None,
-        description="Fingerprint of depot+stops (or dataset:…). Same identity → free replan may apply.",
+        description="Fingerprint of depot+stops, or plan:… / dataset:… for stored stops.",
+    )
+    plan_id: str | None = Field(None, description="The stored plan that would run, when there is one.")
+    charged_because: str | None = Field(
+        None, description="Why the plan's free retry does not apply (see list_plans)."
+    )
+    free_retry_window_ends_at: str | None = Field(
+        None, description="When the plan's free retry stops applying (UTC)."
     )
     plan: PreflightPlan | None = Field(None, description="Plan/quota check; absent if account lookup failed.")
     warnings: list[dict[str, Any]] | None = Field(
@@ -206,9 +267,14 @@ class Preflight(OutputModel):
 
 
 class OptimizeResult(OutputModel):
-    """Output of optimize_delivery_routes / optimize_dataset."""
+    """Output of optimize_delivery_routes / optimize_plan."""
 
     optimization_id: str | None = Field(None, description="Handle for get_optimization_result.")
+    plan_id: str | None = Field(None, description=PLAN_ID_DESCRIPTION)
+    plan_name: str | None = Field(None, description="Name of that plan.")
+    account_url: str | None = Field(None, description=ACCOUNT_URL_DESCRIPTION)
+    plan_replaced: ReplacedPlan | None = Field(None, description=PLAN_REPLACED_DESCRIPTION)
+    plan_temporary: bool | None = Field(None, description=PLAN_TEMPORARY_DESCRIPTION)
     status: JobStatus | None = Field(
         None, description="queued / running / completed / failed. Absent on a preflight-only reply."
     )
@@ -220,15 +286,20 @@ class OptimizeResult(OutputModel):
         None, description="Fleet units declared (sum of vehicles[].count)."
     )
     schedule_date: str | None = Field(None, description="Date used for the run, YYYY-MM-DD.")
-    expires_at: str | None = Field(None, description="When results stop being available (UTC).")
+    expires_at: str | None = Field(
+        None, description="While running: when an unfinished run is dropped (UTC). Completed runs stay."
+    )
     stops_remaining_this_period: int | None = Field(
         None, description="Stops left in the plan's current billing period (null means unlimited)."
     )
     quota_charged: bool | None = Field(
-        None, description="optimize_dataset: false when this run was a free replan or the trial."
+        None, description="False when this run is the plan's free retry or the trial: no stops charged."
     )
-    free_replans_remaining: int | None = Field(
-        None, description="optimize_dataset: free variants of this dataset left for the next run."
+    free_retry: bool | None = Field(None, description="True when this run is the plan's free retry.")
+    free_retries_remaining: int | None = Field(
+        None,
+        description="Retries of this plan that stay free after this run completes: within 24 h, with "
+        "the same stops or fewer, by plan_id.",
     )
     full_trial_applied: FullTrialApplied | None = Field(
         None, description="Present when this job used the one-time MCP full trial."

@@ -32,23 +32,25 @@ from vepathos_mcp.tools.import_tools import (
     IMPORT_FILE_TOOL,
     IMPORT_TEXT_TOOL,
     LIST_DATASETS_TOOL,
-    OPTIMIZE_DATASET_TOOL,
+    OPTIMIZE_PLAN_TOOL,
     UPDATE_MAPPING_TOOL,
     GetImportInput,
     ImportFileInput,
     ImportTextInput,
     ListDatasetsInput,
-    OptimizeDatasetInput,
+    OptimizePlanInput,
     UpdateMappingInput,
     make_get_import_tool,
     make_import_file_tool,
     make_import_text_tool,
     make_list_datasets_tool,
-    make_optimize_dataset_tool,
+    make_optimize_plan_tool,
     make_update_mapping_tool,
 )
 from vepathos_mcp.tools.optimize import TOOL_NAME as OPTIMIZE_TOOL
 from vepathos_mcp.tools.optimize import make_optimize_tool
+from vepathos_mcp.tools.plans import TOOL_NAME as LIST_PLANS_TOOL
+from vepathos_mcp.tools.plans import ListPlansInput, make_list_plans_tool
 from vepathos_mcp.tools.results import TOOL_NAME as GET_RESULT_TOOL
 from vepathos_mcp.tools.results import make_get_result_tool
 from vepathos_mcp.tools.runtime import ToolDeps
@@ -91,7 +93,7 @@ def _tool(
     )
     if confirm_before_optimize is not None and name == OPTIMIZE_TOOL:
         tool.parameters = optimize_schema(confirm_before_optimize=confirm_before_optimize)
-    elif confirm_before_optimize is not None and name == OPTIMIZE_DATASET_TOOL:
+    elif confirm_before_optimize is not None and name == OPTIMIZE_PLAN_TOOL:
         schema = inline_model_schema(schema_model)
         if not confirm_before_optimize:
             schema = {
@@ -106,6 +108,7 @@ def _tool(
 
 def build_tools(deps: ToolDeps) -> list[Tool]:
     confirm = deps.settings.confirm_before_optimize
+    imports = deps.settings.import_tools_enabled
     tools = [
         _tool(
             make_optimize_tool(deps),
@@ -124,9 +127,30 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=GetResultInput,
             read_only=True,
         ),
+        # Plans exist for every account, so reading and rerunning them is published whether or not the
+        # import tools are.
+        _tool(
+            make_list_plans_tool(deps),
+            name=LIST_PLANS_TOOL,
+            title=descriptions.LIST_PLANS_TITLE,
+            description=descriptions.LIST_PLANS_DESCRIPTION,
+            schema_model=ListPlansInput,
+            read_only=True,
+        ),
+        _tool(
+            make_optimize_plan_tool(deps),
+            name=OPTIMIZE_PLAN_TOOL,
+            title=descriptions.OPTIMIZE_PLAN_TITLE,
+            description=descriptions.optimize_plan_description(
+                confirm_before_optimize=confirm, import_tools=imports
+            ),
+            schema_model=OptimizePlanInput,
+            read_only=False,
+            confirm_before_optimize=confirm,
+        ),
     ]
-    if deps.settings.import_tools_enabled:
-        tools.extend(_import_tools(deps, confirm))
+    if imports:
+        tools.extend(_import_tools(deps))
     tools += [
         _tool(
             make_geocode_tool(deps),
@@ -177,8 +201,8 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
     return tools
 
 
-def _import_tools(deps: ToolDeps, confirm: bool) -> list[Tool]:
-    """File import and optimize-by-dataset. Published only with MCP_IMPORT_TOOLS_ENABLED."""
+def _import_tools(deps: ToolDeps) -> list[Tool]:
+    """File import. Published only with MCP_IMPORT_TOOLS_ENABLED."""
 
     return [
         _tool(
@@ -212,15 +236,6 @@ def _import_tools(deps: ToolDeps, confirm: bool) -> list[Tool]:
             description=descriptions.UPDATE_MAPPING_DESCRIPTION,
             schema_model=UpdateMappingInput,
             read_only=False,
-        ),
-        _tool(
-            make_optimize_dataset_tool(deps),
-            name=OPTIMIZE_DATASET_TOOL,
-            title=descriptions.OPTIMIZE_DATASET_TITLE,
-            description=descriptions.optimize_dataset_description(confirm_before_optimize=confirm),
-            schema_model=OptimizeDatasetInput,
-            read_only=False,
-            confirm_before_optimize=confirm,
         ),
         _tool(
             make_list_datasets_tool(deps),

@@ -160,3 +160,18 @@ def test_get_result_input() -> None:
         parse_get_result_input({"optimization_id": "../../etc"})
     with pytest.raises(DomainError):
         parse_get_result_input({"optimization_id": "mcp_" + "a" * 32, "detail": "everything"})
+
+
+def test_plan_and_depot_names_reach_core_only_when_set() -> None:
+    from vepathos_mcp.schemas.mapping import request_fingerprint, to_core_request
+
+    args = sample_arguments(stops=2)
+    unnamed = to_core_request(parse_optimize_input(args), "2026-09-17")
+    assert "plan_name" not in unnamed and "depot_name" not in unnamed
+
+    named = to_core_request(
+        parse_optimize_input({**args, "plan_name": "Lunes zona 1", "depot_name": "Galpón"}), "2026-09-17"
+    )
+    assert named["plan_name"] == "Lunes zona 1" and named["depot_name"] == "Galpón"
+    # A name is part of the request: naming the plan differently is a different call.
+    assert request_fingerprint(named) != request_fingerprint(unnamed)

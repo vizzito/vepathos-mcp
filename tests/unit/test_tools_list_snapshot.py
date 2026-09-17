@@ -17,15 +17,17 @@ from vepathos_mcp import __version__
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
 
-# Frozen on 0.4.0 (import/dataset tools + preflight fields). Update deliberately with the version.
+# Frozen on 0.6.0 (runs are plans: list_plans and optimize_plan, published on every server). Update
+# deliberately with the version.
 EXPECTED_TOOL_NAMES = (
     "optimize_delivery_routes",
     "get_optimization_result",
+    "list_plans",
+    "optimize_plan",
     "import_delivery_file",
     "import_delivery_text",
     "get_import_result",
     "update_import_mapping",
-    "optimize_dataset",
     "list_datasets",
     "geocode_addresses",
     "get_geocode_result",
@@ -34,7 +36,7 @@ EXPECTED_TOOL_NAMES = (
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-EXPECTED_DESC_HASH_GATE_OFF = "b627c85cc188bd9f311f8429d919ae7df2260627a7f76b0e9a1fb933653fb8ce"
+EXPECTED_DESC_HASH_GATE_OFF = "3c173bd120380a227559068e3931e619919ed8953ccad897d30032cbd595ee75"
 
 
 def _desc_hash(tools: list[Any]) -> str:
@@ -56,7 +58,7 @@ async def _list_tools(core_client_factory, clock: FakeClock, **overrides: str) -
 
 @pytest.fixture
 async def listed_tools(core_client_factory, clock: FakeClock):
-    # The 0.4.0 surface as ChatGPT staging will see it: import tools on.
+    # The surface as ChatGPT staging will see it: import tools on.
     tools, _ = await _list_tools(core_client_factory, clock, MCP_IMPORT_TOOLS_ENABLED="true")
     return tools
 
@@ -69,7 +71,6 @@ async def test_import_tools_stay_hidden_until_enabled(core_client_factory, clock
         "import_delivery_text",
         "get_import_result",
         "update_import_mapping",
-        "optimize_dataset",
         "list_datasets",
     }
     assert not names & hidden
@@ -77,6 +78,33 @@ async def test_import_tools_stay_hidden_until_enabled(core_client_factory, clock
     for name in hidden:
         assert name not in instructions
         assert all(name not in (t.description or "") for t in tools)
+
+
+async def test_plans_are_published_without_the_import_tools(core_client_factory, clock: FakeClock) -> None:
+    # Plans exist for every account: a chat on a server without imports still finds and reruns its runs,
+    # and the free retry is reachable only through optimize_plan.
+    tools, instructions = await _list_tools(core_client_factory, clock)
+    assert {"list_plans", "optimize_plan"} <= {t.name for t in tools}
+    assert "list_plans" in instructions and "optimize_plan" in instructions
+    assert "same stops or fewer" in instructions
+
+
+async def test_excluded_stops_are_described_as_this_run_only(listed_tools) -> None:
+    # Core keeps every stop in the plan; exclude_stop_ids shapes one run (16/09).
+    optimize_plan = next(t for t in listed_tools if t.name == "optimize_plan")
+    exclude = optimize_plan.input_schema["properties"]["exclude_stop_ids"]["description"]
+    assert "this run only" in exclude and "plan keeps them" in exclude
+
+
+async def test_no_published_text_offers_free_replans_or_variants(listed_tools) -> None:
+    # 16/09: "free replans" / "variants" per dataset became one free retry per plan (24 h, same stops
+    # or fewer). Descriptions and schemas must not keep the old promise.
+    for tool in listed_tools:
+        text = json.dumps(
+            [tool.description, tool.input_schema, tool.output_schema], ensure_ascii=False
+        ).lower()
+        assert "replan" not in text, tool.name
+        assert "variant" not in text, tool.name
 
 
 async def test_tools_list_names_match_snapshot(listed_tools) -> None:
@@ -95,7 +123,7 @@ async def test_tools_list_description_hash_tracked(listed_tools) -> None:
 
 
 async def test_version_is_bumped_with_tool_surface() -> None:
-    assert tuple(int(p) for p in __version__.split(".")[:2]) >= (0, 4)
+    assert tuple(int(p) for p in __version__.split(".")[:2]) >= (0, 6)
 
 
 def test_package_version_matches_the_server_version() -> None:

@@ -33,6 +33,8 @@ def _drop_none(value: dict[str, Any]) -> dict[str, Any]:
 def to_core_request(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
     schedule = inp.schedule
     return {
+        # Only when set, so requests that never named their plan keep their fingerprint.
+        **_drop_none({"plan_name": inp.plan_name, "depot_name": inp.depot_name}),
         "depot": {"lat": inp.depot.latitude, "lng": inp.depot.longitude},
         "vehicles": [
             _drop_none(

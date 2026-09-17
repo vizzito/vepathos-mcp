@@ -21,6 +21,9 @@ HHMM_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
 VEHICLE_ID_PATTERN = r"^[A-Za-z0-9_.-]{1,32}$"
 STOP_ID_PATTERN = r"^[^\x00-\x1f\x7f]{1,64}$"
 OPTIMIZATION_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+PLAN_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
+PLAN_NAME_MAX = 200
+DEPOT_NAME_MAX = 120
 GEOCODE_ID_PATTERN = r"^[A-Za-z0-9_.-]{8,200}$"
 MAX_GEOCODE_STOPS = 500
 IDEMPOTENCY_KEY_PATTERN = r"^[A-Za-z0-9_.:-]{8,128}$"
@@ -200,6 +203,16 @@ class OptimizeInput(StrictModel):
         description="Set true only after the user has seen what will be sent and how many stops it "
         "charges, and agreed. While false the call optimizes nothing and charges nothing: it returns "
         "a preflight of this exact request for you to show them.",
+    )
+    plan_name: str | None = Field(
+        None,
+        min_length=1,
+        max_length=PLAN_NAME_MAX,
+        description="Name of the plan this run is saved as in the user's account. Default: "
+        "Optimization YYYY-MM-DD.",
+    )
+    depot_name: str | None = Field(
+        None, min_length=1, max_length=DEPOT_NAME_MAX, description="Depot name shown in the plan."
     )
 
     @model_validator(mode="after")

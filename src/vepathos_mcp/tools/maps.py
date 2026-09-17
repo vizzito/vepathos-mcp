@@ -57,14 +57,14 @@ def with_map_language(created: MapCreated, language: MapLanguage | None) -> MapC
 
 
 DESCRIPTION = (
-    "Create a shareable map of a completed optimization owned by the connected account. "
-    "Use when the user requests a map or a shareable route link. Anyone with the link can view "
-    "the delivery locations without signing in. Tell the user this and the expiration time: "
-    "the map expires 48 hours after creation. Repeating the call returns the original link "
-    "without extending its expiration. Does not optimize again or charge route stops. "
-    "After expiry the page explains that the map has expired. "
-    "Pass language with the conversation's language so the page, share message and PDF open "
-    "in it (en, es, pt); the same link works in any language."
+    "Create a temporary public link to the map of a completed optimization owned by the connected "
+    "account. A result reaches the user two ways, and the user chooses: the plan in their Vepathos "
+    "account (account_url, sign-in required) or this link. Offer both; create the link only when the "
+    "user picks it. Anyone with the link can view the delivery locations without signing in: tell the "
+    "user this and that it expires 48 hours after creation. Repeating the call returns the same link "
+    "without extending it; after expiry the page says so. Does not optimize again or charge stops. "
+    "Pass language with the conversation's language so the page, share message and PDF open in it "
+    "(en, es, pt); the same link works in any language."
 )
 
 

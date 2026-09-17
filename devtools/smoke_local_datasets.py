@@ -1,8 +1,8 @@
-"""End-to-end smoke of the import/dataset path against the REAL local stack (not the fake Core).
+"""End-to-end smoke of the import → plan path against the REAL local stack (not the fake Core).
 
 adapter :8080 (MCP_IMPORT_TOOLS_ENABLED=true, AUTH_MODES=api_key) → api-doc :3000 → Smart Import :8100
-→ optimizer. It checks what unit and contract tests cannot: Core's billing of a dataset (first run
-charged, variant free) and that inline optimize still works through the reordered route.
+→ optimizer. It checks what unit and contract tests cannot: Core's billing of a plan (first run
+charged, one rerun with the same stops or fewer free within 24 h) and that inline optimize still works.
 
 Run it yourself; the credential stays in your shell and is never printed:
 
@@ -96,7 +96,8 @@ async def main() -> int:
     async with Client(streamable_http_client(URL, http_client=http)) as client:
         print("1. Tools published")
         names = {t.name for t in (await client.list_tools()).tools}
-        check("optimize_dataset" in names, "import tools published (MCP_IMPORT_TOOLS_ENABLED=true)")
+        check("optimize_plan" in names, "import tools published (MCP_IMPORT_TOOLS_ENABLED=true)")
+        check("list_plans" in names, "list_plans published")
 
         is_error, account = await call(client, "get_account", {})
         if is_error:
@@ -152,44 +153,56 @@ async def main() -> int:
         summary = status.get("summary") or {}
         check(status.get("status") == "completed", "import completed", status.get("status"))
         check(summary.get("stops") == 4, "4 stops materialized", summary.get("stops"))
+        check(bool(status.get("plan_id")), "the stops loaded into a plan", status.get("plan_id"))
         check(status.get("next_optimize_charged") is True, "first optimize will be charged")
-        check(status.get("free_replans_remaining") == 0, "no free replans before the first run")
-        if status.get("status") != "completed":
+        check(status.get("charged_because") == "no_billed_run", "charged: no billed run yet")
+        if status.get("status") != "completed" or not status.get("plan_id"):
             return 1
-        dataset_id = created["dataset_id"]
-        base = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": [{"vehicle_id": "van", "count": 1}]}
+        plan_id = status["plan_id"]
+        base = {"plan_id": plan_id, "depot": DEPOT, "vehicles": [{"vehicle_id": "van", "count": 1}]}
 
-        print("4. First optimize of the dataset is charged")
+        print("4. First optimize of the plan is charged")
         before = await stops_remaining(client)
-        first = await optimize(client, "optimize_dataset", base)
+        first = await optimize(client, "optimize_plan", base)
         check("optimization_id" in first, "first run accepted", first.get("error") or "")
         check(first.get("quota_charged") is True, "first run charged the quota", first.get("quota_charged"))
         check(
-            first.get("free_replans_remaining") == 5,
-            "5 free replans after it",
-            first.get("free_replans_remaining"),
+            first.get("free_retries_remaining") == 1,
+            "one free retry after it",
+            first.get("free_retries_remaining"),
         )
         if "optimization_id" in first:
             print(f"    first run: {await wait_done(client, first['optimization_id'])}")
         after = await stops_remaining(client)
         if before is not None and after is not None:
-            check(before - after == 4, "quota went down by the dataset's 4 stops", f"{before} → {after}")
+            check(before - after == 4, "quota went down by the plan's 4 stops", f"{before} → {after}")
 
-        print("5. A variant is a free replan")
+        print("5. A rerun with fewer stops is the free retry")
         before = await stops_remaining(client)
-        variant = await optimize(client, "optimize_dataset", {**base, "exclude_stop_ids": ["SMK-4"]})
-        check("optimization_id" in variant, "variant accepted", variant.get("error") or "")
-        check(variant.get("quota_charged") is False, "variant did not charge", variant.get("quota_charged"))
+        retry = await optimize(client, "optimize_plan", {**base, "exclude_stop_ids": ["SMK-4"]})
+        check("optimization_id" in retry, "rerun accepted", retry.get("error") or "")
+        check(retry.get("quota_charged") is False, "rerun did not charge", retry.get("quota_charged"))
+        check(retry.get("free_retry") is True, "reported as the free retry", retry.get("free_retry"))
         check(
-            variant.get("free_replans_remaining") == 4,
-            "4 free replans left",
-            variant.get("free_replans_remaining"),
+            retry.get("free_retries_remaining") == 0,
+            "no free retry left",
+            retry.get("free_retries_remaining"),
         )
-        if "optimization_id" in variant:
-            print(f"    variant run: {await wait_done(client, variant['optimization_id'])}")
+        if "optimization_id" in retry:
+            print(f"    rerun: {await wait_done(client, retry['optimization_id'])}")
         after = await stops_remaining(client)
         if before is not None and after is not None:
-            check(before == after, "quota unchanged by the replan", f"{before} → {after}")
+            check(before == after, "quota unchanged by the free retry", f"{before} → {after}")
+
+        print("6. The plan remembers the run for a new chat")
+        _, plan = await call(client, "list_plans", {"plan_id": plan_id})
+        detail = plan.get("plan") or {}
+        check(bool(detail.get("last_agent_run")), "last_agent_run recorded")
+        check(
+            detail.get("next_optimize_charged") is True,
+            "the next run is charged again",
+            detail.get("charged_because"),
+        )
 
     print()
     print("ALL PASS" if not failures else f"{len(failures)} FAILED: {failures}")

@@ -47,11 +47,16 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
     assert set(tools) == {
         "optimize_delivery_routes",
         "get_optimization_result",
+        "list_plans",
+        "optimize_plan",
         "geocode_addresses",
         "get_geocode_result",
         "get_account",
         "list_fleet",
     }
+    plans = tools["list_plans"]
+    assert plans.annotations is not None and plans.annotations.read_only_hint is True
+    assert plans.input_schema["additionalProperties"] is False
     account = tools["get_account"]
     assert account.annotations is not None and account.annotations.read_only_hint is True
     assert account.input_schema["additionalProperties"] is False
@@ -412,3 +417,116 @@ async def test_server_instructions_follow_the_gate(
         )
         assert ("confirmed=true" in (server.instructions or "")) is describes_two_calls
         await core.aclose()
+
+
+async def test_an_inline_run_is_saved_as_a_plan_the_account_can_open(
+    mcp_client: Callable[..., Any], clock: FakeClock
+) -> None:
+    args = sample_arguments(stops=4, plan_name="Lunes zona 1", depot_name="Galpón")
+    async with await mcp_client() as client:
+        is_error, created = await call(client, "optimize_delivery_routes", args)
+        assert not is_error, created
+        assert created["plan_id"].startswith("cmf") and created["plan_name"] == "Lunes zona 1"
+        assert created["account_url"].endswith(f"plan={created['plan_id']}")
+        assert created["quota_charged"] is True and "free_retry" not in created
+        assert "plan_replaced" not in created and "plan_temporary" not in created
+
+        is_error, pending = await call(
+            client, "get_optimization_result", {"optimization_id": created["optimization_id"]}
+        )
+        assert not is_error and pending["status"] != "completed"
+        assert pending["plan_id"] == created["plan_id"] and pending["account_url"] == created["account_url"]
+
+        clock.now += 10
+        is_error, result = await call(
+            client, "get_optimization_result", {"optimization_id": created["optimization_id"]}
+        )
+        assert not is_error, result
+        # Kept with the plan: no expiry, and the run is addressable in the account.
+        assert result["plan_id"] == created["plan_id"] and result["history_id"].startswith("hist_")
+        assert "history=" in result["account_url"] and "expires_at" not in result
+
+        is_error, listed = await call(client, "list_plans", {})
+        assert not is_error, listed
+        row = next(p for p in listed["plans"] if p["plan_id"] == created["plan_id"])
+        assert row["name"] == "Lunes zona 1" and row["stops"] == 4 and row["created_by"] == "agent"
+        assert row["depot"] == {"name": "Galpón", "latitude": -34.6037, "longitude": -58.3816}
+        assert row["next_optimize_charged"] is False and row["free_retries_remaining"] == 1
+        assert "last_agent_run" not in row
+        assert listed["library"] == {
+            "plans_in_library": 1,
+            "max_plans": 3,
+            "kept_plans": 0,
+            "max_kept_plans": 2,
+        }
+
+        is_error, one = await call(client, "list_plans", {"plan_id": created["plan_id"]})
+    assert not is_error, one
+    assert one["plan"]["last_agent_run"]["vehicles"] == [{"id": "van", "count": 3}]
+    assert one["plan"]["with_time_window"] == 0 and one["plan"]["free_retry_window_ends_at"]
+
+
+async def test_a_full_library_replaces_the_oldest_plan_and_says_which(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState, clock: FakeClock
+) -> None:
+    async with await mcp_client() as client:
+        created = []
+        for index in range(4):
+            args = sample_arguments(stops=2 + index, plan_name=f"Día {index + 1}")
+            is_error, run = await call(client, "optimize_delivery_routes", args)
+            assert not is_error, run
+            created.append(run)
+            clock.now += 10
+    first, fourth = created[0], created[3]
+    assert "plan_replaced" not in created[2]
+    assert fourth["plan_replaced"] == {"plan_id": first["plan_id"], "name": "Día 1"}
+
+    async with await mcp_client() as client:
+        is_error, gone = await call(client, "list_plans", {"plan_id": first["plan_id"]})
+    assert is_error and gone["error"]["code"] == "PLAN_NOT_FOUND"
+    assert "list_plans" in gone["error"]["suggestion"]
+
+
+async def test_a_plan_is_temporary_when_every_library_slot_is_protected(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState, clock: FakeClock
+) -> None:
+    core_state.plan.max_saved_plans = 1
+    async with await mcp_client() as client:
+        _, kept = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        core_state.plans[kept["plan_id"]]["kept"] = True
+        clock.now += 10
+        is_error, run = await call(client, "optimize_delivery_routes", sample_arguments(stops=3))
+        assert not is_error, run
+        assert run["plan_temporary"] is True and "plan_replaced" not in run
+        _, listed = await call(client, "list_plans", {"query": "optimization"})
+    temporary = next(p for p in listed["plans"] if p["plan_id"] == run["plan_id"])
+    assert temporary["temporary"] is True
+
+
+async def test_a_server_without_imports_reruns_a_plan_free_with_optimize_plan(
+    mcp_client: Callable[..., Any], clock: FakeClock
+) -> None:
+    # The free retry is only reachable through optimize_plan, so it is published on every server.
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
+        tools = {t.name for t in (await client.list_tools()).tools}
+        assert "optimize_plan" in tools and "import_delivery_file" not in tools
+
+        is_error, first = await call(client, "optimize_delivery_routes", sample_arguments(stops=5))
+        assert not is_error, first
+        clock.now += 10
+
+        rerun = {
+            "plan_id": first["plan_id"],
+            "depot": {"latitude": -34.6037, "longitude": -58.3816},
+            "vehicles": [{"vehicle_id": "van", "count": 2}],
+            "exclude_stop_ids": ["ORD-00004"],
+        }
+        is_error, retry = await call(client, "optimize_plan", rerun)
+        assert not is_error, retry
+        assert retry["free_retry"] is True and retry["quota_charged"] is False
+        assert retry["submitted_stops"] == 4 and retry["plan_id"] == first["plan_id"]
+
+        clock.now += 10
+        _, plan = await call(client, "list_plans", {"plan_id": first["plan_id"]})
+    # The excluded stop shaped one run only: the plan keeps all five.
+    assert plan["plan"]["stops"] == 5

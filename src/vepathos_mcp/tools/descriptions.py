@@ -25,9 +25,8 @@ _INSTRUCTIONS_HEAD = (
 # Only on a server that publishes the import tools (MCP_IMPORT_TOOLS_ENABLED): instructions never name
 # a tool the client cannot see.
 _STEP_IMPORT = (
-    "Large files (hundreds+ stops): call import_delivery_file with the attachment (never paste "
-    "rows), then get_import_result until dataset_id is ready, then optimize_dataset. "
-    "optimize_delivery_routes with stops[] is only for small plans."
+    "Large files (hundreds+ stops): import_delivery_file with the attachment, never pasted rows; "
+    "get_import_result until plan_id is ready; then optimize_plan."
 )
 _STEPS = (
     "Street addresses: call geocode_addresses first and confirm the pins it flags "
@@ -36,12 +35,20 @@ _STEPS = (
     "invent vehicle_id. When they cannot serve every stop within max_stops, say how many vehicles "
     "cover the demand and ask whether to increase the vehicle count to that number; do not call it a "
     "test or hypothetical fleet. Invent a fleet only for what-if questions, and say so.",
-    "Always ask for route_start_time (depot departure), or confirm the one of the last run. Never "
-    "invent 08:00. Never reuse stops from an earlier plan. Never use a depot the user did not give, "
-    "geocode_addresses did not return, or the user did not confirm from last_run.",
+    "Always ask for route_start_time (depot departure) or confirm the last run's; never invent 08:00. "
+    "Never reuse an earlier run's stops or depot without the user's confirmation.",
     "Before a large or first optimization: call get_account and compare the stop count with the "
     "plan's maximum.",
 )
+_PLANS = (
+    "Plans: each optimization is saved as a plan in the user's account (list_plans); a plan reruns free "
+    "within 24 h of its charged run with the same stops or fewer"
+)
+_RESULTS_WITH_MAP = (
+    ". Let the user choose how to see results: their account (account_url, sign-in) or a public map "
+    "(create_optimization_map: 48 h, anyone with the link can view it).\n"
+)
+_RESULTS = ". account_url opens a plan there (sign-in required).\n"
 _INSTRUCTIONS_TAIL = (
     "Ask the user only what the tools cannot answer: the depot when unknown; which fleet when the "
     "account fleet does not match; whether weights/volumes are real when capacity matters. Ask one "
@@ -54,28 +61,24 @@ _INSTRUCTIONS_TAIL = (
 )
 
 
-def server_instructions(*, confirm_before_optimize: bool, import_tools: bool) -> str:
+def server_instructions(
+    *, confirm_before_optimize: bool, import_tools: bool, map_shares: bool = False
+) -> str:
     steps = ([_STEP_IMPORT] if import_tools else []) + list(_STEPS)
-    optimizers = (
-        "optimize_dataset or optimize_delivery_routes" if import_tools else "optimize_delivery_routes"
-    )
+    optimizers = "optimize_plan or optimize_delivery_routes"
     if confirm_before_optimize:
         steps.append(
-            f"Then optimize ({optimizers}) with confirmed=false, show the preflight, get a yes, call "
-            "again with confirmed=true, and get_optimization_result while it runs."
+            f"Then call {optimizers} with confirmed=false, show the preflight, get a yes, repeat with "
+            "confirmed=true, and poll get_optimization_result."
         )
     else:
-        replan = (
-            " (a dataset's first run is charged; later variants of it are free replans)"
-            if import_tools
-            else ""
-        )
         steps.append(
-            f"Then say how many stops it charges and how many remain{replan}, get a yes, call "
-            f"{optimizers} once, and get_optimization_result while it runs."
+            f"Then say how many stops it charges and how many remain, get a yes, call {optimizers} "
+            "once, and poll get_optimization_result."
         )
     numbered = "".join(f"{number}. {step}\n" for number, step in enumerate(steps, start=1))
-    return _INSTRUCTIONS_HEAD + numbered + _INSTRUCTIONS_TAIL
+    results = _RESULTS_WITH_MAP if map_shares else _RESULTS
+    return _INSTRUCTIONS_HEAD + numbered + _PLANS + results + _INSTRUCTIONS_TAIL
 
 
 OPTIMIZE_TITLE = "Optimize delivery routes"
@@ -86,7 +89,8 @@ _OPTIMIZE_INTRO = (
     "Built for large problems, from dozens to thousands of stops. Every stop needs latitude and longitude; "
     "addresses are not geocoded. Runs asynchronously: returns an optimization_id, plus the result when the "
     "optimization finishes within a few seconds; use get_optimization_result to retrieve status and routes. "
-    "Results stay available for 24 hours. "
+    "Each call saves the run as a new plan in the user's Vepathos account (plan_id, account_url; name it "
+    "with plan_name). Tell the user when plan_replaced or plan_temporary is set. "
 )
 _OPTIMIZE_CHARGE_CONFIRMED = (
     "Charges one plan stop per stop sent, so it takes two calls: "
@@ -105,8 +109,9 @@ _OPTIMIZE_CHARGE_DIRECT = (
 _OPTIMIZE_TAIL = (
     "Identical arguments are deduplicated and "
     "charged once, but any change, including a different max_stops or vehicle count on the same stops, is a "
-    "new optimization and charges again. A request that exceeds the plan, or needs a constraint it lacks, is "
-    "rejected with an explanation and never partially applied."
+    "new optimization in a new plan and charges again. A request that exceeds the account plan, or needs a "
+    "constraint it lacks, is rejected with an explanation and never partially applied. To vary a run, call "
+    "optimize_plan with its plan_id: the same stops or fewer rerun free within 24 h."
 )
 
 
@@ -160,27 +165,30 @@ GET_RESULT_DESCRIPTION = (
     "returns status and progress. When complete, detail=summary "
     "returns totals and per-route metrics; detail=stops returns ordered stop_ids with arrival times "
     "(driver clock, service at earlier stops included). request shows the depot, vehicles and "
-    "schedule it ran with. Read-only; does not consume plan stops."
+    "schedule it ran with. Completed results are kept with their plan: plan_id, and account_url, which "
+    "opens it in the user's Vepathos account (sign-in required). Read-only; does not consume plan stops."
 )
 
 IMPORT_FILE_TITLE = "Import delivery file"
 IMPORT_FILE_DESCRIPTION = (
     "Upload a delivery file (Excel, CSV, JSON, text) via ChatGPT attachment "
-    "(_meta openai/fileParams) or a public https url. Starts Smart Import; returns import_id. "
+    "(_meta openai/fileParams) or a public https url. Starts Smart Import; returns import_id. The stops "
+    "load into a new plan named after the file, or replace the stops of plan_id. "
     "Never paste thousands of stops into optimize_delivery_routes. Poll get_import_result."
 )
 
 IMPORT_TEXT_TITLE = "Import pasted deliveries"
 IMPORT_TEXT_DESCRIPTION = (
-    "Import a short pasted delivery list through the same Smart Import pipeline as a file. "
-    "Returns import_id; use get_import_result. Prefer import_delivery_file for large files."
+    "Import a short pasted delivery list through the same Smart Import pipeline as a file, into a new "
+    "plan or plan_id. Returns import_id; use get_import_result. Prefer import_delivery_file for large files."
 )
 
 GET_IMPORT_TITLE = "Get import result"
 GET_IMPORT_DESCRIPTION = (
-    "Status and summary of an import_delivery_file / import_delivery_text job. When complete: "
-    "dataset_id, expires_at, summary (counts, mapping, sample, needs_confirmation). Never returns "
-    "all rows. Then call optimize_dataset."
+    "Status and summary of an import_delivery_file / import_delivery_text job. When complete: plan_id "
+    "(the plan the stops loaded into), account_url, summary (counts, mapping, sample, needs_confirmation) "
+    "and whether the next run is charged. Tell the user when plan_replaced or plan_temporary is set. "
+    "Never returns all rows. Then call optimize_plan with plan_id."
 )
 
 UPDATE_MAPPING_TITLE = "Update import mapping"
@@ -189,29 +197,47 @@ UPDATE_MAPPING_DESCRIPTION = (
     "Returns the updated summary."
 )
 
-OPTIMIZE_DATASET_TITLE = "Optimize imported dataset"
+OPTIMIZE_PLAN_TITLE = "Optimize a plan"
 
 
-def optimize_dataset_description(*, confirm_before_optimize: bool) -> str:
+def optimize_plan_description(*, confirm_before_optimize: bool, import_tools: bool) -> str:
     charge = (
         "With confirmed=false returns a preflight and charges nothing; then confirmed=true. "
         if confirm_before_optimize
-        else "Confirm the charge (or free replan) with the user, then call once. "
+        else "Confirm the charge (or the free retry) with the user, then call once. "
+    )
+    # dataset_id comes only from the import tools, so it is named only where they are published.
+    source = (
+        "a plan (plan_id, from list_plans or get_import_result) or an import (dataset_id), exactly one"
+        if import_tools
+        else "a plan (plan_id, from list_plans)"
     )
     return (
-        "Optimize a previously imported dataset by dataset_id (from get_import_result). Pass depot, "
-        "vehicles and per-run options (exclude_stop_ids, use_weight/volume/time_windows, "
-        "service_time, max_route_minutes, min_stops/max_stops). The first run of a dataset charges "
-        "its stops; after it, the plan allows a number of free replans (variants), which must still fit the plan. "
-        "next_optimize_charged and free_replans_remaining (get_import_result, list_datasets) say "
-        "which applies. " + charge + "Use get_optimization_result while it runs."
+        f"Optimize stored stops: {source}, saving the run in that plan. Pass depot, vehicles and per-run "
+        "options (exclude_stop_ids for this run only, use_weight/volume/time_windows, service_time_minutes, "
+        "max_route_minutes, min_stops/max_stops). It charges the stops, except the plan's free retry: within 24 h of a "
+        "charged run, a rerun with the same stops or fewer (id and coordinates) is free, even with another "
+        "depot, fleet or settings; plan limits still apply. next_optimize_charged and charged_because say "
+        "which applies. " + charge + "Tell the user when plan_replaced or plan_temporary is set. Poll "
+        "get_optimization_result."
     )
 
 
 LIST_DATASETS_TITLE = "List datasets"
 LIST_DATASETS_DESCRIPTION = (
-    "List delivery datasets available to optimize_dataset, from this or earlier chats. Each says "
-    "whether its next run is charged (next_optimize_charged) and gives last_run: the depot, vehicles "
-    "and schedule of its latest optimization, to repeat or vary it once the user confirms them. "
-    "Read-only."
+    "List imports from this or earlier chats: the plan each loaded into (plan_id), whether its next run "
+    "is charged, and last_run: the depot, vehicles and schedule of its latest optimization, to repeat or "
+    "vary it once the user confirms them. Read-only."
+)
+
+LIST_PLANS_TITLE = "List plans"
+
+
+LIST_PLANS_DESCRIPTION = (
+    "List the plans in the connected Vepathos account (the dashboard's plans; every optimization is "
+    "saved in one). Without plan_id: favorites first, then newest, plus the library size; a full "
+    "library replaces its oldest plan not kept or favorite. With plan_id: stop counts, totals, depot, "
+    "whether the next run is charged, and last_agent_run (what an agent last ran it with). account_url "
+    "opens a plan (sign-in required). Read-only; never returns stops. To rerun or vary one, confirm "
+    "last_agent_run with the user and call optimize_plan with plan_id."
 )

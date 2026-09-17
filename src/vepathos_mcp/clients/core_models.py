@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 CoreJobStatus = Literal["queued", "running", "completed", "failed"]
 TERMINAL_STATUSES: frozenset[str] = frozenset({"completed", "failed"})
@@ -24,14 +24,43 @@ class CoreProgress(CoreModel):
 
 
 class CoreBilling(CoreModel):
+    # plan | plan_free_retry | mcp_full_trial (mcp_dataset_replan on jobs from before plans).
     mode: str | None = None
     quota_charged: bool | None = None
     stops_remaining_this_period: int | None = None
-    # Dataset jobs only: replans left for the next variant (0 until the dataset's first billed run).
-    free_replans_remaining: int | None = None
+    # Retries of the job's plan that stay free after this run completes (same stops or fewer, 24 h).
+    free_retries_remaining: int | None = None
+    dataset_id: str | None = None
 
 
-class CoreDataset(CoreModel):
+class CoreReplacedPlan(CoreModel):
+    """The library plan Core removed to make room for a new one. Core sends `{id, displayName}`."""
+
+    id: str = Field(validation_alias=AliasChoices("id", "plan_id"))
+    display_name: str | None = Field(None, validation_alias=AliasChoices("displayName", "name"))
+
+
+class CoreFreeRetry(CoreModel):
+    """What the next optimization of a plan costs, under the rule shared with the dashboard."""
+
+    next_optimize_charged: bool | None = None
+    free_retries_allowed: int | None = None
+    free_retries_remaining: int | None = None
+    free_retry_window_ends_at: str | None = None
+    # no_allowance | no_billed_run | window_closed | allowance_used | stops_changed (only when charged)
+    charged_because: str | None = None
+
+
+class CorePlacement(CoreModel):
+    """Where stops landed: a plan, and whether loading them rotated the library."""
+
+    plan_id: str | None = None
+    account_url: str | None = None
+    plan_replaced: CoreReplacedPlan | None = None
+    plan_temporary: bool | None = None
+
+
+class CoreDataset(CoreFreeRetry, CorePlacement):
     """`GET /datasets/{dataset_id}`: counts only, never the stops."""
 
     dataset_id: str
@@ -45,9 +74,55 @@ class CoreDataset(CoreModel):
     total_volume_m3: float | None = None
     needs_confirmation: bool | None = None
     expires_at: str | None = None
-    next_optimize_charged: bool | None = None
-    free_replans_remaining: int | None = None
     last_run: dict[str, Any] | None = None
+
+
+class CorePlanDepot(CoreModel):
+    name: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+
+
+class CorePlan(CoreFreeRetry):
+    """`GET /plans/{plan_id}` and each row of `GET /plans`: counts and cost, never the stops."""
+
+    plan_id: str
+    name: str | None = None
+    created_by: str | None = None
+    temporary: bool | None = None
+    kept: bool | None = None
+    favorite: bool | None = None
+    # Bumps whenever the plan's stops or settings change. Core replays by idempotency key, so a key
+    # derived from the arguments must include it.
+    revision: int | None = None
+    stops: int = 0
+    stops_not_optimizable: int | None = None
+    total_weight_kg: float | None = None
+    total_volume_m3: float | None = None
+    with_weight: int | None = None
+    with_volume: int | None = None
+    with_time_window: int | None = None
+    depot: CorePlanDepot | None = None
+    optimizing: bool | None = None
+    last_run_history_id: str | None = None
+    last_run_at: str | None = None
+    account_url: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    # Only on GET /plans/{plan_id}: the MCP parameters the plan last ran with, or null.
+    last_agent_run: dict[str, Any] | None = None
+
+
+class CorePlanLibrary(CoreModel):
+    plans_in_library: int | None = None
+    max_plans: int | None = None
+    kept_plans: int | None = None
+    max_kept_plans: int | None = None
+
+
+class CorePlanList(CoreModel):
+    plans: list[CorePlan] = Field(default_factory=list)
+    library: CorePlanLibrary | None = None
 
 
 class CoreFullTrial(CoreModel):
@@ -60,8 +135,9 @@ class CoreFailure(CoreModel):
     message: str | None = None
 
 
-class CoreJobCreated(CoreModel):
+class CoreJobCreated(CorePlacement):
     job_id: str
+    plan_name: str | None = None
     status: CoreJobStatus = "queued"
     idempotent_replay: bool = False
     submitted_stops: int
@@ -76,10 +152,15 @@ class CoreJobCreated(CoreModel):
 class CoreJobStatusResponse(CoreModel):
     job_id: str
     status: CoreJobStatus
+    plan_id: str | None = None
+    # The plan's history run, once the job settled into it.
+    history_id: str | None = None
+    account_url: str | None = None
     progress: CoreProgress | None = None
     submitted_stops: int | None = None
     created_at: str | None = None
     completed_at: str | None = None
+    # Null once a plan job settled: its results are kept with the plan.
     expires_at: str | None = None
     billing: CoreBilling | None = None
     failure: CoreFailure | None = None

@@ -148,9 +148,16 @@ def _quota(message: str, details: dict[str, Any]) -> DomainError:
             f"({resets}), or upgrade the Vepathos plan."
         )
     suggestion += f" {WRONG_ACCOUNT_HINT}"
+    # A plan run that expected its free retry says why it is charged (charged_because).
+    free_retry = _as_dict(details.get("free_retry"))
+    if free_retry.get("charged_because") == "stops_changed":
+        suggestion += (
+            " This plan's free retry does not apply: its stops differ from the charged run. "
+            "Only the same stops or fewer run free."
+        )
     kept: dict[str, Any] = {
         k: details[k]
-        for k in ("stops_remaining", "requested", "period_ends_at", "upgrade_url")
+        for k in ("stops_remaining", "requested", "period_ends_at", "upgrade_url", "free_retry")
         if k in details
     }
     return DomainError(ErrorCode.QUOTA_EXCEEDED, _clip(message), suggestion=suggestion, details=kept)
@@ -252,6 +259,33 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 ErrorCode.GEOCODE_EXPIRED,
                 "This geocoding job is no longer available.",
                 suggestion="Call geocode_addresses again with the same addresses.",
+            )
+        case "IMPORT_NOT_FOUND":
+            return DomainError(
+                ErrorCode.IMPORT_NOT_FOUND,
+                "No import with this id exists for the connected Vepathos account.",
+                suggestion="Check the import_id, or import the file again.",
+            )
+        case "DATASET_NOT_FOUND":
+            return DomainError(
+                ErrorCode.DATASET_NOT_FOUND,
+                "No import with this dataset_id exists for the connected Vepathos account, or it expired.",
+                suggestion="Imports are kept 24 hours. Optimize the plan it loaded into by plan_id "
+                "(list_plans), or import the file again.",
+            )
+        case "PLAN_NOT_FOUND":
+            return DomainError(
+                ErrorCode.PLAN_NOT_FOUND,
+                "No plan with this plan_id exists in the connected Vepathos account.",
+                suggestion="Call list_plans to find the plan. It may have been deleted or replaced "
+                "to make room in the library.",
+            )
+        case "PLAN_BUSY":
+            return DomainError(
+                ErrorCode.PLAN_BUSY,
+                "This plan is already optimizing.",
+                suggestion="Wait for that run to finish (get_optimization_result), then try again.",
+                retry_after_seconds=retry_after or 30,
             )
         case "BACKEND_UNAVAILABLE":
             return DomainError(

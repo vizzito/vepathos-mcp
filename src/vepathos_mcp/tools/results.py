@@ -45,6 +45,9 @@ def pending_output(status: CoreJobStatusResponse, detail: str | None) -> Optimiz
     return OptimizationResult(
         optimization_id=status.job_id,
         status=status.status,
+        plan_id=status.plan_id,
+        history_id=status.history_id,
+        account_url=status.account_url,
         detail=detail,  # type: ignore[arg-type]
         progress=progress,
         poll_after_seconds=POLL_AFTER_SECONDS,
@@ -57,6 +60,9 @@ def completed_output(result: CoreJobResult, detail: str) -> OptimizationResult:
         return OptimizationResult(
             optimization_id=result.job_id,
             status="completed",
+            plan_id=result.plan_id,
+            history_id=result.history_id,
+            account_url=result.account_url,
             detail=detail,  # type: ignore[arg-type]
             expires_at=result.expires_at,
             request=result.request,

@@ -59,6 +59,7 @@ def build_server(
         instructions=server_instructions(
             confirm_before_optimize=settings.confirm_before_optimize,
             import_tools=settings.import_tools_enabled,
+            map_shares=settings.map_shares_enabled,
         ),
         website_url="https://vepathos.com",
         token_verifier=CompositeTokenVerifier(settings, jwks_verifier=jwks_verifier),

@@ -35,8 +35,14 @@ class FakePlan:
     monthly_stops: int | None = 2000
     features: frozenset[str] = frozenset()
     max_concurrent: int = 1
-    # Free variants after a dataset's billed run (Core: PlanLimits.freeReplansPerRun).
-    free_replans: int = 5
+    # Free retries after a route plan's billed run (Core: PlanLimits.freeReplansPerRun; channel plans 0).
+    free_retries: int = 1
+    # Library size (Core: maxSavedPlans). None: unlimited.
+    max_saved_plans: int | None = 3
+
+
+FREE_RETRY_WINDOW_SECONDS = 24 * 3600
+ACCOUNT_URL = "http://localhost:3000/dashboard"
 
 
 @dataclass
@@ -48,6 +54,18 @@ class FakeJob:
     created_at: float
     run_seconds: float
     fail: bool = False
+    plan_id: str | None = None
+    # plan | plan_free_retry | mcp_full_trial
+    billing: str = "plan"
+    stop_keys: frozenset[str] = frozenset()
+    # The billed job whose 24 h window a free retry belongs to.
+    cycle: str | None = None
+
+    def done(self, now: float) -> bool:
+        return now - self.created_at >= self.run_seconds
+
+    def succeeded(self, now: float) -> bool:
+        return self.done(now) and not self.fail
 
 
 @dataclass
@@ -60,6 +78,8 @@ class FakeCoreState:
     geocode_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
     imports: dict[str, dict[str, Any]] = field(default_factory=dict)
     datasets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Route plans (OptimizationPlan), keyed by plan_id. `state.plan` is the account's subscription.
+    plans: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_seconds: float = 3.0
     company_name: str | None = None
     fleets: list[dict[str, Any]] = field(default_factory=list)
@@ -78,11 +98,24 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, UTC).isoformat().replace("+00:00", "Z")
 
 
-def _replan_state(dataset: dict[str, Any], plan_free_replans: int) -> dict[str, Any]:
-    """Same rule as Core: nothing is free until the dataset's first billed optimization."""
+def _stop_key(stop: dict[str, Any]) -> str:
+    """Same identity as Core's free-retry rule: id and coordinates rounded to 5 decimals."""
 
-    free = max(0, plan_free_replans - dataset["replan_count"]) if dataset["billed"] else 0
-    return {"next_optimize_charged": free == 0, "free_replans_remaining": free}
+    return f"{stop.get('id')} {float(stop.get('lat', 0)):.5f} {float(stop.get('lng', 0)):.5f}"
+
+
+def _account_url(plan_id: str, history_id: str | None = None) -> str:
+    url = f"{ACCOUNT_URL}?tab=plans&plan={plan_id}"
+    return f"{url}&history={history_id}" if history_id else url
+
+
+def _total(stops: list[dict[str, Any]], key: str) -> float | None:
+    values = [float(stop[key]) for stop in stops if stop.get(key) is not None]
+    return round(sum(values), 3) if values else None
+
+
+def _history_id(job_id: str) -> str:
+    return "hist_" + job_id.removeprefix("mcp_")[:24]
 
 
 def _run_record(body: dict[str, Any], *, dataset_id: str | None, excluded: int | None) -> dict[str, Any]:
@@ -174,6 +207,153 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             return account
         return JSONResponse({"fleets": state.fleets, "vehicles": state.vehicles})
 
+    def free_retry_state(plan_id: str, stops: list[dict[str, Any]] | None) -> dict[str, Any]:
+        """Core's shared rule (billing/free-retry-policy.ts): after a plan's completed billed run, a run
+        within 24 h with the same stops or fewer is free, up to the account plan's allowance."""
+
+        allowed = state.plan.free_retries
+        now = state.clock()
+
+        def charged(blocker: str, **extra: Any) -> dict[str, Any]:
+            return {
+                "next_optimize_charged": True,
+                "free_retries_allowed": allowed,
+                "free_retries_remaining": 0,
+                "free_retry_window_ends_at": None,
+                "charged_because": blocker,
+                **extra,
+            }
+
+        if allowed <= 0:
+            return charged("no_allowance")
+        billed = [
+            j
+            for j in state.jobs.values()
+            if j.plan_id == plan_id and j.billing == "plan" and j.succeeded(now)
+        ]
+        if not billed:
+            return charged("no_billed_run")
+        cycle = max(billed, key=lambda j: j.created_at + j.run_seconds)
+        completed_at = cycle.created_at + cycle.run_seconds
+        if now - completed_at > FREE_RETRY_WINDOW_SECONDS:
+            return charged("window_closed")
+        window_ends = _iso(completed_at + FREE_RETRY_WINDOW_SECONDS)
+        used = sum(1 for j in state.jobs.values() if j.cycle == cycle.job_id and j.succeeded(now))
+        remaining = max(0, allowed - used)
+        if remaining == 0:
+            return charged("allowance_used", free_retry_window_ends_at=window_ends)
+        if stops is not None and not {_stop_key(stop) for stop in stops} <= cycle.stop_keys:
+            return charged(
+                "stops_changed", free_retries_remaining=remaining, free_retry_window_ends_at=window_ends
+            )
+        return {
+            "next_optimize_charged": False,
+            "free_retries_allowed": allowed,
+            "free_retries_remaining": remaining,
+            "free_retry_window_ends_at": window_ends,
+            "_cycle": cycle.job_id,
+        }
+
+    def public_retry(retry: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in retry.items() if not k.startswith("_")}
+
+    def find_plan(account: str, plan_id: Any) -> dict[str, Any] | None:
+        plan = state.plans.get(str(plan_id)) if isinstance(plan_id, str) else None
+        if plan is None or plan["account"] != account or plan["deleted"]:
+            return None
+        return plan
+
+    def plan_optimizing(plan_id: str) -> bool:
+        now = state.clock()
+        return any(j.plan_id == plan_id and not j.done(now) for j in state.jobs.values())
+
+    def create_plan(account: str, name: str, stops: list[dict[str, Any]]) -> dict[str, Any]:
+        """A new plan, replacing the oldest unprotected library plan when the library is full."""
+
+        cap = state.plan.max_saved_plans
+        replaced: dict[str, str] | None = None
+        temporary = False
+        if cap is not None:
+            library = sorted(
+                (
+                    (pid, p)
+                    for pid, p in state.plans.items()
+                    if p["account"] == account and not p["deleted"] and not p["temporary"]
+                ),
+                key=lambda item: item[1]["created_at"],
+            )
+            if len(library) >= cap:
+                victim = next(((pid, p) for pid, p in library if not (p["kept"] or p["favorite"])), None)
+                if victim is None:
+                    temporary = True
+                else:
+                    victim[1]["deleted"] = True
+                    replaced = {"id": victim[0], "displayName": victim[1]["name"]}
+        now = state.clock()
+        plan_id = "cmf" + hashlib.sha256(f"{account}:{len(state.plans)}:{now}".encode()).hexdigest()[:22]
+        state.plans[plan_id] = {
+            "account": account,
+            "name": name[:200],
+            "created_by": "agent",
+            "stops": list(stops),
+            "depot": None,
+            "kept": False,
+            "favorite": False,
+            "temporary": temporary,
+            "deleted": False,
+            "created_at": now,
+            "updated_at": now,
+            "revision": 1,
+            "last_agent_run": None,
+            "last_job_id": None,
+        }
+        return {"plan_id": plan_id, "replaced": replaced, "temporary": temporary}
+
+    def load_into_plan(
+        account: str, plan_id: str | None, stops: list[dict[str, Any]], name: str
+    ) -> dict[str, Any]:
+        plan = find_plan(account, plan_id) if plan_id else None
+        if plan is None:
+            return create_plan(account, name, stops)
+        plan["stops"] = list(stops)
+        plan["updated_at"] = state.clock()
+        plan["revision"] += 1
+        return {"plan_id": plan_id, "replaced": None, "temporary": plan["temporary"]}
+
+    def plan_view(plan_id: str, *, detail: bool) -> dict[str, Any]:
+        plan = state.plans[plan_id]
+        stops = plan["stops"]
+        now = state.clock()
+        last = state.jobs.get(plan["last_job_id"] or "")
+        settled = last is not None and last.succeeded(now)
+        view: dict[str, Any] = {
+            "plan_id": plan_id,
+            "name": plan["name"],
+            "created_by": plan["created_by"],
+            "temporary": plan["temporary"],
+            "kept": plan["kept"] or plan["favorite"],
+            "favorite": plan["favorite"],
+            "revision": plan["revision"],
+            "stops": len(stops),
+            "stops_not_optimizable": 0,
+            "total_weight_kg": _total(stops, "weight_kg"),
+            "total_volume_m3": _total(stops, "volume_m3"),
+            "with_weight": sum(1 for stop in stops if "weight_kg" in stop),
+            "with_volume": sum(1 for stop in stops if "volume_m3" in stop),
+            "with_time_window": sum(1 for stop in stops if "time_window" in stop),
+            "depot": plan["depot"],
+            "optimizing": plan_optimizing(plan_id),
+            "last_run_history_id": _history_id(last.job_id) if settled and last else None,
+            "last_run_at": _iso(last.created_at + last.run_seconds) if settled and last else None,
+            "account_url": _account_url(plan_id, _history_id(last.job_id) if settled and last else None),
+            "created_at": _iso(plan["created_at"]),
+            "updated_at": _iso(plan["updated_at"]),
+            **public_retry(free_retry_state(plan_id, stops)),
+        }
+        if detail:
+            view["last_agent_run"] = plan["last_agent_run"]
+        return view
+
     def job_status(job: FakeJob) -> dict[str, Any]:
         elapsed = state.clock() - job.created_at
         if elapsed >= job.run_seconds:
@@ -190,12 +370,18 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             "status": status,
             "submitted_stops": len(job.body["stops"]),
             "created_at": _iso(job.created_at),
-            "expires_at": _iso(job.created_at + 86400),
+            # A settled plan job is kept with its plan and never expires.
+            "expires_at": None if status == "completed" and job.plan_id else _iso(job.created_at + 86400),
             "billing": {
-                "mode": job.body.get("_billing", "plan"),
-                "quota_charged": job.body.get("_billing", "plan") == "plan",
+                "mode": job.billing,
+                "quota_charged": job.billing == "plan",
             },
         }
+        if job.plan_id:
+            payload["plan_id"] = job.plan_id
+            if status == "completed":
+                payload["history_id"] = _history_id(job.job_id)
+            payload["account_url"] = _account_url(job.plan_id, payload.get("history_id"))
         if progress:
             payload["progress"] = progress
         if status in {"completed", "failed"}:
@@ -219,6 +405,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             body = json.loads(raw)
         except json.JSONDecodeError:
             return _error(400, "INVALID_INPUT", "Body is not JSON.")
+        # Core keys idempotency on the request as sent, before a plan or dataset expands its stops.
         body_hash = hashlib.sha256(raw).hexdigest()
         job_id = "mcp_" + hashlib.sha256(f"{account}:{key}".encode()).hexdigest()[:32]
 
@@ -230,30 +417,62 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "idempotent_replay": True,
                 "vehicles_available": _fleet(existing.body),
             }
+            if existing.plan_id and existing.plan_id in state.plans:
+                created["plan_name"] = state.plans[existing.plan_id]["name"]
             return JSONResponse(created, status_code=202)
 
-        stops = body.get("stops") or []
-        billing = "plan"
+        # Exactly one stop source; every run lives in a plan (jobs/route.ts).
+        sources = [k for k in ("plan_id", "dataset_id") if k in body]
+        if len(sources) > 1 or (sources and body.get("stops") is not None):
+            return _error(422, "INVALID_INPUT", "Send exactly one of stops, dataset_id or plan_id.")
+        exclude = set(body.get("exclude_stop_ids") or [])
+        if "exclude_stop_ids" in body and not sources:
+            return _error(422, "INVALID_INPUT", "exclude_stop_ids only applies with plan_id or dataset_id.")
+        today = datetime.fromtimestamp(state.clock(), UTC).date().isoformat()
+        target_plan_id: str | None
         dataset: dict[str, Any] | None = None
         dataset_id: str | None = None
         excluded: int | None = None
-        if not stops and body.get("dataset_id"):
-            ds = state.datasets.get(str(body["dataset_id"]))
-            if ds is None or ds["account"] != account:
+        new_plan_name = str(body.get("plan_name") or f"Optimization {today}")
+        if "plan_id" in body:
+            plan = find_plan(account, body["plan_id"])
+            if plan is None:
+                return _error(404, "PLAN_NOT_FOUND", "No plan with this id exists for this account.")
+            target_plan_id = str(body["plan_id"])
+            stored = plan["stops"]
+            if not stored:
+                return _error(422, "INVALID_INPUT", "The plan has no stops.")
+        elif "dataset_id" in body:
+            dataset = state.datasets.get(str(body["dataset_id"]))
+            if dataset is None or dataset["account"] != account:
                 return _error(404, "DATASET_NOT_FOUND", "Unknown dataset.")
-            dataset = ds
             dataset_id = str(body["dataset_id"])
-            stops = list(ds["stops"])
-            exclude = set(body.get("exclude_stop_ids") or [])
-            if exclude:
-                stops = [s for s in stops if s["id"] not in exclude]
-            excluded = len(ds["stops"]) - len(stops)
-            body = {**body, "stops": stops}
-            body.pop("dataset_id", None)
-            body.pop("exclude_stop_ids", None)
-            # The first optimization of a dataset is billed; replans are free only after it.
-            if ds["billed"] and ds["replan_count"] < state.plan.free_replans:
-                billing = "mcp_dataset_replan"
+            target_plan_id = dataset["plan_id"] if find_plan(account, dataset["plan_id"]) else None
+            new_plan_name = dataset["filename"].rsplit(".", 1)[0]
+            stored = dataset["stops"]
+        else:
+            target_plan_id = None
+            stored = body.get("stops") or []
+        stops = [s for s in stored if s["id"] not in exclude]
+        if sources:
+            if not stops:
+                return _error(422, "INVALID_INPUT", "No stops left after exclude_stop_ids.")
+            excluded = len(stored) - len(stops)
+        depot_name = str(body.get("depot_name") or "Depot")
+        body = {
+            k: v
+            for k, v in body.items()
+            if k not in {"plan_id", "dataset_id", "exclude_stop_ids", "plan_name", "depot_name"}
+        }
+        body["stops"] = stops
+
+        if target_plan_id is not None and plan_optimizing(target_plan_id):
+            busy = _error(409, "PLAN_BUSY", "This plan is already optimizing. Wait for that run to finish.")
+            busy.headers["Retry-After"] = "30"
+            return busy
+
+        retry = free_retry_state(target_plan_id, stops) if target_plan_id is not None else None
+        billing = "plan_free_retry" if retry is not None and not retry["next_optimize_charged"] else "plan"
         # Same rule as Core's resolveConstraints: an explicit flag decides, an omitted one follows the data.
         flags = body.get("constraints") or {}
         declared = {
@@ -276,7 +495,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         too_many = plan.max_stops_per_request is not None and len(stops) > plan.max_stops_per_request
         missing = [f for f in features if f not in plan.features]
         if too_many or missing:
-            # A free replan waives the quota only: plan limits still apply and it never uses the trial.
+            # A free retry waives the quota only: plan limits still apply and it never uses the trial.
             trial_ok = (
                 billing == "plan"
                 and account not in state.trial_used
@@ -305,16 +524,14 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
 
         used = state.used_stops.get(account, 0)
         if billing == "plan" and plan.monthly_stops is not None and used + len(stops) > plan.monthly_stops:
-            return _error(
-                429,
-                "QUOTA_EXCEEDED",
-                "Monthly stop quota exceeded.",
-                {
-                    "stops_remaining": plan.monthly_stops - used,
-                    "requested": len(stops),
-                    "period_ends_at": "2026-10-01T00:00:00Z",
-                },
-            )
+            quota: dict[str, Any] = {
+                "stops_remaining": plan.monthly_stops - used,
+                "requested": len(stops),
+                "period_ends_at": "2026-10-01T00:00:00Z",
+            }
+            if retry is not None:
+                quota["free_retry"] = public_retry(retry)
+            return _error(429, "QUOTA_EXCEEDED", "Monthly stop quota exceeded.", quota)
         active = [
             j.job_id
             for j in state.jobs.values()
@@ -330,8 +547,24 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             response.headers["Retry-After"] = "5"
             return response
 
+        # The run is written into its plan (created when needed) before the engine starts.
+        placement: dict[str, Any] = {"replaced": None, "temporary": False}
+        if target_plan_id is None:
+            placement = create_plan(account, new_plan_name, stops)
+            target_plan_id = placement["plan_id"]
+            if dataset is not None:
+                dataset["plan_id"] = target_plan_id
+        route_plan = state.plans[target_plan_id]
+        # The launch freezes the stops that run; the plan keeps all of its own (exclusions are per run).
+        route_plan["stops"] = list(stored)
+        route_plan["depot"] = {"name": depot_name, **(body.get("depot") or {})}
+        route_plan["updated_at"] = state.clock()
+        route_plan["revision"] += 1
+        route_plan["last_job_id"] = job_id
+
         body["_billing"] = billing
         body["_run"] = _run_record(body, dataset_id=dataset_id, excluded=excluded)
+        route_plan["last_agent_run"] = body["_run"]
         job = FakeJob(
             job_id,
             account,
@@ -340,6 +573,10 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             state.clock(),
             state.run_seconds,
             fail=any(str(s.get("id", "")).startswith("FAIL") for s in stops),
+            plan_id=target_plan_id,
+            billing=billing,
+            stop_keys=frozenset(_stop_key(stop) for stop in stops),
+            cycle=retry.get("_cycle") if retry is not None and billing == "plan_free_retry" else None,
         )
         state.jobs[job_id] = job
         if billing == "plan":
@@ -347,10 +584,6 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         elif billing == "mcp_full_trial":
             state.trial_used.add(account)
         if dataset is not None:
-            if billing == "mcp_dataset_replan":
-                dataset["replan_count"] += 1
-            elif billing == "plan":
-                dataset["billed"] = True
             dataset["last_run"] = {
                 "optimization_id": job_id,
                 "status": "running",
@@ -361,14 +594,26 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             "idempotent_replay": False,
             "vehicles_available": _fleet(body),
             "schedule_date": (body.get("schedule") or {}).get("date"),
+            "plan_name": route_plan["name"],
         }
+        if placement["replaced"]:
+            created["plan_replaced"] = placement["replaced"]
+        if placement["temporary"]:
+            created["plan_temporary"] = True
         remaining = (
             None if plan.monthly_stops is None else plan.monthly_stops - state.used_stops.get(account, 0)
         )
         created["billing"]["stops_remaining_this_period"] = remaining
-        if dataset is not None:
-            replans = _replan_state(dataset, plan.free_replans)
-            created["billing"]["free_replans_remaining"] = replans["free_replans_remaining"]
+        # Retries of this plan that stay free after this run completes.
+        created["billing"]["free_retries_remaining"] = (
+            max(0, int(retry["free_retries_remaining"]) - 1)
+            if billing == "plan_free_retry" and retry is not None
+            else 0
+            if billing == "mcp_full_trial"
+            else plan.free_retries
+        )
+        if dataset_id is not None:
+            created["billing"]["dataset_id"] = dataset_id
         if billing == "mcp_full_trial":
             created["full_trial_applied"] = {
                 "max_stops": 2000,
@@ -397,6 +642,9 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         if status["status"] != "completed":
             return JSONResponse(status)
         status["request"] = job.body.get("_run")
+        if job.plan_id:
+            status["history_id"] = _history_id(job.job_id)
+            status["account_url"] = _account_url(job.plan_id, status["history_id"])
         view = request.query_params.get("view", "summary")
         offset = int(request.query_params.get("offset", "0"))
         routes = _naive_routes(job.body)
@@ -413,7 +661,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                     "vehicles_used": len(routes),
                     "total_distance_km": round(sum(r["distance_km"] for r in routes), 2),
                     "total_duration_minutes": round(sum(r["duration_minutes"] for r in routes), 1),
-                    "charged_stops": assigned if job.body.get("_billing") == "plan" else 0,
+                    "charged_stops": assigned if job.billing == "plan" else 0,
                 },
                 "routes": [
                     {k: v for k, v in r.items() if k != "stop_ids"} | {"stops": len(r["stop_ids"])}
@@ -502,17 +750,22 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "INVALID_INPUT",
                 "Provide content_base64, text, or url. The delivery file did not arrive.",
             )
-        fingerprint = f"{account}:{json.dumps(body, sort_keys=True)}"
+        if "plan_id" in body and find_plan(account, body["plan_id"]) is None:
+            return _error(404, "PLAN_NOT_FOUND", "No plan with this id exists for this account.")
+        fingerprint = f"{account}:{len(state.imports)}:{json.dumps(body, sort_keys=True)}"
         import_id = "mcpi_" + hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
         dataset_id = "mcp_ds_" + hashlib.sha256(import_id.encode()).hexdigest()[:24]
         stops = [{"id": f"S{i}", "lat": -34.6 + i * 0.001, "lng": -58.4 + i * 0.001} for i in range(1, 6)]
+        filename = body.get("filename") or "upload.bin"
+        # The double imports at once, so the stops load into their plan right away (datasets.ts).
+        placement = load_into_plan(account, body.get("plan_id"), stops, filename.rsplit(".", 1)[0])
         state.datasets[dataset_id] = {
             "account": account,
             "import_id": import_id,
-            "filename": body.get("filename") or "upload.bin",
+            "filename": filename,
             "stops": stops,
-            "billed": False,
-            "replan_count": 0,
+            "plan_id": placement["plan_id"],
+            "placement": placement,
             "expires_at": _iso(state.clock() + 86400),
         }
         state.imports[import_id] = {"account": account, "dataset_id": dataset_id}
@@ -520,12 +773,30 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             {
                 "import_id": import_id,
                 "dataset_id": dataset_id,
+                "plan_id": placement["plan_id"],
+                "account_url": _account_url(placement["plan_id"]),
                 "status": "completed",
                 "poll_after_ms": 200,
                 "expires_at": state.datasets[dataset_id]["expires_at"],
             },
             status_code=202,
         )
+
+    def dataset_plan_fields(account: str, ds: dict[str, Any]) -> dict[str, Any]:
+        """plan_id, account_url, what the next run of that plan costs and any library rotation."""
+
+        fields: dict[str, Any] = {"plan_id": ds["plan_id"]}
+        if find_plan(account, ds["plan_id"]) is not None:
+            fields["account_url"] = _account_url(ds["plan_id"])
+            fields.update(public_retry(free_retry_state(ds["plan_id"], ds["stops"])))
+        else:
+            fields["next_optimize_charged"] = True
+        # Only when true, like Core.
+        if ds["placement"]["replaced"]:
+            fields["plan_replaced"] = ds["placement"]["replaced"]
+        if ds["placement"]["temporary"]:
+            fields["plan_temporary"] = True
+        return fields
 
     async def get_import(request: Request) -> JSONResponse:
         account = authenticate(request)
@@ -543,7 +814,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "status": "completed",
                 "filename": ds["filename"],
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds, state.plan.free_replans),
+                **dataset_plan_fields(account, ds),
                 "summary": {
                     "rows_read": len(ds["stops"]),
                     "stops": len(ds["stops"]),
@@ -584,8 +855,9 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "source": "file",
                 "status": "ready",
                 "stops": len(ds["stops"]),
+                "needs_confirmation": False,
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds, state.plan.free_replans),
+                **dataset_plan_fields(account, ds),
                 "last_run": ds.get("last_run"),
             }
             for did, ds in state.datasets.items()
@@ -616,10 +888,48 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "total_volume_m3": None,
                 "needs_confirmation": False,
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds, state.plan.free_replans),
+                **dataset_plan_fields(account, ds),
                 "last_run": ds.get("last_run"),
             }
         )
+
+    async def list_plans(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        try:
+            limit = max(1, min(50, int(request.query_params.get("limit", "20"))))
+        except ValueError:
+            limit = 20
+        query = (request.query_params.get("query") or "").strip().lower()
+        owned = [
+            (pid, p)
+            for pid, p in state.plans.items()
+            if p["account"] == account and not p["deleted"] and query in p["name"].lower()
+        ]
+        owned.sort(key=lambda item: (not item[1]["favorite"], -item[1]["updated_at"]))
+        library = [p for _, p in owned if not p["temporary"]]
+        cap = state.plan.max_saved_plans
+        return JSONResponse(
+            {
+                "plans": [plan_view(pid, detail=False) for pid, _ in owned[:limit]],
+                "library": {
+                    "plans_in_library": len(library),
+                    "max_plans": cap,
+                    "kept_plans": sum(1 for p in library if p["kept"] or p["favorite"]),
+                    "max_kept_plans": None if cap is None else max(0, cap - 1),
+                },
+            }
+        )
+
+    async def get_plan(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        plan_id = request.path_params["plan_id"]
+        if find_plan(account, plan_id) is None:
+            return _error(404, "PLAN_NOT_FOUND", "No plan with this id exists for this account.")
+        return JSONResponse(plan_view(plan_id, detail=True))
 
     return Starlette(
         routes=[
@@ -636,6 +946,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/imports/{import_id}", put_import_mapping, methods=["PUT"]),
             Route("/api/mcp/v1/datasets", list_datasets, methods=["GET"]),
             Route("/api/mcp/v1/datasets/{dataset_id}", get_dataset, methods=["GET"]),
+            Route("/api/mcp/v1/plans", list_plans, methods=["GET"]),
+            Route("/api/mcp/v1/plans/{plan_id}", get_plan, methods=["GET"]),
         ]
     )
 
