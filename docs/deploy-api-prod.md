@@ -90,8 +90,13 @@ Usual rebuild (this VM; **no** `--force-recreate` unless you only changed env):
 
 ```bash
 cd ~/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api
-docker compose -f 05-api-doc.yml up -d --build api-doc
+docker compose -f 05-api-doc.yml up -d --build api-doc cron
 ```
+
+`cron` (`vepathos-api-doc-cron`) runs `vepathos-api-doc/scripts/billing-cron.sh`: billing reconciliation,
+stale reservations, plan retention, MCP map and dataset retention, and the MCP connect-loop detector.
+It needs `CRON_SECRET` and `RECONCILE_CRON_SECRET` in the api-doc `.env`; check its first lines with
+`docker logs vepathos-api-doc-cron 2>&1 | head -3`. Before 2026-09-17 no cron ran in production.
 
 After a good build: `docker image prune -f` (dangling only, not `prune -a`).
 

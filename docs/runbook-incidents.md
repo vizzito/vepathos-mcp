@@ -120,8 +120,16 @@ code with the previous one, so a wide window does not hide a loop.
 docker exec -i vepathos-postgres psql -U postgres -d vepathos_app -c "SELECT c.\"clientName\", a.prev AS previous_exchange, a.\"consumedAt\" AS reconnect FROM (SELECT x.\"grantId\", x.\"consumedAt\", lag(x.\"consumedAt\") OVER (PARTITION BY x.\"grantId\" ORDER BY x.\"consumedAt\") AS prev FROM \"McpOAuthAuthCode\" x WHERE x.\"consumedAt\" > now() - interval '1 hour') a JOIN \"McpOAuthGrant\" g ON g.id = a.\"grantId\" JOIN \"McpOAuthClient\" c ON c.\"clientId\" = g.\"clientId\" WHERE a.prev IS NOT NULL AND a.\"consumedAt\" - a.prev < interval '15 minutes' ORDER BY a.\"consumedAt\" DESC;"
 ```
 
-Not yet run on production. Before scheduling it, widen the interval to reach back to 2026-09-16 15:30
-UTC and confirm it lists ChatGPT, 15:33:46 → 15:35:31, the loop described below.
+Scheduled: the api-doc cron calls `GET /api/cron/mcp-connect-loops` every 15 minutes
+(`src/server/mcp/connect-loops.ts`, same query). Each loop is logged as an `[mcp-connect-loop]` line in the
+api-doc log and posted to `MCP_ALERT_WEBHOOK_URL` when set:
+
+```bash
+docker logs --since 24h vepathos-api-doc 2>&1 | grep mcp-connect-loop
+```
+
+To confirm on production that it catches the 16/09 loop, run the query above with `interval '2 days'`
+instead of `'1 hour'`: it must list ChatGPT, 15:33:46 → 15:35:31, the loop described below.
 
 ## Known incidents
 
