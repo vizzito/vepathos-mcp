@@ -1,9 +1,10 @@
 # Tools
 
-# Vepathos MCP exposes six read/plan tools, plus six import/dataset tools when
+# Vepathos MCP exposes eight read/plan tools, plus five import tools when
 # `MCP_IMPORT_TOOLS_ENABLED=true` (off by default, so deploying the code publishes nothing new; the
-# server instructions only name the tools a server publishes). There is intentionally no cancel tool:
-# a submitted optimization always runs to completion.
+# server instructions only name the tools a server publishes), plus `create_optimization_map` when
+# `MCP_MAP_SHARES_ENABLED=true`. There is intentionally no cancel tool: a submitted optimization always
+# runs to completion.
 
 | Tool | Title | Annotations |
 |---|---|---|
@@ -11,8 +12,9 @@
 | `import_delivery_text` | Import pasted deliveries | `readOnlyHint: false` |
 | `get_import_result` | Get import result | `readOnlyHint: true` |
 | `update_import_mapping` | Update import mapping | `readOnlyHint: false` |
-| `optimize_dataset` | Optimize imported dataset | `readOnlyHint: false` |
 | `list_datasets` | List datasets | `readOnlyHint: true` |
+| `list_plans` | List plans | `readOnlyHint: true` (always published) |
+| `optimize_plan` | Optimize a plan | `readOnlyHint: false` (always published) |
 | `geocode_addresses` | Geocode addresses | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `get_geocode_result` | Get geocode result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `optimize_delivery_routes` | Optimize delivery routes | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
@@ -24,31 +26,93 @@
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
 
-Large files (hundreds+ stops): use `import_delivery_file` → `get_import_result` → `optimize_dataset`
+Large files (hundreds+ stops): use `import_delivery_file` → `get_import_result` → `optimize_plan`
 instead of pasting `stops[]`. See [large-payloads.md](large-payloads.md).
+
+## Plans
+
+Every optimization lives in a plan: the same `OptimizationPlan` the dashboard lists under its plans
+([architecture-mcp-plans.md](architecture-mcp-plans.md)). An import loads its stops into a plan; an
+inline `optimize_delivery_routes` call creates a new one (`plan_name`, default "Optimization
+YYYY-MM-DD"); `optimize_plan` runs an existing one. Runs, imports and results report `plan_id` and
+`account_url` (the plan in the user's account, sign-in required).
+
+**One billing rule for dashboard and MCP.** A plan's charged run opens a 24 h window. Within it, one
+rerun of that plan is free when every stop is in the charged run (same stops or fewer, compared by id
+and coordinates); depot, fleet and settings may change. Channel plans get 0. A free retry waives the
+quota only: plan limits still apply. The views say what the next run costs:
+`next_optimize_charged`, `free_retries_allowed`, `free_retries_remaining`, `free_retry_window_ends_at`
+and, when charged, `charged_because` (`no_billed_run`, `stops_changed`, `allowance_used`,
+`window_closed`, `no_allowance`). A run reports `quota_charged`, `free_retry: true` when it was the free
+retry, and `free_retries_remaining` (retries that stay free after it completes). Because an inline call
+always creates a new plan, the free retry is reachable only through `optimize_plan`, so `optimize_plan`
+and `list_plans` are published on every server and the instructions state the rule everywhere.
+
+**Library.** Free keeps 3 plans; kept + favorite plans are capped at library size − 1. When the library
+is full, a new plan replaces the oldest plan that is not kept or favorite and the response carries
+`plan_replaced: {plan_id, name}` (Core sends `{id, displayName}`); the agent must tell the user which
+plan was replaced. `plan_temporary: true` means every slot was protected: the plan lives outside the
+library and retention drops it, which the agent also tells the user.
+
+**Delivering results.** The user chooses: open the plan in their account (`account_url`, login) or a
+temporary public link (`create_optimization_map`, 48 h, anyone with the link). The agent offers both,
+never creates the public link by default, and says the link is visible to anyone who has it.
+
+## `list_plans`
+
+Read-only, no stops charged, published on every server. Without `plan_id`: the account's plans
+(favorites first, then newest; `query` filters by name, `limit` 1–50) and `library`
+(`plans_in_library`, `max_plans`, `kept_plans`, `max_kept_plans`; null = unlimited). With `plan_id`:
+one plan with its stop counts (`with_weight`, `with_volume`, `with_time_window`,
+`stops_not_optimizable`), `total_weight_kg` / `total_volume_m3`, `depot` (`name`, `latitude`, `longitude`), `optimizing`, the free-retry
+fields and `last_agent_run` (depot, vehicles, schedule, constraints an agent last ran it with, or
+absent), so a new chat can repeat or vary the last run after confirming it. Never returns stops.
+`PLAN_NOT_FOUND` when the plan is gone (deleted, or replaced to make room).
 
 ## `import_delivery_file` / `import_delivery_text`
 
-Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. Returns `import_id`.
-Poll `get_import_result` for `dataset_id`, `summary` (never all rows), and `needs_confirmation`.
-`update_import_mapping` corrects columns without re-upload. `list_datasets` lists ready handles.
-`optimize_dataset` shares billing/idempotency with optimize. The first run of a dataset is charged;
-after it, the plan's free replans apply (Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5), which waive
-the quota but not the plan limits.
-`get_import_result` and `list_datasets` report `next_optimize_charged` (whether the **next** run is
-charged) and `free_replans_remaining`; a run reports `quota_charged` and `free_replans_remaining`.
+Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. Returns `import_id` and
+`plan_id` (null until the stops load). Optional `plan_id` loads the stops into that plan, replacing its
+stops and keeping its depot, fleet and settings (`PLAN_NOT_FOUND` if it does not exist); without it a
+new plan is named after the file. Poll `get_import_result` for `plan_id`, `account_url`, `dataset_id`,
+`summary` (never all rows), `needs_confirmation`, the free-retry fields and `plan_replaced` /
+`plan_temporary`. `update_import_mapping` corrects columns without re-upload. `list_datasets` lists
+imports with their `plan_id`, `plan_replaced` / `plan_temporary` (only when true) and `last_run`. A
+`dataset_id` expires after 24 h; its plan stays. `import_delivery_file` also returns `account_url` once
+the plan is known.
 
-Every optimization keeps a run record (depot, vehicles, schedule, objective, dataset). `list_datasets`
-shows each dataset's `last_run` and `get_optimization_result` returns it as `request`, so a new chat can
-repeat or vary a run after confirming the depot and departure with the user, instead of asking for
-everything again. When the account fleet cannot cover the stops within `max_stops`, the instructions
-tell the agent to offer increasing the vehicle count to cover the demand, not a "test" fleet.
+## `optimize_plan`
 
-With `confirmed: false`, `optimize_dataset` reads `GET /datasets/{dataset_id}` and its preflight states
-the real stop count (minus `exclude_stop_ids`), `charges_stops` (0 on a free replan), the plan check,
-and warnings for runs Core would reject: capacity enforced while some stops lack that value
-(`stops_without_weight` / `stops_without_volume`), time windows without `route_start_time`, or an
-import that still needs confirmation. Time windows stored in a dataset are always enforced.
+Published on every server. Runs stored stops: exactly one of `plan_id` (the plan's stops) or
+`dataset_id` (an import's copy, run in the plan it loaded; named in the description only when the
+import tools are published). Takes the same run parameters as before (`depot` with coordinates or an address,
+`vehicles[]`, `exclude_stop_ids`, `use_weight` / `use_volume` / `use_time_windows`, `route_start_time`,
+`time_zone`, `service_time_minutes`, `max_route_minutes`, `date`, `confirmed`, `idempotency_key`) plus
+`depot_name`. The run's depot, fleet and schedule are written to the plan. `exclude_stop_ids` applies to
+that run only: the plan keeps every stop (the launch freezes the stops that ran). Output is the same as
+`optimize_delivery_routes`, with `plan_id`, `plan_name`, `account_url` and the billing fields above.
+
+Idempotency: Core deduplicates the request as sent, before it expands the plan's stops. For `plan_id`
+the adapter reads `GET /plans/{plan_id}` and adds the plan's `revision` to the key (it bumps whenever the
+plan's stops or settings change, including when a run starts), so a retry of the same call is
+deduplicated while the same arguments after the plan changed start a new run. A second call while the plan
+runs gets `PLAN_BUSY` (retryable).
+
+With `confirmed: false`, the preflight reads `GET /plans/{plan_id}` (or `GET /datasets/{dataset_id}`)
+and states the real stop count (minus `exclude_stop_ids`), `charges_stops` (0 when
+`next_optimize_charged` is false), `total_weight_kg` / `total_volume_m3` for an enforced capacity when
+nothing is excluded, `plan_id`, `charged_because`, `free_retry_window_ends_at`, the plan
+check, and warnings for runs Core would reject: capacity enforced while some stops lack that value
+(`stops_without_weight` / `stops_without_volume`), time windows without `route_start_time`, an import
+that still needs confirmation, and for plans `plan_has_no_stops`, `plan_stops_not_optimizable` and
+`plan_optimizing`. `confirm_with` says whether the run is the free retry or why it is charged.
+
+Every optimization keeps a run record (depot, vehicles, schedule, objective, constraints, dataset).
+`list_plans` with `plan_id` shows it as `last_agent_run`, `list_datasets` as each import's `last_run`,
+and `get_optimization_result` returns it as `request`, so a new chat can repeat or vary a run after
+confirming the depot and departure with the user, instead of asking for everything again. When the
+account fleet cannot cover the stops within `max_stops`, the instructions tell the agent to offer
+increasing the vehicle count to cover the demand, not a "test" fleet.
 
 ## `list_fleet`
 
@@ -117,6 +181,8 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `schedule.max_route_minutes` | number 30–1440 | no | Soft journey cap; turns on `rebalance_by_time` for this job only. |
 | `idempotency_key` | string 8–128 | no | Override the automatic deduplication key. |
 | `confirmed` | boolean | no (`false`) | `false` returns a preflight and charges nothing. `true` submits the job. |
+| `plan_name` | string 1–200 | no ("Optimization YYYY-MM-DD") | Name of the new plan the run is saved as. |
+| `depot_name` | string 1–120 | no ("Depot") | Depot name shown in the plan. |
 
 Unknown fields are rejected with `INVALID_INPUT`, so an unsupported constraint is never silently
 ignored.
@@ -183,13 +249,22 @@ constraints the request needs that the plan lacks.
   "idempotent_replay": false,
   "submitted_stops": 3200,
   "vehicles_available": 35,
+  "plan_id": "cmf8x2…",
+  "plan_name": "Optimization 2026-09-14",
+  "account_url": "https://vepathos.com/dashboard?tab=plans&plan=cmf8x2…",
+  "plan_replaced": { "plan_id": "cmf1a9…", "name": "Lunes" },
   "schedule_date": "2026-09-14",
   "expires_at": "2026-09-15T14:02:11Z",
   "stops_remaining_this_period": 146800,
+  "quota_charged": true,
+  "free_retries_remaining": 1,
   "progress": { "percent": 35, "stage": "assigning_stops" },
   "poll_after_seconds": 10
 }
 ```
+
+`plan_replaced` is present only when the library was full, `plan_temporary: true` only when every slot
+was protected. `expires_at` is when an unfinished run is dropped; completed runs stay with the plan.
 
 When the optimization finishes within the call (small problems), `status` is `completed` and `result`
 contains the same payload as `get_optimization_result` with `detail=summary`.
@@ -208,7 +283,9 @@ If the account's one-time full-feature trial was used, `full_trial_applied` repo
 | `limit` | integer 1–1000 | no | Defaults: 25 routes (summary), 200 items (stops/unassigned). |
 
 While running, the tool waits up to about 20 seconds for completion, then returns `status` and
-`progress` with `poll_after_seconds`.
+`progress` with `poll_after_seconds` (and `plan_id`, `account_url` for plan runs). A completed plan run is
+read from the plan's history (`history_id`): it has no `expires_at` and never answers
+`OPTIMIZATION_EXPIRED`.
 
 ### `detail=summary`
 
@@ -216,8 +293,10 @@ While running, the tool waits up to about 20 seconds for completion, then return
 {
   "optimization_id": "mcp_3f1c…",
   "status": "completed",
+  "plan_id": "cmf8x2…",
+  "history_id": "cmf9q1…",
+  "account_url": "https://vepathos.com/dashboard?tab=plans&plan=cmf8x2…&history=cmf9q1…",
   "detail": "summary",
-  "expires_at": "2026-09-15T14:02:11Z",
   "summary": {
     "stops_submitted": 3200, "stops_assigned": 3197, "stops_unassigned": 3,
     "vehicles_available": 35, "vehicles_used": 33,
@@ -245,6 +324,15 @@ are never echoed.
 ### `detail=unassigned`
 
 Ids of stops that could not be routed.
+
+## `create_optimization_map`
+
+Published with `MCP_MAP_SHARES_ENABLED=true`. Creates a temporary public link (48 h, `access:
+anyone_with_link`) to a completed optimization's map; for plan runs it is the history run's share, the
+same link the dashboard gives. The description tells the agent that results reach the user two ways,
+the plan in their account (`account_url`, login) or this link, to offer both and create the link only
+when the user picks it, and to say that anyone with the link can see the delivery locations until it
+expires. Repeating the call returns the same link without extending it.
 
 ## Errors
 
@@ -280,7 +368,10 @@ Errors are tool results with `isError: true` and a structured `error` object:
 | `PAYLOAD_TOO_LARGE` | Request body too large; split the problem. | no |
 | `AUTHENTICATION_REQUIRED` / `INVALID_CREDENTIALS` | Reconnect the connector. | no |
 | `RATE_LIMITED` | Too many calls from this connection. | yes |
-| `OPTIMIZATION_NOT_FOUND` / `OPTIMIZATION_EXPIRED` | Unknown id, or results past retention (24 h). | no |
+| `OPTIMIZATION_NOT_FOUND` / `OPTIMIZATION_EXPIRED` | Unknown id, or an unfinished or pre-plan run past retention (24 h). Completed plan runs never expire. | no |
+| `PLAN_NOT_FOUND` | No such plan in the connected account (deleted, or replaced to make room). | no |
+| `PLAN_BUSY` | The plan is optimizing; wait for that run (`retry_after_seconds`). | yes |
+| `IMPORT_NOT_FOUND` / `DATASET_NOT_FOUND` | Unknown or expired import (24 h); its plan stays. | no |
 | `OPTIMIZATION_FAILED` | The optimization ended without a result; it was not charged. | yes |
 | `BACKEND_UNAVAILABLE` / `TIMEOUT` | Temporary; identical requests are safe to resend. | yes |
 | `INTERNAL_ERROR` | Unexpected error. | no |

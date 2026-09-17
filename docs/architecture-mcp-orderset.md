@@ -1,5 +1,9 @@
 # MCP architecture: datasets today, working set tomorrow
 
+> **Superseded (2026-09-16).** MCP runs became plans: see [architecture-mcp-plans.md](architecture-mcp-plans.md).
+> The order set (sections 4, 5, 9, 10) was not built; datasets are import staging for plans, and free
+> replans follow the plan rule shared with the dashboard. The rest is kept as history.
+
 Design document only. No production behaviour ships from this file until a separate
 implementation plan passes ChatGPT staging smoke ([smoke-prompts.md](smoke-prompts.md)).
 

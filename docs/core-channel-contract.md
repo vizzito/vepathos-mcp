@@ -108,6 +108,75 @@ digits, `_`, `-`, `.`): `vepathos-mcp` reshapes it before publishing, keeping it
 When neither resource answers, Core returns `503 BACKEND_UNAVAILABLE`; when only one fails, the
 other is still returned.
 
+## Plans
+
+Every run lives in an `OptimizationPlan`, the same object the dashboard uses
+([architecture-mcp-plans.md](architecture-mcp-plans.md)). Imports load their stops into a plan; a job
+runs a plan's stops (`plan_id`), an import's copy (`dataset_id`, into the plan it loaded) or inline
+`stops` (a new plan). One billing rule covers dashboard and MCP (api-doc `src/server/billing/`): a plan's
+completed billed run opens a 24 h window in which `PlanLimits.freeReplansPerRun` reruns (1 on every
+account plan, 0 on channel plans) are free when every stop was in the billed run (same `id` and
+coordinates rounded to 5 decimals); depot, fleet and settings may change. A free retry waives the quota
+only. Views that describe a plan's next run carry:
+
+```json
+{
+  "next_optimize_charged": false,
+  "free_retries_allowed": 1,
+  "free_retries_remaining": 1,
+  "free_retry_window_ends_at": "2026-09-17T12:00:00.000Z",
+  "charged_because": "stops_changed"
+}
+```
+
+`charged_because` is present only when charged: `no_allowance`, `no_billed_run`, `window_closed`,
+`allowance_used`, `stops_changed`.
+
+Library: Free keeps 3 plans, kept + favorite ≤ size − 1. When a new plan does not fit, Core replaces the
+oldest unprotected plan and reports `plan_replaced: {id, displayName}`; when every slot is protected the
+plan is created outside the library and the response carries `plan_temporary: true`.
+`account_url` opens a plan (and a run, with `&history=`) in the dashboard; it requires login.
+
+## `GET /api/mcp/v1/plans`
+
+Query `limit` (1–50, default 20), `query` (name contains, case-insensitive). Favorites first, then
+newest. Never the stops.
+
+```json
+{
+  "plans": [
+    {
+      "plan_id": "cmf…", "name": "zona-1", "created_by": "agent", "temporary": false, "kept": false,
+      "favorite": false, "revision": 7, "stops": 10931, "stops_not_optimizable": 0,
+      "total_weight_kg": 21862.5, "total_volume_m3": null, "with_weight": 10931,
+      "with_volume": 0, "with_time_window": 0,
+      "depot": { "name": "Depot", "lat": -34.6, "lng": -58.4 }, "optimizing": false,
+      "last_run_history_id": "cmf…", "last_run_at": "…",
+      "account_url": "https://…/dashboard?tab=plans&plan=…&history=…",
+      "created_at": "…", "updated_at": "…",
+      "next_optimize_charged": true, "free_retries_allowed": 1, "free_retries_remaining": 0,
+      "free_retry_window_ends_at": null, "charged_because": "no_billed_run"
+    }
+  ],
+  "library": { "plans_in_library": 3, "max_plans": 3, "kept_plans": 2, "max_kept_plans": 2 }
+}
+```
+
+`max_plans` / `max_kept_plans` are null when unlimited. `revision` changes whenever the plan's stops or
+settings change (a run starting included). `vepathos-mcp` publishes this as `list_plans` and converts
+`depot` to `latitude` / `longitude`.
+
+## `GET /api/mcp/v1/plans/{plan_id}`
+
+One plan (the view above) plus `last_agent_run`: the run record an agent last ran it with (depot,
+vehicles, schedule, objective, constraints, `submitted_stops`, optional `dataset_id` / `excluded_stops`),
+or null. The free-retry fields are computed against the plan's current stops. Unknown, deleted or
+other-account id → `404 PLAN_NOT_FOUND`.
+
+The adapter also reads this before submitting `plan_id` jobs: Core keys idempotency on the body as
+sent, before it expands the plan's stops, so the adapter adds the plan's `revision` to its fingerprint
+(see [tools.md](tools.md#optimize_plan)).
+
 ## `POST /api/mcp/v1/optimization/jobs`
 
 Create an asynchronous optimization job.
@@ -166,16 +235,24 @@ Unknown fields are rejected.
   "schedule_date": "2026-09-14",
   "created_at": "2026-09-13T18:20:00Z",
   "expires_at": "2026-09-14T18:20:00Z",
+  "plan_id": "cmf…",
+  "plan_name": "Optimization 2026-09-13",
+  "account_url": "https://…/dashboard?tab=plans&plan=cmf…",
+  "plan_replaced": { "id": "cmf…", "displayName": "Lunes" },
   "billing": {
     "mode": "plan",
     "quota_charged": true,
-    "stops_remaining_this_period": 1880
+    "stops_remaining_this_period": 1880,
+    "free_retries_remaining": 1
   }
 }
 ```
 
-- `billing.mode` is `plan` or `mcp_full_trial`. `stops_remaining_this_period` is `null` for
-  unlimited plans. It already nets out in-flight reservations.
+- `billing.mode` is `plan`, `plan_free_retry` or `mcp_full_trial` (`mcp_dataset_replan` only on jobs
+  from before plans). `stops_remaining_this_period` is `null` for unlimited plans. It already nets out
+  in-flight reservations. `free_retries_remaining`: reruns of the plan that stay free after this run
+  completes. Dataset jobs also carry `billing.dataset_id`.
+- `plan_replaced` / `plan_temporary` appear only when creating the plan rotated the library.
 - When the first-use trial was applied, the response includes
   `"full_trial_applied": { "max_stops": 2000, "features": ["weight_capacity", "volume_capacity", "time_windows"] }`
   and `billing.quota_charged = false`.
@@ -193,11 +270,17 @@ Lightweight status (used for polling).
   "submitted_stops": 120,
   "created_at": "2026-09-13T18:20:00Z",
   "expires_at": "2026-09-14T18:20:00Z",
+  "plan_id": "cmf…",
+  "account_url": "https://…/dashboard?tab=plans&plan=cmf…",
   "billing": { "mode": "plan", "quota_charged": true, "stops_remaining_this_period": 1880 }
 }
 ```
 
 - `status`: `queued` | `running` | `completed` | `failed`.
+- A plan job that settled (the first read that sees it complete, or the `mcp-plan-settlement` cron)
+  adds `history_id` and `completed_at`, its `account_url` carries `&history=`, has `expires_at: null` and
+  never answers `410`: its results live in the plan's history. A pending `/result` also carries
+  `plan_id` and `account_url`.
 - `stage`: `queued` | `assigning_stops` | `preparing_map_data` | `sequencing_routes` | `finalizing`.
 - A failed job includes `"failure": { "code": "OPTIMIZATION_FAILED", "message": "…" }`. A failed job
   is not charged.
@@ -217,7 +300,10 @@ While the job is not completed, it returns the status payload above with no resu
 {
   "job_id": "mcp_3f1c…",
   "status": "completed",
-  "expires_at": "2026-09-14T18:20:00Z",
+  "plan_id": "cmf…",
+  "history_id": "cmf…",
+  "account_url": "https://…/dashboard?tab=plans&plan=cmf…&history=cmf…",
+  "expires_at": null,
   "request": {
     "depot": { "lat": -34.6037, "lng": -58.3816 },
     "vehicles": [{ "id": "van", "count": 5, "max_stops": 40 }],
@@ -290,8 +376,9 @@ time at the stop; see the note above for how it relates to `duration_minutes`.
 ## `POST /api/mcp/v1/imports`
 
 Upload a delivery file for Smart Import and keep it as an MCP dataset (24 h TTL). Unlike geocode,
-the SI job is **not** deleted when complete — Core materializes normalized stops for
-`optimize_dataset`.
+the SI job is **not** deleted when complete — Core materializes normalized stops and loads them into a
+plan: the one named by `plan_id` (its stops replaced; depot, fleet and settings kept) or a new plan
+named after the file.
 
 Body (one of):
 
@@ -301,7 +388,8 @@ Body (one of):
 | `text` + optional `filename` | Pasted delivery list (`import_delivery_text`). |
 | `url` + optional `filename` | Public `https` download; private/metadata hosts rejected (SSRF). |
 
-Optional: `timezone`, `depot_country`, `mime_type`. Max size `MCP_IMPORT_MAX_BYTES` (8 MiB).
+Optional: `timezone`, `depot_country`, `mime_type`, `plan_id` (unknown → `404 PLAN_NOT_FOUND`). Max size
+`MCP_IMPORT_MAX_BYTES` (8 MiB).
 
 ### Response `202 Accepted`
 
@@ -309,19 +397,23 @@ Optional: `timezone`, `depot_country`, `mime_type`. Max size `MCP_IMPORT_MAX_BYT
 {
   "import_id": "si-job.hmac",
   "dataset_id": "mcp_ds_…",
+  "plan_id": null,
   "status": "running",
   "poll_after_ms": 1500,
   "expires_at": "2026-09-17T12:00:00Z"
 }
 ```
 
-`status` may be `running`, `needs_mapping`, or `completed`. Missing file / bad URL / too large →
-`422 INVALID_INPUT`.
+`status` may be `running`, `needs_mapping`, or `completed`. `plan_id` is null until the stops load
+(the named plan when one was sent); `account_url` is present once `plan_id` is known. Missing file / bad URL / too large → `422 INVALID_INPUT`.
 
 ## `GET /api/mcp/v1/imports/{import_id}`
 
 Poll. When ready: `dataset_id`, `expires_at`, `summary` (counts, mapping, sample, units,
-`needs_confirmation`), `next_optimize_charged`, `free_replans_remaining`. **Never returns all rows.**
+`needs_confirmation`), `plan_id`, `account_url`, the free-retry fields, and `plan_replaced` /
+`plan_temporary` when loading the stops rotated the library (only when true; `summary` no longer
+carries them). **Never returns all rows.** While the named
+plan is optimizing the stops wait (status stays `running`) and load when it finishes.
 
 ## `PUT /api/mcp/v1/imports/{import_id}`
 
@@ -337,13 +429,21 @@ List datasets for the account (MCP imports; web-app datasets when exposed). Quer
   "datasets": [
     {
       "dataset_id": "mcp_ds_…",
+      "plan_id": "cmf…",
+      "account_url": "https://…/dashboard?tab=plans&plan=cmf…",
       "filename": "orders.xlsx",
       "source": "file",
       "status": "ready",
       "stops": 8200,
+      "needs_confirmation": false,
       "expires_at": "…",
+      "created_at": "…",
       "next_optimize_charged": true,
-      "free_replans_remaining": 0,
+      "free_retries_allowed": 1,
+      "free_retries_remaining": 0,
+      "free_retry_window_ends_at": null,
+      "charged_because": "no_billed_run",
+      "plan_replaced": { "id": "cmf…", "displayName": "Lunes" },
       "last_run": null
     }
   ]
@@ -357,6 +457,8 @@ One dataset's counts, for a preflight to state the stops and the charge. **Never
 ```json
 {
   "dataset_id": "mcp_ds_…",
+  "plan_id": "cmf…",
+  "account_url": "https://…/dashboard?tab=plans&plan=cmf…",
   "filename": "orders.xlsx",
   "source": "file",
   "status": "ready",
@@ -370,7 +472,9 @@ One dataset's counts, for a preflight to state the stops and the charge. **Never
   "created_at": "…",
   "expires_at": "…",
   "next_optimize_charged": false,
-  "free_replans_remaining": 4,
+  "free_retries_allowed": 1,
+  "free_retries_remaining": 1,
+  "free_retry_window_ends_at": "2026-09-17T12:00:00.000Z",
   "last_run": {
     "optimization_id": "mcp_3f1c…",
     "status": "completed",
@@ -386,36 +490,44 @@ One dataset's counts, for a preflight to state the stops and the charge. **Never
 }
 ```
 
-`next_optimize_charged` is about the **next** run: `true` when the dataset was never billed or its free
-replans are used up, `false` when the next run is a free replan. It says nothing about whether the
-dataset was optimized before; `last_run` does (latest run of the dataset, any status, `null` when never
-optimized). The list view carries the same `last_run`.
+`next_optimize_charged` is about the **next** run of the dataset's plan with the dataset's stops: `true`
+when the plan has no billed run in the last 24 h, its free retry is used or the stops changed, `false`
+when the next run is the free retry (the list view assumes the same stops). It says nothing about
+whether the dataset was optimized before; `last_run` does (latest run of the dataset, any status, `null`
+when never optimized). The list view carries the same `last_run`; both views carry `plan_replaced` /
+`plan_temporary` from the import, only when true.
 
 `with_*` count the stops carrying that value: a capacity the request enforces needs it on every stop,
 and stored time windows are always enforced. Unknown, expired or other-account id →
 `404 DATASET_NOT_FOUND`.
 
-## `POST /api/mcp/v1/optimization/jobs` — `dataset_id`
+## `POST /api/mcp/v1/optimization/jobs` — `plan_id` / `dataset_id`
 
-In addition to inline `stops[]`, the body may carry `dataset_id` (and optional `exclude_stop_ids`).
-Core expands the stored stops before entitlement checks. Same preflight / idempotency / billing as
-inline jobs. Sending both `stops` and `dataset_id`, or `exclude_stop_ids` without `dataset_id`, is
-`422 INVALID_INPUT`.
+Instead of inline `stops[]`, the body may carry `plan_id` (the plan's stops) or `dataset_id` (the
+import's copy, run in the plan it loaded), with optional `exclude_stop_ids`. Exactly one source: sending
+two, or `exclude_stop_ids` with inline stops, is `422 INVALID_INPUT`. Optional `plan_name` (inline
+stops: the new plan's name, default "Optimization YYYY-MM-DD") and `depot_name` (default "Depot").
+Core expands the stops before entitlement checks and writes the run's depot, fleet and schedule to the
+plan draft. The launch freezes the stops that run; `exclude_stop_ids` applies to that run only and the
+plan keeps all its stops (a dataset run restores the import's full stop list in the plan).
 
-Billing of a dataset:
-
-- The **first** optimization is billed like an inline job (`billing.mode = plan`, quota charged, or the
-  one-time trial). `next_optimize_charged: true` on the import and dataset views means this is still ahead.
-- After it, as many variants of the same dataset as the plan's `PlanLimits.freeReplansPerRun` allows
-  (Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5; the same limit as the dashboard) (other
-  vehicles, schedule, `exclude_stop_ids`) are billed `mcp_dataset_replan`: the quota is not charged.
-- A free replan waives the quota only. Plan limits (stops per request, features, fleet size, stops per
-  route) are always enforced, so a replan the plan cannot run is `403 PLAN_UPGRADE_REQUIRED`.
-- The job response carries `billing.free_replans_remaining` and `billing.dataset_id`: the replans left
-  for the next run (0 while the dataset has not been billed yet).
+- Billing follows the plan rule above: a free retry is `billing.mode = plan_free_retry` and reserves
+  no quota; anything else is billed like an inline job (or the one-time trial).
+- A free retry waives the quota only. Plan limits (stops per request, features, fleet size, stops per
+  route) are always enforced, so a retry the plan cannot run is `403 PLAN_UPGRADE_REQUIRED`.
+- A quota rejection of a plan run carries `details.free_retry` with the fields above.
+- `404 PLAN_NOT_FOUND` / `DATASET_NOT_FOUND`; `409 PLAN_BUSY` (retryable, `Retry-After: 30`) while the
+  plan is optimizing; `422 INVALID_INPUT` for a plan without stops, with stop ids an agent cannot use,
+  or paused in the dashboard.
+- An idempotent replay carries `plan_id`, `plan_name` and `account_url`.
 
 `vehicles[].min_stops` defaults to 1 when omitted. `schedule.max_route_minutes` turns on
 `rebalance_by_time` for that job only.
+
+## `POST /api/mcp/v1/optimization/jobs/{job_id}/map`
+
+Temporary public map (contract in [shared-route-maps.md](shared-route-maps.md)). For a plan job the
+share is the history run's share, the same link the dashboard gives for that run.
 
 ## `POST /api/mcp/v1/geocode`
 
@@ -461,7 +573,7 @@ Every error has the same envelope:
 | 400/422 | `INVALID_INPUT` | `issues: [{path, message}]` (first 20) |
 | 422 | `INVALID_COORDINATES` | `stop_ids`, `max_distance_km` |
 | 403 | `PLAN_UPGRADE_REQUIRED` | `reason` (`STOP_LIMIT_EXCEEDED` \| `FEATURE_NOT_AVAILABLE` \| `VEHICLE_LIMIT_EXCEEDED` \| `ROUTE_STOP_LIMIT_EXCEEDED`), `requested`, `current_limit`, `required_capability`, `eligible_plans: [{id, name}]`, `upgrade_url` or `contact_url`, optional `full_trial: {available, max_stops}` |
-| 429 | `QUOTA_EXCEEDED` | `stops_remaining`, `requested`, `period_ends_at`, optional `upgrade_url` |
+| 429 | `QUOTA_EXCEEDED` | `stops_remaining`, `requested`, `period_ends_at`, optional `upgrade_url`, `free_retry` (plan runs) |
 | 429 | `CONCURRENT_OPTIMIZATION_LIMIT` | `limit`, `active_job_ids`; `Retry-After` header |
 | 409 | `IDEMPOTENCY_CONFLICT` | — |
 | 413 | `PAYLOAD_TOO_LARGE` | `limit_bytes`, `received_bytes` |
@@ -470,8 +582,10 @@ Every error has the same envelope:
 | 404 | `OPTIMIZATION_NOT_FOUND` | — (unknown job or owned by another account) |
 | 404 | `GEOCODE_NOT_FOUND` | — |
 | 404 | `IMPORT_NOT_FOUND` / `DATASET_NOT_FOUND` | — (wrong account or expired) |
+| 404 | `PLAN_NOT_FOUND` | — (unknown, deleted or other-account plan) |
+| 409 | `PLAN_BUSY` | — (`Retry-After` header; the plan is optimizing) |
 | 410 | `GEOCODE_EXPIRED` | — |
-| 410 | `OPTIMIZATION_EXPIRED` | — |
+| 410 | `OPTIMIZATION_EXPIRED` | — (never for a settled plan job) |
 | 404 | `CHANNEL_DISABLED` | — |
 | 503 | `BACKEND_UNAVAILABLE` | `Retry-After` header |
 | 500 | `INTERNAL_ERROR` | — |

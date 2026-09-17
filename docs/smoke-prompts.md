@@ -20,8 +20,10 @@ Staging checklist:
 1. Connect ChatGPT Apps connector to staging MCP, with `MCP_IMPORT_TOOLS_ENABLED=true` for the import cases.
 2. Cases 1 and 5 below (small optimize + file import).
 3. Confirm preflight vs charged run matches `MCP_CONFIRM_BEFORE_OPTIMIZE`.
-4. Import path: the first `optimize_dataset` is charged and the agent says so; a variant (other vehicles
-   or `exclude_stop_ids`) is a free replan and the agent says that too.
+4. Import path: the first `optimize_plan` is charged and the agent says so; a rerun of the same plan
+   within 24 h with the same stops or fewer (other vehicles or `exclude_stop_ids`) is the free retry and
+   the agent says that too. When the library is full the agent names the replaced plan, and it offers
+   the account link and the public map instead of creating the map unasked.
 5. Record client build + date. Only then set `MCP_IMPORT_TOOLS_ENABLED=true` in production.
 
 ## Cases
@@ -34,7 +36,7 @@ Staging checklist:
    > Optimize these 2,500 deliveries across 30 vehicles while respecting weight limits.
    Dataset: 2,500 stops with `weight_kg`, 30 vehicles with `max_weight_kg`. Expect a plan decision
    (success on Growth, or `PLAN_UPGRADE_REQUIRED` on Free that the agent explains). Prefer
-   `import_delivery_file` → `optimize_dataset` rather than pasting rows.
+   `import_delivery_file` → `optimize_plan` rather than pasting rows.
 
 3. **Time windows and unassigned deliveries**
    > Each delivery has a time window. Find feasible routes and tell me which deliveries cannot be assigned.
@@ -42,12 +44,12 @@ Staging checklist:
 
 4. **Fleet sizing (8k — import path)**
    > I have 8,000 orders in this spreadsheet. How many vehicles did the optimizer actually need?
-   Expect `import_delivery_file` → `get_import_result` → `optimize_dataset`, not inline `stops[]`.
+   Expect `import_delivery_file` → `get_import_result` → `optimize_plan`, not inline `stops[]`.
    See `docs/large-payloads.md`. Report `vehicles_used` against `vehicles_available`.
 
 5. **Import attachment**
    > Attach a CSV of deliveries and plan routes from our depot at …
-   Expect fileParams → `import_delivery_file`, summary without all rows, then `optimize_dataset`.
+   Expect fileParams → `import_delivery_file`, summary without all rows, then `optimize_plan`.
 
 ## What to record per run
 

@@ -14,6 +14,8 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `get_geocode_result` | Read geocode status and pins. |
 | `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
 | `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
+| `list_plans` | Read the account's plans (every optimization is saved in one), with what their next run costs. |
+| `optimize_plan` | Rerun or vary a saved plan by `plan_id`; within 24 h of its charged run the same stops or fewer run free. |
 | `get_account` | Read which Vepathos account is connected, its plan limits and period usage. |
 | `list_fleet` | Read the account's own vehicles and fleets, ready to pass to an optimization. |
 

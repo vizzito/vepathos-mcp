@@ -208,4 +208,5 @@ in the engine; x402-style paid calls. None of these are part of v1.
 **Editable working set (orderset)** — design locked in
 [architecture-mcp-orderset.md](architecture-mcp-orderset.md): mutable per-account draft that
 merges several imports, supports textual remove, then confirms into a `dataset_id` for
-`optimize_dataset`. Implementation is a separate plan; import → dataset remains the v1 large-file path.
+`optimize_dataset`. Superseded before it was built: MCP runs are plans
+([architecture-mcp-plans.md](architecture-mcp-plans.md)); import → plan → `optimize_plan` is the large-file path.
