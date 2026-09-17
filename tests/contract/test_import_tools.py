@@ -51,6 +51,26 @@ async def test_import_file_missing_attachment_is_invalid_input(mcp_client: Calla
     assert payload["error"]["code"] == "INVALID_INPUT"
 
 
+@pytest.mark.parametrize(
+    "download_url",
+    [
+        "https://169.254.169.254/latest/meta-data/",
+        "https://127.0.0.1/internal",
+        "http://files.example.com/a.xlsx",
+    ],
+)
+async def test_import_file_refuses_an_attachment_url_inside_the_network(
+    mcp_client: Callable[..., Any], download_url: str
+) -> None:
+    async with await mcp_client() as client:
+        is_error, payload = await call(
+            client, "import_delivery_file", {"file": {"download_url": download_url, "file_name": "a.xlsx"}}
+        )
+    assert is_error
+    assert payload["error"]["code"] == "INVALID_INPUT"
+    assert payload["error"]["details"]["reason"] in {"blocked_host", "invalid_url"}
+
+
 async def test_import_text_then_optimize_dataset(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client() as client:
         is_error, created = await call(

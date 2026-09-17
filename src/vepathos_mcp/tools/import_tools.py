@@ -11,6 +11,7 @@ from mcp_types import CallToolResult
 from pydantic import Field, ValidationError
 
 from vepathos_mcp.clients.core_models import CoreDataset
+from vepathos_mcp.clients.public_fetch import PublicFetchError, fetch_public_https
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.schemas.inputs import (
     StrictModel,
@@ -204,32 +205,46 @@ def _file_from_meta(arguments: dict[str, Any]) -> FileParam | None:
     return None
 
 
-async def _download_bytes(deps: ToolDeps, url: str, *, max_bytes: int) -> bytes:
-    import httpx
+_DOWNLOAD_FAILURES: dict[str, tuple[str, str]] = {
+    "invalid_url": (
+        "The attached file's download URL is not a public https URL.",
+        "Attach the file again and call import_delivery_file.",
+    ),
+    "blocked_host": (
+        "The attached file's download URL points to a private or internal address.",
+        "Attach the file again from the chat; only public https downloads are accepted.",
+    ),
+    "redirect": (
+        "The file download redirected, and redirects are not followed.",
+        "Attach the file again and call import_delivery_file.",
+    ),
+    "too_large": (
+        f"File is too large (max {MAX_IMPORT_BYTES} bytes).",
+        "Attach a smaller file or split the dataset.",
+    ),
+    "network": (
+        "Could not download the attached file.",
+        "Attach the file again and call import_delivery_file.",
+    ),
+}
 
+
+async def _download_bytes(deps: ToolDeps, url: str, *, max_bytes: int) -> bytes:
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
-            response = await client.get(url)
-    except Exception as exc:
+        data, _content_type = await fetch_public_https(url, max_bytes=max_bytes)
+    except PublicFetchError as exc:
+        if exc.reason == "http_status":
+            raise DomainError(
+                ErrorCode.INVALID_INPUT,
+                f"The file download failed (HTTP {exc.status_code}).",
+                suggestion="The download URL may have expired. Attach the file again.",
+            ) from None
+        message, suggestion = _DOWNLOAD_FAILURES[exc.reason]
+        if exc.reason == "too_large":
+            message = f"File is too large (max {max_bytes} bytes)."
         raise DomainError(
-            ErrorCode.INVALID_INPUT,
-            "Could not download the attached file.",
-            suggestion="Attach the file again and call import_delivery_file.",
-            details={"reason": type(exc).__name__},
+            ErrorCode.INVALID_INPUT, message, suggestion=suggestion, details={"reason": exc.reason}
         ) from None
-    if response.status_code >= 400:
-        raise DomainError(
-            ErrorCode.INVALID_INPUT,
-            f"The file download failed (HTTP {response.status_code}).",
-            suggestion="The download URL may have expired. Attach the file again.",
-        )
-    data = response.content
-    if len(data) > max_bytes:
-        raise DomainError(
-            ErrorCode.INVALID_INPUT,
-            f"File is too large (max {max_bytes} bytes).",
-            suggestion="Attach a smaller file or split the dataset.",
-        )
     if not data:
         raise DomainError(
             ErrorCode.INVALID_INPUT,
