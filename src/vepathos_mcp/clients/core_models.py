@@ -45,8 +45,9 @@ class CoreDataset(CoreModel):
     total_volume_m3: float | None = None
     needs_confirmation: bool | None = None
     expires_at: str | None = None
-    first_optimize_charged: bool | None = None
+    next_optimize_charged: bool | None = None
     free_replans_remaining: int | None = None
+    last_run: dict[str, Any] | None = None
 
 
 class CoreFullTrial(CoreModel):
@@ -182,6 +183,8 @@ class CoreCatalog(CoreModel):
 
 
 class CoreJobResult(CoreJobStatusResponse):
+    # What the optimization ran with (depot, vehicles, schedule); null for jobs recorded before runs.
+    request: dict[str, Any] | None = None
     summary: dict[str, Any] | None = None
     routes: list[dict[str, Any]] | None = None
     stops: list[dict[str, Any]] | None = None

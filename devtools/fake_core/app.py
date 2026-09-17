@@ -35,6 +35,8 @@ class FakePlan:
     monthly_stops: int | None = 2000
     features: frozenset[str] = frozenset()
     max_concurrent: int = 1
+    # Free variants after a dataset's billed run (Core: PlanLimits.freeReplansPerRun).
+    free_replans: int = 5
 
 
 @dataclass
@@ -76,14 +78,28 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, UTC).isoformat().replace("+00:00", "Z")
 
 
-def _replan_state(dataset: dict[str, Any]) -> dict[str, Any]:
+def _replan_state(dataset: dict[str, Any], plan_free_replans: int) -> dict[str, Any]:
     """Same rule as Core: nothing is free until the dataset's first billed optimization."""
 
-    billed = bool(dataset["billed"])
-    return {
-        "first_optimize_charged": not billed,
-        "free_replans_remaining": max(0, 5 - dataset["replan_count"]) if billed else 0,
+    free = max(0, plan_free_replans - dataset["replan_count"]) if dataset["billed"] else 0
+    return {"next_optimize_charged": free == 0, "free_replans_remaining": free}
+
+
+def _run_record(body: dict[str, Any], *, dataset_id: str | None, excluded: int | None) -> dict[str, Any]:
+    """Same shape as Core's run record: everything the job used except the stops."""
+
+    schedule = body.get("schedule") or {}
+    run: dict[str, Any] = {
+        "depot": body.get("depot"),
+        "vehicles": body.get("vehicles", []),
+        "schedule": {"time_zone": "UTC", **schedule},
+        "objective": body.get("objective", "minimize_distance"),
+        "submitted_stops": len(body.get("stops") or []),
     }
+    if dataset_id is not None:
+        run["dataset_id"] = dataset_id
+        run["excluded_stops"] = excluded or 0
+    return run
 
 
 def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
@@ -219,20 +235,24 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         stops = body.get("stops") or []
         billing = "plan"
         dataset: dict[str, Any] | None = None
+        dataset_id: str | None = None
+        excluded: int | None = None
         if not stops and body.get("dataset_id"):
             ds = state.datasets.get(str(body["dataset_id"]))
             if ds is None or ds["account"] != account:
                 return _error(404, "DATASET_NOT_FOUND", "Unknown dataset.")
             dataset = ds
+            dataset_id = str(body["dataset_id"])
             stops = list(ds["stops"])
             exclude = set(body.get("exclude_stop_ids") or [])
             if exclude:
                 stops = [s for s in stops if s["id"] not in exclude]
+            excluded = len(ds["stops"]) - len(stops)
             body = {**body, "stops": stops}
             body.pop("dataset_id", None)
             body.pop("exclude_stop_ids", None)
             # The first optimization of a dataset is billed; replans are free only after it.
-            if ds["billed"] and ds["replan_count"] < 5:
+            if ds["billed"] and ds["replan_count"] < state.plan.free_replans:
                 billing = "mcp_dataset_replan"
         features = sorted(
             {"weight_capacity" for v in body.get("vehicles", []) if "max_weight_kg" in v}
@@ -298,6 +318,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             return response
 
         body["_billing"] = billing
+        body["_run"] = _run_record(body, dataset_id=dataset_id, excluded=excluded)
         job = FakeJob(
             job_id,
             account,
@@ -317,6 +338,12 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 dataset["replan_count"] += 1
             elif billing == "plan":
                 dataset["billed"] = True
+            dataset["last_run"] = {
+                "optimization_id": job_id,
+                "status": "running",
+                "created_at": _iso(state.clock()),
+                **body["_run"],
+            }
         created = job_status(job) | {
             "idempotent_replay": False,
             "vehicles_available": _fleet(body),
@@ -327,7 +354,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         )
         created["billing"]["stops_remaining_this_period"] = remaining
         if dataset is not None:
-            created["billing"]["free_replans_remaining"] = _replan_state(dataset)["free_replans_remaining"]
+            replans = _replan_state(dataset, plan.free_replans)
+            created["billing"]["free_replans_remaining"] = replans["free_replans_remaining"]
         if billing == "mcp_full_trial":
             created["full_trial_applied"] = {
                 "max_stops": 2000,
@@ -355,6 +383,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         status = job_status(job)
         if status["status"] != "completed":
             return JSONResponse(status)
+        status["request"] = job.body.get("_run")
         view = request.query_params.get("view", "summary")
         offset = int(request.query_params.get("offset", "0"))
         routes = _naive_routes(job.body)
@@ -463,10 +492,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         fingerprint = f"{account}:{json.dumps(body, sort_keys=True)}"
         import_id = "mcpi_" + hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
         dataset_id = "mcp_ds_" + hashlib.sha256(import_id.encode()).hexdigest()[:24]
-        stops = [
-            {"id": f"S{i}", "lat": -34.6 + i * 0.001, "lng": -58.4 + i * 0.001}
-            for i in range(1, 6)
-        ]
+        stops = [{"id": f"S{i}", "lat": -34.6 + i * 0.001, "lng": -58.4 + i * 0.001} for i in range(1, 6)]
         state.datasets[dataset_id] = {
             "account": account,
             "import_id": import_id,
@@ -504,7 +530,7 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "status": "completed",
                 "filename": ds["filename"],
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds),
+                **_replan_state(ds, state.plan.free_replans),
                 "summary": {
                     "rows_read": len(ds["stops"]),
                     "stops": len(ds["stops"]),
@@ -546,7 +572,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "status": "ready",
                 "stops": len(ds["stops"]),
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds),
+                **_replan_state(ds, state.plan.free_replans),
+                "last_run": ds.get("last_run"),
             }
             for did, ds in state.datasets.items()
             if ds["account"] == account
@@ -576,7 +603,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                 "total_volume_m3": None,
                 "needs_confirmation": False,
                 "expires_at": ds["expires_at"],
-                **_replan_state(ds),
+                **_replan_state(ds, state.plan.free_replans),
+                "last_run": ds.get("last_run"),
             }
         )
 

@@ -59,6 +59,7 @@ def completed_output(result: CoreJobResult, detail: str) -> OptimizationResult:
             status="completed",
             detail=detail,  # type: ignore[arg-type]
             expires_at=result.expires_at,
+            request=result.request,
             summary=ResultSummary.model_validate(result.summary) if result.summary is not None else None,
             routes=[RouteMetrics.model_validate(r) for r in result.routes]
             if result.routes is not None

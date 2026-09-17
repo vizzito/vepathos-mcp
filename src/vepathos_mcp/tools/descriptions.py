@@ -33,9 +33,12 @@ _STEPS = (
     "Street addresses: call geocode_addresses first and confirm the pins it flags "
     "(matched_address). Never invent coordinates.",
     "Planning a real delivery day: call list_fleet and use the account's own vehicles. Never "
-    "invent vehicle_id. Invent a fleet only for what-if questions, and say so.",
-    "Always ask for route_start_time (depot departure). Never invent 08:00. Never reuse stops "
-    "from an earlier plan. Never use a depot the user did not give or geocode_addresses did not return.",
+    "invent vehicle_id. When they cannot serve every stop within max_stops, say how many vehicles "
+    "cover the demand and ask whether to increase the vehicle count to that number; do not call it a "
+    "test or hypothetical fleet. Invent a fleet only for what-if questions, and say so.",
+    "Always ask for route_start_time (depot departure), or confirm the one of the last run. Never "
+    "invent 08:00. Never reuse stops from an earlier plan. Never use a depot the user did not give, "
+    "geocode_addresses did not return, or the user did not confirm from last_run.",
     "Before a large or first optimization: call get_account and compare the stop count with the "
     "plan's maximum.",
 )
@@ -52,14 +55,20 @@ _INSTRUCTIONS_TAIL = (
 
 def server_instructions(*, confirm_before_optimize: bool, import_tools: bool) -> str:
     steps = ([_STEP_IMPORT] if import_tools else []) + list(_STEPS)
-    optimizers = "optimize_dataset or optimize_delivery_routes" if import_tools else "optimize_delivery_routes"
+    optimizers = (
+        "optimize_dataset or optimize_delivery_routes" if import_tools else "optimize_delivery_routes"
+    )
     if confirm_before_optimize:
         steps.append(
             f"Then optimize ({optimizers}) with confirmed=false, show the preflight, get a yes, call "
             "again with confirmed=true, and get_optimization_result while it runs."
         )
     else:
-        replan = " (a dataset's first run is charged; later variants of it are free replans)" if import_tools else ""
+        replan = (
+            " (a dataset's first run is charged; later variants of it are free replans)"
+            if import_tools
+            else ""
+        )
         steps.append(
             f"Then say how many stops it charges and how many remain{replan}, get a yes, call "
             f"{optimizers} once, and get_optimization_result while it runs."
@@ -149,7 +158,8 @@ GET_RESULT_DESCRIPTION = (
     "Get the status and outcome of a route optimization by its optimization_id. While it runs, "
     "returns status and progress. When complete, detail=summary "
     "returns totals and per-route metrics; detail=stops returns ordered stop_ids with arrival times "
-    "(driver clock; duration_minutes also counts service). Read-only; does not consume plan stops."
+    "(driver clock; duration_minutes also counts service). request shows the depot, vehicles and "
+    "schedule it ran with. Read-only; does not consume plan stops."
 )
 
 IMPORT_FILE_TITLE = "Import delivery file"
@@ -179,6 +189,8 @@ UPDATE_MAPPING_DESCRIPTION = (
 )
 
 OPTIMIZE_DATASET_TITLE = "Optimize imported dataset"
+
+
 def optimize_dataset_description(*, confirm_before_optimize: bool) -> str:
     charge = (
         "With confirmed=false returns a preflight and charges nothing; then confirmed=true. "
@@ -189,14 +201,16 @@ def optimize_dataset_description(*, confirm_before_optimize: bool) -> str:
         "Optimize a previously imported dataset by dataset_id (from get_import_result). Pass depot, "
         "vehicles and per-run options (exclude_stop_ids, use_weight/volume/time_windows, "
         "service_time, max_route_minutes, min_stops/max_stops). The first run of a dataset charges "
-        "its stops; after it, up to 5 variants are free replans, which must still fit the plan. "
-        "first_optimize_charged and free_replans_remaining (get_import_result, list_datasets) say "
+        "its stops; after it, the plan allows a number of free replans (variants), which must still fit the plan. "
+        "next_optimize_charged and free_replans_remaining (get_import_result, list_datasets) say "
         "which applies. " + charge + "Use get_optimization_result while it runs."
     )
 
 
 LIST_DATASETS_TITLE = "List datasets"
 LIST_DATASETS_DESCRIPTION = (
-    "List delivery datasets available to optimize_dataset: imports from this chat and (when Core "
-    "exposes them) the web app. Read-only."
+    "List delivery datasets available to optimize_dataset, from this or earlier chats. Each says "
+    "whether its next run is charged (next_optimize_charged) and gives last_run: the depot, vehicles "
+    "and schedule of its latest optimization, to repeat or vary it once the user confirms them. "
+    "Read-only."
 )

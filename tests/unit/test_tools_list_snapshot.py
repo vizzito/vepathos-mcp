@@ -34,7 +34,7 @@ EXPECTED_TOOL_NAMES = (
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-EXPECTED_DESC_HASH_GATE_OFF = "881c652ce2bed73d166f8dae7afdd33417f3f785e4ddd03d3b900899120fc0c5"
+EXPECTED_DESC_HASH_GATE_OFF = "71704e4792ca1ff70aa4a0e0ff5b201e10224f4a2f792a9637333b23a2dab150"
 
 
 def _desc_hash(tools: list[Any]) -> str:

@@ -152,7 +152,7 @@ async def main() -> int:
         summary = status.get("summary") or {}
         check(status.get("status") == "completed", "import completed", status.get("status"))
         check(summary.get("stops") == 4, "4 stops materialized", summary.get("stops"))
-        check(status.get("first_optimize_charged") is True, "first optimize will be charged")
+        check(status.get("next_optimize_charged") is True, "first optimize will be charged")
         check(status.get("free_replans_remaining") == 0, "no free replans before the first run")
         if status.get("status") != "completed":
             return 1

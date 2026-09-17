@@ -141,11 +141,13 @@ class ImportResultView(OutputModel):
     status: str | None = None
     summary: dict[str, Any] | None = None
     expires_at: str | None = None
-    first_optimize_charged: bool | None = Field(
-        None, description="True: the next optimize_dataset on this dataset charges its stops."
+    next_optimize_charged: bool | None = Field(
+        None,
+        description="True: the next optimize_dataset on this dataset charges its stops. False: it is a "
+        "free replan.",
     )
     free_replans_remaining: int | None = Field(
-        None, description="Free variants left after the first charged run (0 until that run)."
+        None, description="Free variants left after the dataset's charged run (0 until that run)."
     )
     poll_after_seconds: int | None = None
     progress: dict[str, Any] | None = None
@@ -157,10 +159,22 @@ class DatasetListItem(OutputModel):
     filename: str | None = None
     source: str | None = None
     status: str | None = None
-    stops: int | None = None
-    expires_at: str | None = None
-    first_optimize_charged: bool | None = None
-    free_replans_remaining: int | None = None
+    stops: int | None = Field(None, description="Stops stored in the dataset.")
+    expires_at: str | None = Field(None, description="After this the dataset must be imported again.")
+    next_optimize_charged: bool | None = Field(
+        None,
+        description="True: the next optimize_dataset charges the dataset's stops. False: it is a free "
+        "replan. Says nothing about whether the dataset was optimized before; last_run does.",
+    )
+    free_replans_remaining: int | None = Field(
+        None, description="Free variants left after the dataset's charged run (0 until that run)."
+    )
+    last_run: dict[str, Any] | None = Field(
+        None,
+        description="The latest optimization of this dataset and what it ran with (optimization_id, "
+        "status, depot, vehicles, schedule). Null when never optimized. Offer to repeat or vary it "
+        "instead of asking for the depot, fleet and departure again, and confirm them with the user.",
+    )
 
 
 class DatasetListResult(OutputModel):
@@ -322,7 +336,7 @@ def make_get_import_tool(deps: ToolDeps) -> Any:
                     status=status,
                     summary=result.get("summary"),
                     expires_at=result.get("expires_at"),
-                    first_optimize_charged=result.get("first_optimize_charged"),
+                    next_optimize_charged=result.get("next_optimize_charged"),
                     free_replans_remaining=result.get("free_replans_remaining"),
                     poll_after_seconds=None if terminal else POLL_AFTER_SECONDS,
                     progress=result.get("progress"),
@@ -449,14 +463,16 @@ async def dataset_preflight(
     dataset = await deps.core.get_dataset(identity.call, inp.dataset_id)
     excluded = len(set(inp.exclude_stop_ids or []))
     stops = max(0, dataset.stops - excluded)
-    # An older Core omits first_optimize_charged: then assume the run is billed.
-    free_replan = dataset.first_optimize_charged is False and (dataset.free_replans_remaining or 0) > 0
+    # A Core that omits next_optimize_charged is treated as billing the run.
+    free_replan = dataset.next_optimize_charged is False
     charges = 0 if free_replan else stops
     constraints = dataset_constraints(inp, dataset)
     if free_replan:
         billing_note = " This is a free replan of the dataset: no stops are charged, plan limits still apply."
-    elif dataset.first_optimize_charged:
-        billing_note = " This first run of the dataset is charged; later variants of it are free replans."
+    elif dataset.next_optimize_charged:
+        billing_note = (
+            " This run charges its stops; after a dataset's charged run, the plan allows some free variants."
+        )
     else:
         billing_note = ""
     # Totals cover the whole dataset, so they are only exact when nothing is excluded.

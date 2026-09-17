@@ -98,7 +98,7 @@ async def test_dataset_first_run_is_charged_and_variants_are_free_replans(
         dataset_id = await _import(client)
         _, listed = await call(client, "list_datasets", {})
         row = next(d for d in listed["datasets"] if d["dataset_id"] == dataset_id)
-        assert row["first_optimize_charged"] is True and row["free_replans_remaining"] == 0
+        assert row["next_optimize_charged"] is True and row["free_replans_remaining"] == 0
 
         args = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": VEHICLES}
         is_error, first = await call(client, "optimize_dataset", args)
@@ -136,7 +136,7 @@ async def test_dataset_preflight_states_the_real_stops_and_charge(
         preflight = preview["preflight"]
         assert preflight["stops"] == 4 and preflight["charges_stops"] == 4
         assert preflight["plan"]["stops_remaining_after"] == preflight["plan"]["stops_remaining"] - 4
-        assert "first run" in preflight["confirm_with"]
+        assert "charges its stops" in preflight["confirm_with"]
 
         is_error, ran = await call(client, "optimize_dataset", {**args, "confirmed": True})
         assert not is_error and ran["quota_charged"] is True
@@ -167,3 +167,66 @@ async def test_dataset_preflight_warns_before_a_run_core_would_reject(
     assert codes["stops_without_weight"]["count"] == 4
     assert "route_start_time_required" in codes
     assert preflight["constraints_enforced"] == ["weight_capacity", "time_windows"]
+
+
+async def test_a_new_chat_can_repeat_the_last_run_of_a_dataset(
+    mcp_client: Callable[..., Any], clock: FakeClock
+) -> None:
+    async with await mcp_client() as client:
+        dataset_id = await _import(client)
+        _, listed = await call(client, "list_datasets", {})
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == dataset_id)
+        assert row.get("last_run") is None  # absent until the dataset is optimized
+
+        args = {
+            "dataset_id": dataset_id,
+            "depot": DEPOT,
+            "vehicles": [{"vehicle_id": "van", "count": 2, "min_stops": 1, "max_stops": 20}],
+            "route_start_time": "08:05",
+            "time_zone": "Europe/Stockholm",
+        }
+        is_error, run = await call(client, "optimize_dataset", args)
+        assert not is_error, run
+
+    # A different MCP session on the same account sees how the dataset was last optimized.
+    async with await mcp_client() as other_chat:
+        _, listed = await call(other_chat, "list_datasets", {})
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == dataset_id)
+        last = row["last_run"]
+        assert last["optimization_id"] == run["optimization_id"]
+        assert last["depot"] == {"lat": DEPOT["latitude"], "lng": DEPOT["longitude"]}
+        assert last["vehicles"] == [{"id": "van", "count": 2, "min_stops": 1, "max_stops": 20}]
+        assert last["schedule"]["route_start_time"] == "08:05"
+        assert last["dataset_id"] == dataset_id and last["excluded_stops"] == 0
+        assert row["next_optimize_charged"] is False and row["free_replans_remaining"] == 5
+
+        clock.now += 10
+        is_error, result = await call(
+            other_chat, "get_optimization_result", {"optimization_id": run["optimization_id"]}
+        )
+    assert not is_error, result
+    assert result["request"]["depot"] == last["depot"]
+    assert result["request"]["schedule"]["time_zone"] == "Europe/Stockholm"
+
+
+async def test_free_replans_follow_the_plan(
+    mcp_client: Callable[..., Any], core_state: Any, clock: FakeClock
+) -> None:
+    core_state.plan.free_replans = 1  # Free and Starter
+    async with await mcp_client() as client:
+        dataset_id = await _import(client)
+        args = {"dataset_id": dataset_id, "depot": DEPOT, "vehicles": VEHICLES}
+        _, first = await call(client, "optimize_dataset", args)
+        assert first["quota_charged"] is True and first["free_replans_remaining"] == 1
+
+        clock.now += 10
+        _, second = await call(client, "optimize_dataset", {**args, "exclude_stop_ids": ["S5"]})
+        assert second["quota_charged"] is False and second["free_replans_remaining"] == 0
+
+        _, listed = await call(client, "list_datasets", {})
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == dataset_id)
+        assert row["next_optimize_charged"] is True
+
+        clock.now += 10
+        _, third = await call(client, "optimize_dataset", {**args, "exclude_stop_ids": ["S4"]})
+        assert third["quota_charged"] is True

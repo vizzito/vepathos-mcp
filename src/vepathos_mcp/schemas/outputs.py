@@ -29,9 +29,7 @@ class FullTrialApplied(OutputModel):
 
 
 class TimeWindowStats(OutputModel):
-    stops_with_window: int | None = Field(
-        None, description="Stops that had a time_window in the request."
-    )
+    stops_with_window: int | None = Field(None, description="Stops that had a time_window in the request.")
     met: int | None = Field(None, description="Assigned stops whose arrival falls inside the window.")
     violated: int | None = Field(
         None, description="Assigned stops whose arrival is outside the window (late or early)."
@@ -110,9 +108,7 @@ class Page(OutputModel):
     offset: int = Field(description="Index of the first item in this page.")
     limit: int = Field(description="Page size requested.")
     total: int | None = Field(None, description="Total items available for this detail view.")
-    next_offset: int | None = Field(
-        None, description="Pass as offset to get the next page; null when done."
-    )
+    next_offset: int | None = Field(None, description="Pass as offset to get the next page; null when done.")
 
 
 class OptimizationResult(OutputModel):
@@ -128,10 +124,13 @@ class OptimizationResult(OutputModel):
         None, description="When status is queued or running, call again after about this many seconds."
     )
     expires_at: str | None = Field(None, description="When results stop being available (UTC).")
-    summary: ResultSummary | None = Field(None, description="Present when detail=summary and completed.")
-    routes: list[RouteMetrics] | None = Field(
-        None, description="Per-route metrics page when detail=summary."
+    request: dict[str, Any] | None = Field(
+        None,
+        description="What this optimization ran with: depot, vehicles, schedule, objective, dataset. "
+        "Reuse it to repeat or vary the run; confirm the depot and departure with the user first.",
     )
+    summary: ResultSummary | None = Field(None, description="Present when detail=summary and completed.")
+    routes: list[RouteMetrics] | None = Field(None, description="Per-route metrics page when detail=summary.")
     stops: list[StopVisit] | None = Field(
         None, description="Ordered visits when detail=stops (no coordinates echoed)."
     )
@@ -174,9 +173,7 @@ class Preflight(OutputModel):
     )
     total_weight_kg: float | None = Field(None, description="Sum of stop weights. Null when weight unused.")
     total_volume_m3: float | None = Field(None, description="Sum of stop volumes. Null when volume unused.")
-    stops_with_time_window: int = Field(
-        0, description="How many stops carry a time_window in this request."
-    )
+    stops_with_time_window: int = Field(0, description="How many stops carry a time_window in this request.")
     depot: dict[str, float] | None = Field(
         None, description="Depot lat/lng that would be sent (keys latitude, longitude)."
     )
@@ -254,9 +251,7 @@ class OptimizeResult(OutputModel):
     @model_validator(mode="after")
     def validate_variant(self) -> OptimizeResult:
         success = (
-            self.optimization_id is not None
-            and self.status is not None
-            and self.submitted_stops is not None
+            self.optimization_id is not None and self.status is not None and self.submitted_stops is not None
         )
         # Exactly one of three outcomes: an optimization, a preflight awaiting confirmation, an error.
         variants = [success, self.preflight is not None, self.error is not None]
