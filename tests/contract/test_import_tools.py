@@ -9,8 +9,10 @@ import pytest
 from mcp.client import Client
 
 from tests.conftest import FakeClock, make_settings
+from vepathos_mcp.clients.public_fetch import PublicFetchError
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
+from vepathos_mcp.tools import import_tools
 
 
 @pytest.fixture
@@ -69,6 +71,37 @@ async def test_import_file_refuses_an_attachment_url_inside_the_network(
     assert is_error
     assert payload["error"]["code"] == "INVALID_INPUT"
     assert payload["error"]["details"]["reason"] in {"blocked_host", "invalid_url"}
+
+
+@pytest.mark.parametrize(
+    ("failure", "message_part"),
+    [
+        (PublicFetchError("http_status", 403), "HTTP 403"),
+        (PublicFetchError("too_large"), "too large"),
+        (PublicFetchError("network"), "Could not download"),
+    ],
+)
+async def test_import_file_asks_to_attach_again_when_the_download_fails(
+    mcp_client: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: PublicFetchError,
+    message_part: str,
+) -> None:
+    # An expired ChatGPT download URL answers 403; a file over 8 MiB is too large.
+    async def fail(url: str, *, max_bytes: int) -> tuple[bytes, str | None]:
+        raise failure
+
+    monkeypatch.setattr(import_tools, "fetch_public_https", fail)
+    async with await mcp_client() as client:
+        is_error, payload = await call(
+            client,
+            "import_delivery_file",
+            {"file": {"download_url": "https://files.example.com/a.xlsx", "file_name": "a.xlsx"}},
+        )
+    assert is_error
+    assert payload["error"]["code"] == "INVALID_INPUT"
+    assert message_part in payload["error"]["message"]
+    assert "attach" in (payload["error"].get("suggestion") or "").lower()
 
 
 async def test_import_text_then_optimize_dataset(mcp_client: Callable[..., Any]) -> None:
