@@ -6,7 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ADAPTER="${ADAPTER_URL:-https://mcp.vepathos.com}"
 RESOURCE="${ADAPTER%/}/mcp"
-EXPECTED_VERSION_PREFIX="${EXPECTED_VERSION_PREFIX:-0.4}"
+# The version this checkout builds, so a deploy that did not pick up the new image fails here.
+SOURCE_VERSION="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "${ROOT}/src/vepathos_mcp/__init__.py")"
+EXPECTED_VERSION_PREFIX="${EXPECTED_VERSION_PREFIX:-${SOURCE_VERSION}}"
 
 echo "== adapter /health =="
 health="$(curl -fsS "${ADAPTER%/}/health")"
@@ -28,9 +30,15 @@ if [[ -n "${MCP_SMOKE_BEARER:-}" ]]; then
     -H "Accept: application/json, text/event-stream" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
-  echo "${body}" | grep -q 'import_delivery_file'
-  echo "${body}" | grep -q 'optimize_dataset'
-  echo "tools/list contains import + dataset tools"
+  echo "${body}" | grep -q 'optimize_delivery_routes'
+  echo "${body}" | grep -q 'get_optimization_result'
+  if [[ "${EXPECT_IMPORT_TOOLS:-false}" == "true" ]]; then
+    echo "${body}" | grep -q 'import_delivery_file'
+    echo "${body}" | grep -q 'optimize_dataset'
+    echo "tools/list contains optimize, result, import and dataset tools"
+  else
+    echo "tools/list contains optimize and result tools (EXPECT_IMPORT_TOOLS=true to require imports)"
+  fi
 else
   echo "(set MCP_SMOKE_BEARER to also check tools/list)"
 fi

@@ -93,6 +93,10 @@ cd ~/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api
 docker compose -f 05-api-doc.yml up -d --build api-doc cron
 ```
 
+Or, with the smoke included (fails loudly): `scripts/deploy-api-doc.sh` from that directory. The MCP
+adapter has the same: `scripts/deploy-api-prod.sh` from `~/vepathos-deploy/vepathos-mcp` after
+`git pull`, which builds, waits for `/health` with this checkout's version and runs `scripts/smoke-prod.sh`.
+
 `cron` (`vepathos-api-doc-cron`) runs `vepathos-api-doc/scripts/billing-cron.sh`: billing reconciliation,
 stale reservations, plan retention, MCP map and dataset retention, and the MCP connect-loop detector.
 It needs `CRON_SECRET` and `RECONCILE_CRON_SECRET` in the api-doc `.env`; check its first lines with
