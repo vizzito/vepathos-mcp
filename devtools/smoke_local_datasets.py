@@ -166,9 +166,10 @@ async def main() -> int:
         first = await optimize(client, "optimize_plan", base)
         check("optimization_id" in first, "first run accepted", first.get("error") or "")
         check(first.get("quota_charged") is True, "first run charged the quota", first.get("quota_charged"))
+        # Free retries depend on the subscription: Free and Starter 1, Growth 2, Scale 3, Enterprise 5.
         check(
-            first.get("free_retries_remaining") == 1,
-            "one free retry after it",
+            (first.get("free_retries_remaining") or 0) >= 1,
+            "at least one free retry after it",
             first.get("free_retries_remaining"),
         )
         if "optimization_id" in first:

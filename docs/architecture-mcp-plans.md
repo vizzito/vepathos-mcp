@@ -11,7 +11,7 @@ Decided 2026-09-16. Replaces the order-set design in [architecture-mcp-orderset.
 | Runs | A plan launch (`OptimizationPlanLaunch`, transport `engine`) → execution → `OptimizationHistory` (source `MCP`) |
 | Datasets | Import staging only. Once ready, their stops load into a plan (`dataset.plan_id`) |
 | Billing | One rule for dashboard and MCP, in api-doc `src/server/billing/` |
-| Free retries | 1 per plan on every account plan (channel plans 0): same stops or fewer (id + coordinates), within 24 h of the billed run |
+| Free retries | By subscription: Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5 (channel plans 0). Same stops or fewer (id + coordinates), within 24 h of the billed run |
 | Library | Free 3 plans. Kept + favorite plans ≤ library size − 1, so one slot always rotates |
 | Full library | An agent replaces the oldest unprotected plan itself and says which. If every slot is protected, the plan is temporary (outside the library; retention drops it) |
 | Results | Read from the plan's history run: they no longer expire with the engine session |
@@ -160,7 +160,8 @@ Unchanged contract. For plan jobs the share is the history run's share (the same
 
 1. api-doc: migration `20260917090000_mcp_plans_unification` (enum `MCP`, plan `source`/`isTemporary`, launch
    `transport`/`billingCycleLaunchId`/`freeReplansAllowed`, dataset `planId` (drops `billedAt`/`replanCount`),
-   map share `historyId`; data: `freeReplansPerRun = 1`, Free `maxSavedPlans = 3`). Cron `mcp-plan-settlement`.
+   map share `historyId`; data: Free `maxSavedPlans = 3`), then `20260917120000_plan_free_retries_by_tier`
+   (`freeReplansPerRun` Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5). Cron `mcp-plan-settlement`.
 2. **Persisted plans must be on** (`PERSISTED_PLANS_ENABLED`, `NEXT_PUBLIC_PERSISTED_PLANS_ENABLED`): the MCP
    writes plans regardless, but the dashboard only shows them, and only applies the shared rule, in persisted
    mode. The legacy flow keeps its browser-side retries (now 1) until it is removed.
