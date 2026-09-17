@@ -159,7 +159,7 @@ GET_RESULT_DESCRIPTION = (
     "Get the status and outcome of a route optimization by its optimization_id. While it runs, "
     "returns status and progress. When complete, detail=summary "
     "returns totals and per-route metrics; detail=stops returns ordered stop_ids with arrival times "
-    "(driver clock; duration_minutes also counts service). request shows the depot, vehicles and "
+    "(driver clock, service at earlier stops included). request shows the depot, vehicles and "
     "schedule it ran with. Read-only; does not consume plan stops."
 )
 

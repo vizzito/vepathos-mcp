@@ -82,7 +82,7 @@ class RouteMetrics(OutputModel):
     duration_minutes: float | None = Field(
         None,
         description="Route working time in minutes: driving plus schedule.service_time_minutes "
-        "at each stop. Larger than the clock span of arrival_time when service time is set.",
+        "at each stop.",
     )
     weight_kg: float | None = Field(
         None, description="Total stop weight on this route, kilograms (null if weight unused)."
@@ -98,9 +98,9 @@ class StopVisit(OutputModel):
     stop_id: str
     arrival_time: str | None = Field(
         None,
-        description="Estimated clock time at this stop, local HH:MM, anchored on "
-        "schedule.route_start_time. What the driver sees. The span from first to last "
-        "arrival is travel between stops, not duration_minutes (which also counts service).",
+        description="Estimated clock time the vehicle reaches this stop, local HH:MM, anchored on "
+        "schedule.route_start_time: driving plus the service time of the stops before it. What "
+        "the driver sees.",
     )
 
 

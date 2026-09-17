@@ -34,7 +34,7 @@ EXPECTED_TOOL_NAMES = (
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-EXPECTED_DESC_HASH_GATE_OFF = "71704e4792ca1ff70aa4a0e0ff5b201e10224f4a2f792a9637333b23a2dab150"
+EXPECTED_DESC_HASH_GATE_OFF = "b627c85cc188bd9f311f8429d919ae7df2260627a7f76b0e9a1fb933653fb8ce"
 
 
 def _desc_hash(tools: list[Any]) -> str:
@@ -96,3 +96,13 @@ async def test_tools_list_description_hash_tracked(listed_tools) -> None:
 
 async def test_version_is_bumped_with_tool_surface() -> None:
     assert tuple(int(p) for p in __version__.split(".")[:2]) >= (0, 4)
+
+
+def test_package_version_matches_the_server_version() -> None:
+    # /health and serverInfo report __version__; the package metadata said 0.3.0 while the server said
+    # 0.4.0 (2026-09-16). One number, bumped together.
+    import tomllib
+    from pathlib import Path
+
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())
+    assert pyproject["project"]["version"] == __version__
