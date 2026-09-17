@@ -15,7 +15,7 @@ solver.**
 1. `import_delivery_file` (ChatGPT attachment / URL) or `import_delivery_text` (short paste).
 2. Poll `get_import_result` until `dataset_id` + `status=completed`.
 3. Call `optimize_dataset(dataset_id, …)` — Core expands the stored stops; the model never pastes rows.
-4. Variants of the same `dataset_id` may use free replans (default 5, same as the dashboard). Preflight /
+4. Variants of the same `dataset_id` may use free replans (per plan: Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5, same as the dashboard). Preflight /
    billing report how many remain.
 
 ## Where the limits are

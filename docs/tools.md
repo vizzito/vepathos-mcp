@@ -33,9 +33,16 @@ Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. R
 Poll `get_import_result` for `dataset_id`, `summary` (never all rows), and `needs_confirmation`.
 `update_import_mapping` corrects columns without re-upload. `list_datasets` lists ready handles.
 `optimize_dataset` shares billing/idempotency with optimize. The first run of a dataset is charged;
-after it, up to 5 variants are free replans, which waive the quota but not the plan limits.
-`get_import_result` and `list_datasets` report `first_optimize_charged` and `free_replans_remaining`;
-a run reports `quota_charged` and `free_replans_remaining`.
+after it, the plan's free replans apply (Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5), which waive
+the quota but not the plan limits.
+`get_import_result` and `list_datasets` report `next_optimize_charged` (whether the **next** run is
+charged) and `free_replans_remaining`; a run reports `quota_charged` and `free_replans_remaining`.
+
+Every optimization keeps a run record (depot, vehicles, schedule, objective, dataset). `list_datasets`
+shows each dataset's `last_run` and `get_optimization_result` returns it as `request`, so a new chat can
+repeat or vary a run after confirming the depot and departure with the user, instead of asking for
+everything again. When the account fleet cannot cover the stops within `max_stops`, the instructions
+tell the agent to offer increasing the vehicle count to cover the demand, not a "test" fleet.
 
 With `confirmed: false`, `optimize_dataset` reads `GET /datasets/{dataset_id}` and its preflight states
 the real stop count (minus `exclude_stop_ids`), `charges_stops` (0 on a free replan), the plan check,

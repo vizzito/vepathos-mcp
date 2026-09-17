@@ -114,7 +114,8 @@ sequenceDiagram
 **Billing**
 
 - `MCP_CONFIRM_BEFORE_OPTIMIZE=false` in prod: one optimize call runs and charges; the model should still ask in chat.
-- Free replans: `MCP_FREE_REPLANS_PER_DATASET` (5). The pushed commit `ce5bc03` applies them from the
+- Free replans: per plan, `PlanLimits.freeReplansPerRun` (Free 1, Starter 1, Growth 2, Scale 3,
+  Enterprise 5), shared with the dashboard. Was `MCP_FREE_REPLANS_PER_DATASET` (5) for every plan. The pushed commit `ce5bc03` applies them from the
   very first optimize of a new dataset and, while any remain, skips both the quota and the plan
   entitlement check. The P0-1 fix (section 3) bills the first run and keeps plan limits on replans.
 - Import / geocode do **not** consume route-stop quota.
@@ -157,7 +158,7 @@ does not go through any of them (it only activates when the body carries `datase
 - `exclude_stop_ids` without `dataset_id`, and `stops` together with `dataset_id`, are
   `422 INVALID_INPUT` (before, `exclude_stop_ids` was accepted and ignored with inline `stops`,
   breaking “unknown fields are never silently ignored”). *Implemented.*
-- Import and dataset views report `first_optimize_charged` and `free_replans_remaining` (0 until the
+- Import and dataset views report `next_optimize_charged` and `free_replans_remaining` (0 until the
   first billed run); job responses report `billing.free_replans_remaining`. *Implemented.*
 - Settlement follows the reservation. The local smoke (`devtools/smoke_local_datasets.py`) found that a
   free replan reserved without quota was still charged when it completed: `confirmRapidApiJob` /
@@ -285,6 +286,18 @@ There is no `pending` status: an item either has coordinates (`ready`) or not (`
   The caller re-sends with `on_conflict: "replace"` or `"keep_both"` (incoming stored as
   `<source-short>:<id>`).
 - Generated ids never conflict (P0-3).
+
+### Plan settings (stored with the set)
+
+A dataset holds *what* (stops); a run needs *how* (depot, date, departure, fleet, constraints). A new
+chat today has to ask for all of it again. The order set is the plan of the day, so it keeps both:
+
+- `settings`: `depot` (lat/lng + label), `date`, `route_start_time`, `time_zone`,
+  `service_time_minutes`, `vehicles`, constraints. Set on create or with a settings update; defaults come
+  from the account profile (see "Run parameters: three layers" in section 13).
+- `confirm_order_set` freezes stops **and** settings; `optimize_dataset` on that dataset uses them unless
+  the call overrides a field, and the run record (layer 1) stores what was actually used.
+- The agent always states the depot it will use and its distance to the stops before optimizing.
 
 ### Confirm policy (MVP)
 
@@ -477,13 +490,13 @@ Freeze ready items into a `McpDataset` (status ready, TTL 24 h like other datase
   "stops": 4100,
   "skipped_needs_geo": 80,
   "excluded": 20,
-  "first_optimize_charged": true,
+  "next_optimize_charged": true,
   "free_replans_remaining": 5,
   "expires_at": "…"
 }
 ```
 
-`first_optimize_charged` tells the agent what to say before `optimize_dataset`: `true` when this
+`next_optimize_charged` tells the agent what to say before `optimize_dataset`: `true` when this
 lineage has not been billed yet or the stop set adds stops; `false` when the next run is a free replan.
 
 ### Error codes (additions)
@@ -518,7 +531,7 @@ Then existing: `optimize_dataset(dataset_id, …)`. No `clear` tool: start a new
 4. Report `conflicts` to the user and ask before `replace` / `keep_both`.
 5. Remove with `dry_run: true` first, show `matched` and the sample, then apply.
 6. After add/remove, tell the user the counts (including `needs_geo` and the `with_*` counts) before confirm.
-7. Confirm does not charge; use `first_optimize_charged` to say whether optimize charges or is a free replan.
+7. Confirm does not charge; use `next_optimize_charged` to say whether optimize charges or is a free replan.
 8. Pass the same `orderset_id` every turn; do not create a second set unless the user wants a parallel draft.
 
 ---
@@ -580,6 +593,8 @@ no route-level test yet: verify it in the local stack before deploying.
 4. P0-2, P0-3 and P0-4, then orderset routes and tools, in the same order.
 5. Results by reference (section 13): P2-1 map preference first (description + flag), P2-2 export
    after P0-2.
+6. Run parameters (section 13): account profile with depots (layer 2), then plan settings on the order
+   set (layer 3, with the order set MVP). Server-side fleet sizing with the engine request profiles.
 
 ### Phase 2 (explicitly out of MVP)
 
@@ -633,6 +648,55 @@ Core builds the file and returns a link; rows never pass through the model.
 Core route: `POST /api/mcp/v1/optimization/jobs/{job_id}/exports`. Needs P0-2 for addresses.
 Acceptance: a 10k-stop dataset exports in one tool call, with row count equal to assigned stops, and
 the model output for the call stays under a few hundred tokens.
+
+### Run parameters: three layers
+
+Defaults are dynamic, but every run keeps a snapshot of what it used, so changing a profile never
+changes yesterday's plan or the base of its free replans.
+
+1. **Run record (immutable), implemented 2026-09-16.** Core stores every parameter of each MCP
+   optimization except the stops (`requestPayload.run`: depot, vehicles, schedule, objective, dataset,
+   excluded count). `get_optimization_result` returns it as `request`; `list_datasets` returns the
+   dataset's `last_run`. A new chat can repeat or vary the last run instead of asking for everything.
+2. **Account profile (dynamic defaults), pending.** Named depots (geocoded, one default), departure
+   time, service time and time zone. api-doc `UserPreference.savedConfigJson` already stores departure,
+   service time and tolerances (used only by router-client) but no depot. Exposed to the agent (e.g. in
+   `get_account` or a `list_depots` tool) so it proposes them and confirms instead of asking. This is the
+   "account" layer of the engine request profiles in [channel-defaults.md](channel-defaults.md).
+3. **Plan settings on the order set, pending** — see section 5, "Plan settings".
+
+### Free replans per plan (decided 2026-09-16)
+
+Free variants after a billed run: **Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5**; channel plans
+(RapidAPI, Shopify) 0. Stored in `PlanLimits.freeReplansPerRun` (migration
+`20260916230000_plan_free_replans_per_run`, seeded from `lib/optimization/free-replans.ts`), read by
+`resolveFreeReplansPerRun(userId)` straight from the user's plan row (the billing overview maps channel
+plans to "free").
+
+- **MCP datasets: implemented.** Claims, `next_optimize_charged` and `free_replans_remaining` use the
+  plan's value; `MCP_FREE_REPLANS_PER_DATASET` is gone. A downgrade clamps remaining replans at 0.
+- **Dashboard: decision pending.** Findings:
+  1. Persisted plans (server) grant **no** free replans since commit `55dfc21` (2026-09-15): every launch
+     is `billed`. The `>= 6` checks in `optimization-plan-lot.ts:26` and
+     `optimization-plan-settlement.ts:108` only guard old `free_replan` launches.
+  2. Legacy mode (`NEXT_PUBLIC_PERSISTED_PLANS_ENABLED=false`, which the production env examples set)
+     still re-queues the live lot for free, capped only in the browser by `FREE_REPLAN_LIMIT = 5`
+     (`vepathos-router-client/lib/optimization/free-replan.ts`). The server does not enforce it.
+  3. Restoring free replans in persisted mode is a design change: billed runs now close their group as
+     `confirmed`, and settlement rejects a free replan whose group is not `testing`, so the result would
+     be discarded. It also needs the allowance stored on the launch at begin (a downgrade mid-run must
+     not break it) and the `successfulOptimizeCount BETWEEN 0 AND 6` constraint relaxed.
+  4. Copy: `previousPlansHint` hardcodes "hasta 5 veces" (en/es/pt); the replan banners interpolate
+     `{limit}` without plural forms, which reads wrong for 1.
+
+### Fleet that cannot cover the stops
+
+When the account's vehicles cannot serve every stop within `max_stops`, the agent states how many
+vehicles are needed and asks whether to **increase the vehicle count automatically to cover the
+demand** (same vehicle types). It must not present it as a "test" or "hypothetical" fleet: the user
+is planning a real day with more units. Implemented in the server instructions (2026-09-16).
+Pending: a server-side option (e.g. `fleet_sizing: "cover_demand"`) that computes the count with the
+0.8 stop margin and returns it in the run record, so the number does not depend on the model's math.
 
 ### Correctness issues seen in the same run (verify before P2)
 

@@ -218,6 +218,13 @@ While the job is not completed, it returns the status payload above with no resu
   "job_id": "mcp_3f1c…",
   "status": "completed",
   "expires_at": "2026-09-14T18:20:00Z",
+  "request": {
+    "depot": { "lat": -34.6037, "lng": -58.3816 },
+    "vehicles": [{ "id": "van", "count": 5, "max_stops": 40 }],
+    "schedule": { "date": "2026-09-14", "time_zone": "America/Argentina/Buenos_Aires", "route_start_time": "08:00" },
+    "objective": "minimize_distance",
+    "submitted_stops": 120
+  },
   "summary": {
     "stops_submitted": 120,
     "stops_assigned": 118,
@@ -238,6 +245,11 @@ While the job is not completed, it returns the status payload above with no resu
 ```
 
 Metrics the engine does not produce are omitted, never invented.
+
+`request` (every completed view) is the run record: everything the job used except the stops — depot,
+vehicles, schedule, objective, and `dataset_id` / `excluded_stops` for dataset jobs. It is stored when the
+job is created and never changes, so a later profile edit does not rewrite a past plan. `null` for jobs
+created before run records existed.
 
 **`duration_minutes` vs `arrival_time`.** They measure different things and can both be
 correct. `duration_minutes` (and `total_duration_minutes`) is the route's working time:
@@ -309,7 +321,7 @@ Optional: `timezone`, `depot_country`, `mime_type`. Max size `MCP_IMPORT_MAX_BYT
 ## `GET /api/mcp/v1/imports/{import_id}`
 
 Poll. When ready: `dataset_id`, `expires_at`, `summary` (counts, mapping, sample, units,
-`needs_confirmation`), `first_optimize_charged`, `free_replans_remaining`. **Never returns all rows.**
+`needs_confirmation`), `next_optimize_charged`, `free_replans_remaining`. **Never returns all rows.**
 
 ## `PUT /api/mcp/v1/imports/{import_id}`
 
@@ -330,8 +342,9 @@ List datasets for the account (MCP imports; web-app datasets when exposed). Quer
       "status": "ready",
       "stops": 8200,
       "expires_at": "…",
-      "first_optimize_charged": true,
-      "free_replans_remaining": 0
+      "next_optimize_charged": true,
+      "free_replans_remaining": 0,
+      "last_run": null
     }
   ]
 }
@@ -356,10 +369,27 @@ One dataset's counts, for a preflight to state the stops and the charge. **Never
   "needs_confirmation": false,
   "created_at": "…",
   "expires_at": "…",
-  "first_optimize_charged": true,
-  "free_replans_remaining": 0
+  "next_optimize_charged": false,
+  "free_replans_remaining": 4,
+  "last_run": {
+    "optimization_id": "mcp_3f1c…",
+    "status": "completed",
+    "created_at": "…",
+    "depot": { "lat": 59.778, "lng": 14.94091 },
+    "vehicles": [{ "id": "1", "count": 137, "min_stops": 65, "max_stops": 99 }],
+    "schedule": { "date": "2026-09-16", "time_zone": "Europe/Stockholm", "route_start_time": "08:05" },
+    "objective": "minimize_distance",
+    "submitted_stops": 10931,
+    "dataset_id": "mcp_ds_…",
+    "excluded_stops": 0
+  }
 }
 ```
+
+`next_optimize_charged` is about the **next** run: `true` when the dataset was never billed or its free
+replans are used up, `false` when the next run is a free replan. It says nothing about whether the
+dataset was optimized before; `last_run` does (latest run of the dataset, any status, `null` when never
+optimized). The list view carries the same `last_run`.
 
 `with_*` count the stops carrying that value: a capacity the request enforces needs it on every stop,
 and stored time windows are always enforced. Unknown, expired or other-account id →
@@ -375,8 +405,9 @@ inline jobs. Sending both `stops` and `dataset_id`, or `exclude_stop_ids` withou
 Billing of a dataset:
 
 - The **first** optimization is billed like an inline job (`billing.mode = plan`, quota charged, or the
-  one-time trial). `first_optimize_charged: true` on the import and dataset views means this is still ahead.
-- After it, up to `MCP_FREE_REPLANS_PER_DATASET` (default 5) variants of the same dataset (other
+  one-time trial). `next_optimize_charged: true` on the import and dataset views means this is still ahead.
+- After it, as many variants of the same dataset as the plan's `PlanLimits.freeReplansPerRun` allows
+  (Free 1, Starter 1, Growth 2, Scale 3, Enterprise 5; the same limit as the dashboard) (other
   vehicles, schedule, `exclude_stop_ids`) are billed `mcp_dataset_replan`: the quota is not charged.
 - A free replan waives the quota only. Plan limits (stops per request, features, fleet size, stops per
   route) are always enforced, so a replan the plan cannot run is `403 PLAN_UPGRADE_REQUIRED`.
