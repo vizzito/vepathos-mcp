@@ -179,6 +179,13 @@ class OptimizeInput(StrictModel):
         description="Optimize by volume capacity. Omit to follow the data; "
         "false keeps volumes for reference.",
     )
+    max_load_ratio: float | None = Field(
+        None,
+        ge=0.5,
+        le=1,
+        description="Highest share of each vehicle's weight/volume capacity to fill. "
+        "Default 0.95 (5% margin); 1 only when the user asks to fill vehicles completely.",
+    )
     use_time_windows: bool | None = Field(
         None,
         description="Respect stop time windows. Omit to follow the data; false keeps windows for reference.",

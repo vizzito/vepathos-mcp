@@ -101,6 +101,7 @@ Assigns stops to vehicles and sequences each route from one depot (vehicle routi
 | `vehicles[].min_stops` | integer | no (50% of `max_stops`) | Floor per route. The engine lowers it to floor(max×0.9) when higher, and lowers the fleet's minimums when they add up to more than 95% of the stops; the preflight warns (`stop_band_margin`, `fleet_min_above_stops`). |
 | `vehicles[].max_stops` | integer | no | Maximum stops per vehicle route. |
 | `vehicles[].max_weight_kg` | number > 0 | no | Setting it on any vehicle **enforces** weight capacity unless `use_weight=false`. Every vehicle and stop must then carry weight. |
+| `max_load_ratio` | number 0.5–1 | no (0.95) | Highest share of each vehicle's weight and volume capacity to fill. The 5% margin is the default in every channel; 1 fills vehicles completely. The preflight warns `load_above_margin` when the load only fits without the margin. |
 | `use_weight` / `use_volume` / `use_time_windows` | boolean | no (follow the data) | The flag decides what the engine applies. `false` keeps weights, volumes or windows for reference without optimizing by them; `true` needs the matching vehicle capacity. |
 | `vehicles[].max_volume_m3` | number > 0 | no | Same rule for volume. |
 | `stops[]` | array (≥ 1) | yes | Coordinates are required; addresses are not geocoded. |

@@ -107,6 +107,11 @@ def test_only_the_flags_the_caller_set_reach_core() -> None:
     assert "constraints" not in to_core_request(parse_optimize_input(args), "2026-09-17")
     args["use_time_windows"] = False
     assert to_core_request(parse_optimize_input(args), "2026-09-17")["constraints"] == {"time_windows": False}
+    args["max_load_ratio"] = 1
+    assert to_core_request(parse_optimize_input(args), "2026-09-17")["constraints"] == {
+        "time_windows": False,
+        "max_load_ratio": 1,
+    }
 
 
 def test_time_window_order_and_format() -> None:

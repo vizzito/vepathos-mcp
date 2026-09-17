@@ -186,3 +186,15 @@ def test_warns_on_a_depot_far_from_the_stops() -> None:
         }
     )
     assert "depot_far_from_stops" in {w["code"] for w in collect_warnings(inp)}
+
+
+def test_warns_when_the_load_only_fits_without_the_margin() -> None:
+    stops = [
+        {"stop_id": f"s{i}", "latitude": -34.6 + i * 0.001, "longitude": -58.4, "volume_m3": 1.0}
+        for i in range(10)
+    ]
+    vehicles = [{"vehicle_id": "van", "count": 1, "max_stops": 20, "max_volume_m3": 10.2}]
+    inp = _base(vehicles=vehicles, stops=stops)
+    assert "load_above_margin" in {w["code"] for w in collect_warnings(inp)}
+    full = _base(vehicles=vehicles, stops=stops, max_load_ratio=1)
+    assert "load_above_margin" not in {w["code"] for w in collect_warnings(full)}

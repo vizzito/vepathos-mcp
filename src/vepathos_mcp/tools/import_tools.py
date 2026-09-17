@@ -121,6 +121,13 @@ class OptimizeDatasetInput(StrictModel):
         description="Optimize by volume. Omit to follow the vehicles' max_volume_m3; "
         "false keeps volumes for reference.",
     )
+    max_load_ratio: float | None = Field(
+        None,
+        ge=0.5,
+        le=1,
+        description="Highest share of each vehicle's weight/volume capacity to fill. "
+        "Default 0.95 (5% margin); 1 only when the user asks to fill vehicles completely.",
+    )
     use_time_windows: bool | None = Field(
         None,
         description="Respect the dataset's time windows. Omit to follow the data; "
@@ -630,6 +637,7 @@ def make_optimize_dataset_tool(deps: ToolDeps) -> Any:
                     "weight": inp.use_weight,
                     "volume": inp.use_volume,
                     "time_windows": inp.use_time_windows,
+                    "max_load_ratio": inp.max_load_ratio,
                 }.items()
                 if v is not None
             }

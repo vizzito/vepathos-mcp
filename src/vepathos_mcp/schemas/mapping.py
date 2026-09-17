@@ -77,7 +77,12 @@ def to_core_request(inp: OptimizeInput, schedule_date: str) -> dict[str, Any]:
             {"constraints": flags}
             if (
                 flags := _drop_none(
-                    {"weight": inp.use_weight, "volume": inp.use_volume, "time_windows": inp.use_time_windows}
+                    {
+                        "weight": inp.use_weight,
+                        "volume": inp.use_volume,
+                        "time_windows": inp.use_time_windows,
+                        "max_load_ratio": inp.max_load_ratio,
+                    }
                 )
             )
             else {}

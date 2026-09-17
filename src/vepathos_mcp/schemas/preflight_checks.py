@@ -16,6 +16,8 @@ DEFAULT_MIN_STOPS_RATIO = 0.5
 MIN_STOP_BAND_MARGIN = 0.10
 FLEET_STOP_MARGIN = 0.05
 DEPOT_NEAR_METERS = 100.0
+# Vehicles fill up to this share of capacity unless the request sets max_load_ratio (every channel).
+DEFAULT_MAX_LOAD_RATIO = 0.95
 
 
 class BandVehicle(Protocol):
@@ -197,6 +199,42 @@ def outlier_stop_warnings(inp: OptimizeInput) -> list[dict[str, Any]]:
     ]
 
 
+def load_margin_warnings(inp: OptimizeInput) -> list[dict[str, Any]]:
+    """The load fits the fleet but not within the fill margin: the engine will struggle or overload."""
+
+    ratio = inp.max_load_ratio if inp.max_load_ratio is not None else DEFAULT_MAX_LOAD_RATIO
+    if ratio >= 1:
+        return []
+    warnings: list[dict[str, Any]] = []
+    for used, unit, total, capacity in (
+        (
+            inp.uses_weight,
+            "kg",
+            sum(s.weight_kg or 0 for s in inp.stops),
+            sum((v.max_weight_kg or 0) * v.count for v in inp.vehicles),
+        ),
+        (
+            inp.uses_volume,
+            "m3",
+            sum(s.volume_m3 or 0 for s in inp.stops),
+            sum((v.max_volume_m3 or 0) * v.count for v in inp.vehicles),
+        ),
+    ):
+        if used and capacity > 0 and capacity * ratio < total <= capacity:
+            warnings.append(
+                {
+                    "code": "load_above_margin",
+                    "stop_ids": [],
+                    "message": (
+                        f"The load ({round(total, 2)} {unit}) needs more than {round(ratio * 100)}% "
+                        f"of the fleet's capacity ({round(capacity, 2)} {unit}). Add a vehicle, or set "
+                        "max_load_ratio=1 if the user wants vehicles filled completely."
+                    ),
+                }
+            )
+    return warnings
+
+
 def collect_warnings(
     inp: OptimizeInput,
     *,
@@ -256,6 +294,7 @@ def collect_warnings(
         )
 
     warnings.extend(stop_band_warnings(inp.vehicles, len(inp.stops)))
+    warnings.extend(load_margin_warnings(inp))
 
     warnings.extend(outlier_stop_warnings(inp))
 
