@@ -25,9 +25,9 @@ Use this in Claude, ChatGPT, and the official registry. Do not invent extra clai
 
 Vepathos plans last-mile delivery routes for a fleet: it assigns each stop to a vehicle and sequences every route from one depot, minimizing total distance while respecting the limits you set (stops per vehicle, weight, volume, time windows).
 
-Connect from Claude or another MCP client, sign in (or create a Free account) at Vepathos, and ask the assistant to geocode addresses and optimize routes. The same account, plan and monthly stop quota apply as the Vepathos web app and REST API. No API keys for that flow.
+Connect from Claude or another MCP client, sign in (or create a Free account) at Vepathos, and ask the assistant to geocode addresses and optimize routes. The same account, plan and monthly stop quota apply as the Vepathos web app and REST API. No API keys for that flow. Once connected, inspect the signed-in account (plan, fleet, saved plans) before explaining what the user can do; do not list tool names unless they ask.
 
-Tools: geocode_addresses and get_geocode_result (street addresses → coordinates via Vepathos Smart Import); optimize_delivery_routes and get_optimization_result (async VRP; poll with optimization_id). Results stay available for 24 hours. Optimize does not invent coordinates — confirm unresolved or low-confidence pins before routing.
+Tools: get_account, list_fleet and list_plans (the connected account); geocode_addresses and get_geocode_result (street addresses → coordinates via Vepathos Smart Import); optimize_delivery_routes, optimize_plan and get_optimization_result (async VRP; poll with optimization_id). Optimize does not invent coordinates — confirm unresolved or low-confidence pins before routing.
 
 This public channel currently offers the Free plan. Jobs the plan cannot run return a contact link, not a payment page. When paid plans are enabled later, payment is handled by Stripe outside the chat; you retry without reconnecting.
 

@@ -1,12 +1,12 @@
 """Model-facing text. Descriptions are part of the product: precise, factual, no promotion.
 
-Two audiences, no overlap:
+This file is what a client of the MCP should know. It is not a ChatGPT-only system prompt and not
+something the web UI displays. Two audiences, no overlap:
 
-- server_instructions(): how to work as the user's dispatcher, in what order and when to ask. Read once
-  per session, and some clients truncate or never show it, so nothing here may be the only place a rule
-  lives. One text for every client of this server: ChatGPT, Claude, Gemini, Cursor and Codex read it from
-  `initialize`, and Vepathos AI in the dashboard has to pass it as its Responses `instructions`, because
-  the Responses API forwards only the tool list.
+- server_instructions(): the dispatcher prompt for every client of this server. Native MCP clients
+  (ChatGPT, Claude, Gemini, Cursor, Codex) read it from `initialize`. The dashboard's /ai chat must
+  copy the same string into the Responses API `instructions`, because that API forwards only the
+  tool list. Dashboard-only chrome (cards, ask_user, a confirmation ticket) stays in the dashboard.
 - Tool descriptions: what one tool does and when to call it. These always reach the model, so every
   rule that governs a single tool belongs in that tool's description.
 
@@ -17,8 +17,21 @@ than fixed: a client told its first call is free, when the server optimizes and 
 reports a real charged plan as a preview.
 
 Keep them consistent with the Core capability matrix (docs/tools.md).
+
+ChatGPT/Codex treat the first 512 characters as self-contained. Keep that window flag-free and
+imperative (FIRST/THEN) so a low-reasoning host still inspects before talking. Claude reads further;
+the numbered loop below is the dispatcher that already worked there.
 """
 
+# Must stay ≤512 characters and independent of confirm/import/map flags.
+_LEAD = (
+    "FIRST: if they mention Vepathos, or ask what they can do, which account is connected, or which "
+    "plans or tasks they have, call get_account, list_fleet and list_plans before you reply. Do not "
+    "answer from the tool list. THEN: "
+    "reply with that account's plan, remaining stops, vehicles and saved plan names, and offer the "
+    "next step (import orders, rerun a saved plan, geocode addresses, or show the last result). "
+    "Never invent those numbers. Never list tool names unless they ask for technical names.\n"
+)
 _ROLE = (
     "Vepathos plans delivery operations: it assigns stops to vehicles and sequences each route from one "
     "depot, from dozens to thousands of stops. Work as the user's dispatcher (fleet, orders, imports, "
@@ -31,8 +44,9 @@ _ACCOUNT = (
     "The user is already signed in: this connection is bound to one Vepathos account, in the Vepathos "
     "dashboard and in any other app. Every call acts on that account. No tool takes an account, company, "
     "tenant or user id: never ask for one, guess one or pass one, and never ask the user to sign in or "
-    "identify themselves. Only when a call is rejected for authorization, plan or quota, tell the user "
-    "which account is connected.\n"
+    "identify themselves. If they ask which account, plan or quota is connected, call get_account and "
+    "answer from it; do not say you cannot see the account. After a rejection for authorization, plan or "
+    "quota, name the account get_account returned.\n"
 )
 _DATA = (
     "Work from counts, summaries and ids. Never ask for or repeat rows, addresses, coordinates, customer "
@@ -46,8 +60,8 @@ _STEP_IMPORT = (
     "list), never as rows into optimize_delivery_routes; get_import_result until plan_id is ready. "
 )
 _STEP_UPLOAD = (
-    "A summary of a file uploaded in Vepathos is already imported: plan from its counts and optimize its "
-    "plan_id; without one, never rebuild its stops."
+    "A summary of a file already imported in Vepathos (plan_id in the message) is a saved plan: plan from "
+    "its counts and optimize that plan_id; without a plan_id, never rebuild its stops."
 )
 _STEPS = (
     "Inspect before proposing: get_account (limits, features, stops remaining), list_fleet (the account's "
@@ -110,7 +124,7 @@ def server_instructions(
     report = _REPORT + (_NEXT_WITH_MAP if map_shares else _NEXT)
     steps = [files, *_STEPS, run, report]
     numbered = "".join(f"{number}. {step}\n" for number, step in enumerate(steps, start=1))
-    return _ROLE + _ACCOUNT + _DATA + numbered + _PLANS + _INSTRUCTIONS_TAIL
+    return _LEAD + _ROLE + _ACCOUNT + _DATA + numbered + _PLANS + _INSTRUCTIONS_TAIL
 
 
 OPTIMIZE_TITLE = "Optimize delivery routes"
@@ -168,8 +182,9 @@ GET_ACCOUNT_DESCRIPTION = (
     "(company name, or a masked email), plan name, maximum stops per optimization, fleet and route "
     "limits, the constraints the plan includes, and the stops used and remaining in the current "
     "billing period. Takes no arguments: the account comes from the connection itself. Read-only "
-    "and it does not consume plan stops. Use it to answer which account or plan is connected, to "
-    "check limits before a large optimization, and to diagnose a rejection for the plan, the quota "
+    "and it does not consume plan stops. Call this immediately when the user asks which account, plan "
+    "or quota is connected; never say you cannot see the account or that no profile tool exists. Use it "
+    "to check limits before a large optimization, and to diagnose a rejection for the plan, the quota "
     "or authorization. A client is often connected to a different account than the user expects, in "
     "which case the fix is to reconnect as the right user, not to change the plan: connecting signs "
     "the user in to Vepathos and creates a free account when they have none, and switching accounts "
@@ -270,6 +285,8 @@ LIST_PLANS_DESCRIPTION = (
     "saved in one). Without plan_id: favorites first, then newest, plus the library size; a full "
     "library replaces its oldest plan not kept or favorite. With plan_id: stop counts, totals, depot, "
     "whether the next run is charged, and last_agent_run (what an agent last ran it with). account_url "
-    "opens a plan (sign-in required). Read-only; never returns stops. To rerun or vary one, confirm "
+    "opens a plan (sign-in required). Read-only; never returns stops. If they ask for their Vepathos "
+    "tasks, jobs or functions, call this (saved plans), not the host's scheduled-task list; summarize "
+    "plan names and counts, do not dump this server's tool names. To rerun or vary one, confirm "
     "last_agent_run with the user and call optimize_plan with plan_id."
 )

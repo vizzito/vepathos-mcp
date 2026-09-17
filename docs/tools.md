@@ -8,16 +8,23 @@
 
 ## Server instructions
 
-`server_instructions()` in `src/vepathos_mcp/tools/descriptions.py` is sent in the `initialize` result
-(`instructions`) and makes any client work as the user's dispatcher: inspect, propose with numbers, run
-after an explicit yes, summarize. It is one text for every client of `https://mcp.vepathos.com/mcp`:
+`server_instructions()` in `src/vepathos_mcp/tools/descriptions.py` is the dispatcher prompt for **every
+client of this MCP**, not a ChatGPT-only system prompt and not a page on the website. Native MCP
+clients read it from `initialize` (`result.instructions`) once per session. The dashboard `/ai` chat
+must copy that same string into the Responses API `instructions` (OpenAI does not forward MCP
+instructions). A new chat, reconnect, or MCP process restart is what picks up a change; refreshing
+the dashboard page is not enough if the Python MCP process is old.
 
-- ChatGPT, Claude, Gemini, Cursor and Codex read it from `initialize` (how much of it each client shows
-  the model varies, so rules for one tool also live in that tool's description).
-- Vepathos AI (`vepathos-router-client`, `/ai`) calls the OpenAI Responses API, which forwards only the
-  tool list from an MCP server, so the Agent API has to put this same text in the Responses
-  `instructions`, next to its own account context (email, plan, language). Read it from `initialize`
-  instead of copying it.
+One text, not a ChatGPT fork and a Claude fork. OpenAI documents that ChatGPT and Codex treat the
+**first 512 characters** as self-contained, so that window is a flag-free FIRST/THEN inspect
+(`get_account`, `list_fleet`, `list_plans`) before any brochure answer. The numbered loop after that
+is the dispatcher Claude already followed (inspect → propose → yes → run → summarize). Rules for one
+tool also live in that tool's description, because some hosts truncate or ignore `instructions`.
+
+- ChatGPT, Claude, Gemini, Cursor and Codex: `initialize`.
+- Vepathos AI (`vepathos-router-client`, `/ai`): `getMcpServerProfile()` reads `initialize`, then
+  `buildAiInstructions()` prepends account chrome (email, plan, language, cards). Do not duplicate
+  the dispatcher rules there.
 
 It never carries an account, company, tenant or user id: the connection binds the account. It changes
 with `MCP_CONFIRM_BEFORE_OPTIMIZE`, `MCP_IMPORT_TOOLS_ENABLED` and `MCP_MAP_SHARES_ENABLED`, so it only

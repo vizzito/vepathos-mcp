@@ -24,10 +24,11 @@ from vepathos_mcp.tools import descriptions as d
 from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 
 # Roughly 2,800 tokens; every conversation pays it. Raised with import/dataset tools (0.4.0), then for the
-# dispatcher instructions (0.6.0): one text for external clients and Vepathos AI, with the account binding,
-# the data rules and the inspect → propose → yes → run → summarize loop.
-MAX_TOTAL_CHARS = 11_200
-MAX_INSTRUCTION_CHARS = 4_100
+# dispatcher instructions (0.6.1): ChatGPT/Codex treat the first 512 characters as self-contained;
+# Claude still reads the inspect → propose → yes → run → summarize loop below.
+MAX_TOTAL_CHARS = 12_200
+MAX_INSTRUCTION_CHARS = 4_700
+OPENAI_INSTRUCTION_WINDOW = 512
 
 TOOL_NAMES = (
     "geocode_addresses",
@@ -78,6 +79,26 @@ def test_model_facing_text_stays_within_budget(gate: bool) -> None:
                 confirm_before_optimize=gate, import_tools=imports, map_shares=maps
             )
             assert len(instructions) <= MAX_INSTRUCTION_CHARS
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+def test_instructions_lead_fits_the_openai_window(gate: bool, imports: bool) -> None:
+    """ChatGPT/Codex may only keep the first 512 characters. That slice must already inspect."""
+
+    text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports, map_shares=True)
+    lead = text[:OPENAI_INSTRUCTION_WINDOW]
+    assert "FIRST:" in lead and "THEN:" in lead
+    for tool in ("get_account", "list_fleet", "list_plans"):
+        assert tool in lead, tool
+    assert "before you reply" in lead
+    assert "do not answer from the tool list" in lead.lower()
+    assert "never list tool names unless they ask for technical names" in lead.lower()
+    assert "plans or tasks" in lead.lower()
+    # Flags must not push the inspect rule out of the window.
+    assert "import_delivery_file" not in lead
+    assert "create_optimization_map" not in lead
+    assert "confirmed=true" not in lead
 
 
 @EACH_GATE_SETTING
@@ -176,6 +197,10 @@ def test_tool_rules_live_in_the_tool_description_clients_always_receive() -> Non
     assert "do not invent coordinates" in d.GEOCODE_DESCRIPTION.lower()
     assert "empty=true" in d.LIST_FLEET_DESCRIPTION
     assert "connected apps" in d.GET_ACCOUNT_DESCRIPTION.lower()
+    assert "call this immediately" in d.GET_ACCOUNT_DESCRIPTION.lower()
+    assert "no profile tool exists" in d.GET_ACCOUNT_DESCRIPTION.lower()
+    assert "tasks, jobs or functions" in d.LIST_PLANS_DESCRIPTION.lower()
+    assert "scheduled-task list" in d.LIST_PLANS_DESCRIPTION.lower()
     assert (
         "fileparams" in d.IMPORT_FILE_DESCRIPTION.lower() or "attachment" in d.IMPORT_FILE_DESCRIPTION.lower()
     )
@@ -210,6 +235,8 @@ def test_the_account_comes_from_the_connection_never_from_the_model(gate: bool, 
     text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports, map_shares=True).lower()
     assert "already signed in" in text and "no tool takes an account, company, tenant or user id" in text
     assert "never ask for one, guess one or pass one" in text and "never ask the user to sign in" in text
+    assert "if they ask which account, plan or quota is connected, call get_account" in text
+    assert "do not say you cannot see the account" in text
     # No example identifiers: nothing the model could copy into a call.
     for field in ("company_id", "tenant_id", "user_id", "workspace_id"):
         assert field not in text
@@ -220,7 +247,8 @@ def test_the_account_comes_from_the_connection_never_from_the_model(gate: bool, 
 def test_files_reach_the_model_as_summaries_and_ids(gate: bool, imports: bool) -> None:
     text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports).lower()
     assert "never ask for or repeat rows, addresses, coordinates, customer names or the spreadsheet" in text
-    assert "a summary of a file uploaded in vepathos is already imported" in text
+    assert "a summary of a file already imported in vepathos" in text
+    assert "without a plan_id, never rebuild its stops" in text
     assert ("never as rows into optimize_delivery_routes" in text) is imports
 
 

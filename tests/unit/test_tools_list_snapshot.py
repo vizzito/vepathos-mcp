@@ -17,7 +17,7 @@ from vepathos_mcp import __version__
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
 
-# Frozen on 0.6.0 (runs are plans: list_plans and optimize_plan, published on every server). Update
+# Frozen on 0.6.1 (ChatGPT inspect lead; get_account / list_plans when the user asks). Update
 # deliberately with the version.
 EXPECTED_TOOL_NAMES = (
     "optimize_delivery_routes",
@@ -36,7 +36,7 @@ EXPECTED_TOOL_NAMES = (
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-EXPECTED_DESC_HASH_GATE_OFF = "3c173bd120380a227559068e3931e619919ed8953ccad897d30032cbd595ee75"
+EXPECTED_DESC_HASH_GATE_OFF = "a7094bed8ab49ed887abacf6e09ab8353ff26ec1341e16776fe70e4bc20fbbff"
 
 
 def _desc_hash(tools: list[Any]) -> str:
