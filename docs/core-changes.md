@@ -152,6 +152,28 @@ Implementation is a read of data Core already has, with no new state:
 - No quota is charged and no job is created; it is a read of the account's own data, so it needs no
   new scope beyond `optimize` / `mcp:optimize`.
 
+## 4d. `GET` / `POST /api/mcp/v1/automations` (done)
+
+Serves the account's standing rules for `list_automations`, and writes one — switched off — for
+`create_automation` (`app/api/mcp/v1/automations/route.ts` over `src/server/mcp/automations.ts`,
+reusing `listPlanAutomations` and `createAutomationWithOwnedPlan`).
+
+Why: "route my shop's orders every morning" is a thing an assistant can genuinely set up, and the
+setup is six questions a person should not have to answer in a form. Starting one, on the other
+hand, spends the account's stops unattended — so the write path is deliberately unable to do it, and
+the answer carries the dashboard link instead.
+
+- The rule owns its plan (`OptimizationPlan.automationOwned`, migration
+  `20260919210000_plan_automation_owned`): created kept, excluded from the library, its cap and the
+  eviction candidates, and retired with the rule. Nobody picks a plan, and deleting the plan a rule
+  copied cannot stop a schedule.
+- `POST` ignores `enabled` and always writes `false`; `savePlanAutomation` is the only path that
+  enables, and it is reached from the dashboard.
+- Idempotent through `ownedPlan.operationId`: plan and automation ids are derived from
+  `sha256(userId, operationId)`, so a retried call replays instead of leaving a second pair.
+- `AUTOMATION_NOT_INCLUDED` (403) is checked before anything is written, and is mirrored in
+  `vepathos_mcp/errors/codes.py`.
+
 ## 4c. `GET /api/mcp/v1/catalog` (done)
 
 Serves the account's fleets and vehicles for the `list_fleet` tool

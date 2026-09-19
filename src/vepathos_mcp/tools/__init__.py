@@ -19,6 +19,14 @@ from vepathos_mcp.schemas.jsonschema import inline_model_schema
 from vepathos_mcp.tools import descriptions
 from vepathos_mcp.tools.account import TOOL_NAME as GET_ACCOUNT_TOOL
 from vepathos_mcp.tools.account import make_get_account_tool
+from vepathos_mcp.tools.automations import CREATE_TOOL_NAME as CREATE_AUTOMATION_TOOL
+from vepathos_mcp.tools.automations import LIST_TOOL_NAME as LIST_AUTOMATIONS_TOOL
+from vepathos_mcp.tools.automations import (
+    CreateAutomationInput,
+    ListAutomationsInput,
+    make_create_automation_tool,
+    make_list_automations_tool,
+)
 from vepathos_mcp.tools.fleet import TOOL_NAME as LIST_FLEET_TOOL
 from vepathos_mcp.tools.fleet import make_list_fleet_tool
 from vepathos_mcp.tools.geocode import (
@@ -76,6 +84,7 @@ def _tool(
     schema_model: type,
     read_only: bool,
     confirm_before_optimize: bool | None = None,
+    idempotent: bool = True,
 ) -> Tool:
     tool = Tool.from_function(
         fn,
@@ -86,7 +95,7 @@ def _tool(
             title=title,
             read_only_hint=read_only,
             destructive_hint=False,
-            idempotent_hint=True,
+            idempotent_hint=idempotent,
             open_world_hint=False,
         ),
         structured_output=True,
@@ -184,6 +193,24 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=ListFleetInput,
             read_only=True,
         ),
+        _tool(
+            make_list_automations_tool(deps),
+            name=LIST_AUTOMATIONS_TOOL,
+            title=descriptions.LIST_AUTOMATIONS_TITLE,
+            description=descriptions.LIST_AUTOMATIONS_DESCRIPTION,
+            schema_model=ListAutomationsInput,
+            read_only=True,
+        ),
+        _tool(
+            make_create_automation_tool(deps),
+            name=CREATE_AUTOMATION_TOOL,
+            title=descriptions.CREATE_AUTOMATION_TITLE,
+            description=descriptions.CREATE_AUTOMATION_DESCRIPTION,
+            schema_model=CreateAutomationInput,
+            read_only=False,
+            # The same operation_id returns the same rule: retrying is safe and writes nothing new.
+            idempotent=True,
+        ),
     ]
     if deps.settings.map_shares_enabled:
         from vepathos_mcp.tools.maps import DESCRIPTION, CreateMapInput, make_map_tool
@@ -212,6 +239,8 @@ def _import_tools(deps: ToolDeps) -> list[Tool]:
             description=descriptions.IMPORT_FILE_DESCRIPTION,
             schema_model=ImportFileInput,
             read_only=False,
+            # Each call starts a new import (and a new plan): a client must not retry it on its own.
+            idempotent=False,
         ),
         _tool(
             make_import_text_tool(deps),
@@ -220,6 +249,7 @@ def _import_tools(deps: ToolDeps) -> list[Tool]:
             description=descriptions.IMPORT_TEXT_DESCRIPTION,
             schema_model=ImportTextInput,
             read_only=False,
+            idempotent=False,
         ),
         _tool(
             make_get_import_tool(deps),

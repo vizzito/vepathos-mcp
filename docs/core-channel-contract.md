@@ -166,6 +166,63 @@ newest. Never the stops.
 settings change (a run starting included). `vepathos-mcp` publishes this as `list_plans` and converts
 `depot` to `latitude` / `longitude`.
 
+## `GET /api/mcp/v1/automations`
+
+The account's standing rules, the stores one could be pointed at, and how many may be switched on.
+Read-only; charges nothing. A rule that looks once a day reports `looks_at` and leaves the window
+fields null; one that looks inside a window reports `window_from` / `window_to` / `every_minutes`.
+
+```json
+{
+  "automations": [
+    {
+      "automation_id": "cmf…", "name": "Reparto de la mañana", "mode": "auto", "status": "enabled",
+      "enabled": true, "timezone": "America/Argentina/Buenos_Aires", "days": [1, 2, 3, 4, 5],
+      "looks_at": "08:00", "window_from": null, "window_to": null, "every_minutes": null,
+      "min_orders": 5, "match_tags": ["ml:flex"], "fill_by": null,
+      "max_units": 3, "stops_per_vehicle": 25,
+      "plan_name": "Reparto de la mañana", "plan_owned": true, "plan_missing": false,
+      "depot_name": "Centro", "last_decision": "fired", "last_reason": null,
+      "last_decided_at": "…", "run_count": 12, "next_look_at": "…",
+      "account_url": "https://…/dashboard/automations/cmf…"
+    }
+  ],
+  "stores": [
+    { "integration_account_id": "cmf…", "kind": "mercadolibre", "name": "Mi tienda", "last_sync_at": "…" }
+  ],
+  "limits": { "max_enabled": 1, "enabled": 1, "max_runs_per_day": 4, "max_stops_per_day": 500 },
+  "account_url": "https://…/dashboard/automations"
+}
+```
+
+**No plan id.** A rule keeps a plan of its own and that id is deliberately not on the wire: an agent
+holding it could pass it to `optimize_plan`, spending the rule's stops by hand and moving the
+revision its next batch checks against. `plan_missing: true` means the plan a legacy rule hung off
+was deleted, so it cannot run until its owner fixes that.
+
+## `POST /api/mcp/v1/automations`
+
+Writes a rule, **always switched off**. The body is the account channel's `createAutomationSchema`
+with `ownedPlan` instead of `planId`: the rule gets a plan of its own, copied from `templatePlanId`
+(depot, vehicles and optimizer settings; `copyStops` for a route that repeats), and `source` binds a
+connected store in the same transaction, so a half-made pair cannot be left behind.
+`ownedPlan.operationId` makes it idempotent: the same one returns the rule already written, with
+`200` instead of `201`.
+
+```json
+{
+  "automation": { "…": "the view above, enabled: false" },
+  "missing": ["depot"],
+  "enabled": false,
+  "account_url": "https://…/dashboard/automations/cmf…"
+}
+```
+
+`missing` is what a run would still lack, computed by Core from the workspace it just wrote —
+`depot` when the copied plan's depot is not one from the account's catalog, which a run refuses.
+`403 AUTOMATION_NOT_INCLUDED` when the account's plan has no automations at all, checked before
+anything is written.
+
 ## `GET /api/mcp/v1/plans/{plan_id}`
 
 One plan (the view above) plus `last_agent_run`: the run record an agent last ran it with (depot,

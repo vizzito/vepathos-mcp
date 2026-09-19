@@ -148,12 +148,12 @@ def _quota(message: str, details: dict[str, Any]) -> DomainError:
             f"({resets}), or upgrade the Vepathos plan."
         )
     suggestion += f" {WRONG_ACCOUNT_HINT}"
-    # A plan run that expected its free retry says why it is charged (charged_because).
+    # A plan run that expected another try says why it is charged (charged_because).
     free_retry = _as_dict(details.get("free_retry"))
     if free_retry.get("charged_because") == "stops_changed":
         suggestion += (
-            " This plan's free retry does not apply: its stops differ from the charged run. "
-            "Only the same stops or fewer run free."
+            " Another try does not apply: its stops differ from the charged run. "
+            "Only the same stops or fewer qualify as another try."
         )
     kept: dict[str, Any] = {
         k: details[k]
@@ -194,6 +194,19 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
         case "PLAN_UPGRADE_REQUIRED":
             return _plan_upgrade(
                 message or "Your current Vepathos plan cannot run this optimization.", details
+            )
+        case "AUTOMATION_NOT_INCLUDED":
+            # Not a limit that resets: the account's plan has no automations at all, so the only honest
+            # advice is an upgrade — and the reminder that limits belong to the connected account.
+            current = _int(details.get("current_limit"))
+            return DomainError(
+                ErrorCode.AUTOMATION_NOT_INCLUDED,
+                _clip(message or "This Vepathos plan does not include automations."),
+                suggestion=(
+                    "Tell the user their plan does not include automations, and that they can upgrade "
+                    f"in the Vepathos dashboard. {WRONG_ACCOUNT_HINT}"
+                ),
+                details={"current_limit": current} if current is not None else None,
             )
         case "QUOTA_EXCEEDED":
             return _quota(message or "The Vepathos plan quota for this period is exhausted.", details)

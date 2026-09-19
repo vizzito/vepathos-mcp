@@ -269,7 +269,7 @@ async def test_plan_preflight_states_the_real_stops_and_charge(
         assert preflight["plan"]["stops_remaining_after"] == preflight["plan"]["stops_remaining"] - 4
         assert preflight["stops_identity"] == f"plan:{plan_id}"
         assert "charges its stops" in preflight["confirm_with"]
-        assert "within 24 h with the same stops or fewer is free" in preflight["confirm_with"]
+        assert "within 24 h with the same stops or fewer is another try" in preflight["confirm_with"]
 
         is_error, ran = await call(client, "optimize_plan", {**args, "confirmed": True})
         assert not is_error and ran["quota_charged"] is True
@@ -278,7 +278,7 @@ async def test_plan_preflight_states_the_real_stops_and_charge(
         is_error, retry = await call(client, "optimize_plan", {**args, "service_time_minutes": 5})
         assert not is_error, retry
         assert retry["preflight"]["stops"] == 5 and retry["preflight"]["charges_stops"] == 0
-        assert "free retry" in retry["preflight"]["confirm_with"]
+        assert "another try" in retry["preflight"]["confirm_with"].lower()
         assert retry["preflight"]["free_retry_window_ends_at"]
 
 
@@ -481,3 +481,161 @@ async def test_plan_preflight_shows_the_plans_totals_when_nothing_is_excluded(
     # A total over every stored stop would overstate a run that leaves stops out.
     assert "total_weight_kg" not in partial["preflight"]
     assert plan["plan"]["total_weight_kg"] == 12.5
+
+
+async def test_a_depot_address_runs_and_reports_what_it_matched(
+    mcp_client: Callable[..., Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    address = "Av. Saenz 1200, Pompeya, Buenos Aires, Argentina"
+    async with await mcp_client() as client:
+        created = await _import(client)
+        with caplog.at_level("INFO"):
+            is_error, run = await call(
+                client,
+                "optimize_plan",
+                {"plan_id": created["plan_id"], "depot": {"address": address}, "vehicles": VEHICLES},
+            )
+    assert not is_error, run
+    resolved = run["depot_resolved"]
+    assert resolved["matched_address"] == address
+    assert -90 <= resolved["latitude"] <= 90 and -180 <= resolved["longitude"] <= 180
+    # docs/privacy-mcp.md: application logs carry neither addresses nor coordinates.
+    logged = [
+        getattr(record, "fields", {}) for record in caplog.records if record.getMessage() == "depot_geocoded"
+    ]
+    assert logged == [{"band": "valid"}]
+
+
+async def test_an_uncertain_depot_match_is_handed_back_before_anything_is_charged(
+    mcp_client: Callable[..., Any],
+) -> None:
+    async with await mcp_client() as client:
+        created = await _import(client)
+        is_error, payload = await call(
+            client,
+            "optimize_plan",
+            {
+                "plan_id": created["plan_id"],
+                "depot": {"address": "Saenz (unsure), Buenos Aires"},
+                "vehicles": VEHICLES,
+            },
+        )
+        assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+        resolved = payload["error"]["details"]["depot_resolved"]
+        assert resolved["matched_address"] and "latitude" in resolved
+
+        # The user confirmed the match: its coordinates run without geocoding again.
+        is_error, run = await call(
+            client,
+            "optimize_plan",
+            {
+                "plan_id": created["plan_id"],
+                "depot": {"latitude": resolved["latitude"], "longitude": resolved["longitude"]},
+                "vehicles": VEHICLES,
+            },
+        )
+    assert not is_error, run
+    assert run.get("depot_resolved") is None
+
+
+async def test_the_depot_preflight_shows_the_matched_address(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="true") as client:
+        created = await _import(client)
+        is_error, payload = await call(
+            client,
+            "optimize_plan",
+            {
+                "plan_id": created["plan_id"],
+                "depot": {"address": "Av. Saenz 1200, Buenos Aires"},
+                "vehicles": VEHICLES,
+            },
+        )
+    assert not is_error, payload
+    assert payload["preflight"]["depot_resolved"]["matched_address"] == "Av. Saenz 1200, Buenos Aires"
+
+
+@pytest.mark.parametrize(
+    ("depot", "expected"),
+    [
+        (
+            {"address": "Av. Saenz 1200, Pompeya, Buenos Aires, Argentina"},
+            {"city": "Buenos Aires", "country": "Argentina"},
+        ),
+        ({"address": "Av. Saenz 1200, Buenos Aires"}, {"city": "Buenos Aires"}),
+        ({"address": "Av. Saenz 1200"}, {"city": "Av. Saenz 1200"}),
+        (
+            {"address": "Av. Saenz 1200, Argentina", "city": "Lanus", "country": "AR"},
+            {"city": "Lanus", "country": "AR"},
+        ),
+    ],
+    ids=["street-area-city-country", "street-city", "street-only", "explicit"],
+)
+def test_depot_region_does_not_send_the_country_as_the_city(
+    depot: dict[str, str], expected: dict[str, str]
+) -> None:
+    assert import_tools.depot_region(import_tools.DatasetDepot(**depot)) == expected
+
+
+async def test_only_tools_that_deduplicate_say_they_are_idempotent(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client() as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    # An import starts a new import and a new plan on every call; a run is keyed by its arguments.
+    assert tools["import_delivery_file"].annotations.idempotent_hint is False
+    assert tools["import_delivery_text"].annotations.idempotent_hint is False
+    assert tools["optimize_plan"].annotations.idempotent_hint is True
+    assert tools["update_import_mapping"].annotations.idempotent_hint is True
+
+
+async def test_a_link_that_is_not_shared_publicly_says_so(
+    mcp_client: Callable[..., Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def not_a_file(url: str, *, max_bytes: int) -> tuple[bytes, str | None]:
+        raise PublicFetchError("not_a_file")
+
+    monkeypatch.setattr(import_tools, "fetch_public_https", not_a_file)
+    async with await mcp_client() as client:
+        is_error, payload = await call(
+            client,
+            "import_delivery_file",
+            {
+                "file": {
+                    "download_url": "https://drive.google.com/file/d/abcdefghij12/view",
+                    "file_name": "a.xlsx",
+                }
+            },
+        )
+    assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+    assert "Anyone with the link" in payload["error"]["suggestion"]
+
+
+async def test_a_mapping_can_declare_the_unit_and_format_of_a_column(
+    mcp_client: Callable[..., Any], core_state: Any
+) -> None:
+    async with await mcp_client() as client:
+        created = await _import(client)
+        is_error, payload = await call(
+            client,
+            "update_import_mapping",
+            {
+                "import_id": created["import_id"],
+                "mapping": {
+                    "Peso": {"field": "weight_kg", "unit": "lb"},
+                    "Entrega": {"field": "time_window_start", "format": "MM/DD/YYYY hh:mm AM/PM"},
+                    "Cliente": "customer_name",
+                    "Notas": None,
+                },
+            },
+        )
+        assert not is_error, payload
+        sent = core_state.imports[created["import_id"]]["mapping"]
+        # Unset keys are left out, so Smart Import infers what was not declared.
+        assert sent["Peso"] == {"field": "weight_kg", "unit": "lb"}
+        assert sent["Entrega"] == {"field": "time_window_start", "format": "MM/DD/YYYY hh:mm AM/PM"}
+        assert sent["Cliente"] == "customer_name" and sent["Notas"] is None
+
+        is_error, payload = await call(
+            client,
+            "update_import_mapping",
+            {"import_id": created["import_id"], "mapping": {"Peso": {"unit": "lb"}}},
+        )
+    assert is_error and payload["error"]["code"] == "INVALID_INPUT"

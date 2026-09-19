@@ -5,6 +5,7 @@ client can put any URL there, and this process runs inside the VM's Docker netwo
 Postgres and the cloud metadata endpoint. So the download:
 
 - accepts only https on the default port, without credentials in the URL;
+- rewrites public Google Drive share links to a direct download URL (no redirect hop);
 - resolves the host itself and refuses it when any address is not public (loopback, private,
   link-local, carrier-grade NAT, documentation, multicast, IPv4-mapped private, ...);
 - connects to the address it checked, sending the hostname as Host and TLS SNI, so a second DNS
@@ -25,7 +26,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
-FetchFailure = Literal["invalid_url", "blocked_host", "redirect", "http_status", "too_large", "network"]
+from vepathos_mcp.clients.google_drive import normalize_public_download_url
+
+FetchFailure = Literal[
+    "invalid_url", "blocked_host", "redirect", "http_status", "not_a_file", "too_large", "network"
+]
 
 Resolver = Callable[[str], Awaitable[list[str]]]
 
@@ -99,19 +104,36 @@ async def check_public_https_url(url: str, resolver: Resolver = resolve_host) ->
     return CheckedUrl(host=host, address=address, target=target)
 
 
+def _looks_like_html_interstitial(body: bytes, content_type: str | None) -> bool:
+    """Drive sometimes returns an HTML virus-scan page instead of the file."""
+
+    head = body[:200].lstrip().lower()
+    if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
+        return True
+    if content_type and "text/html" in content_type.lower() and b"<html" in body[:2048].lower():
+        return True
+    return False
+
+
 async def fetch_public_https(
     url: str,
     *,
     max_bytes: int,
     timeout_seconds: float = 30.0,
+    total_timeout_seconds: float = 90.0,
     resolver: Resolver = resolve_host,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> tuple[bytes, str | None]:
-    """Returns the body and its content type, or raises PublicFetchError."""
+    """Returns the body and its content type, or raises PublicFetchError.
 
+    `timeout_seconds` is httpx's per-operation (inactivity) timeout; `total_timeout_seconds` bounds the
+    whole download, so a server that trickles bytes cannot hold the call open."""
+
+    url = normalize_public_download_url(url)
     checked = await check_public_https_url(url, resolver)
     try:
         async with (
+            asyncio.timeout(total_timeout_seconds),
             httpx.AsyncClient(follow_redirects=False, timeout=timeout_seconds, transport=transport) as client,
             client.stream(
                 "GET",
@@ -132,8 +154,13 @@ async def fetch_public_https(
                 body.extend(chunk)
                 if len(body) > max_bytes:
                     raise PublicFetchError("too_large")
-            return bytes(body), response.headers.get("content-type")
+            content_type = response.headers.get("content-type")
+            raw = bytes(body)
+            # A sign-in or confirm page answers 200 with HTML: the link is not a public file.
+            if _looks_like_html_interstitial(raw, content_type):
+                raise PublicFetchError("not_a_file")
+            return raw, content_type
     except PublicFetchError:
         raise
-    except httpx.HTTPError:
+    except (httpx.HTTPError, TimeoutError):
         raise PublicFetchError("network") from None

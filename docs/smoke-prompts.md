@@ -28,6 +28,12 @@ Staging checklist:
 
 ## Cases
 
+0. **Automations** (0.7.0)
+   > What automations do I have? / Route my Mercado Libre orders every weekday at 8.
+   The agent reads `list_automations` (and the stores it returns), prepares one with
+   `create_automation`, says it is switched OFF, gives the dashboard link, and never claims it is
+   running. Sending the same `operation_id` twice must not leave two rules.
+
 1. **Basic fleet**
    > I have 120 deliveries and 5 vans. Optimize the deliveries minimizing total distance.
    Dataset: 120 stops, 5 vans. Expect `optimize_delivery_routes` (or import path if file attached).

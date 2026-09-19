@@ -263,6 +263,65 @@ class CoreCatalog(CoreModel):
     vehicles: list[CoreCatalogVehicle] = Field(default_factory=list)
 
 
+class CoreAutomation(CoreModel):
+    """A standing rule, as the account channel reports it."""
+
+    automation_id: str
+    name: str | None = None
+    mode: str | None = None
+    status: str | None = None
+    enabled: bool | None = None
+    timezone: str | None = None
+    days: list[int] = Field(default_factory=list)
+    looks_at: str | None = None
+    window_from: str | None = None
+    window_to: str | None = None
+    every_minutes: int | None = None
+    min_orders: int | None = None
+    match_tags: list[str] = Field(default_factory=list)
+    fill_by: str | None = None
+    max_units: int | None = None
+    stops_per_vehicle: int | None = None
+    plan_name: str | None = None
+    plan_owned: bool | None = None
+    plan_missing: bool | None = None
+    depot_name: str | None = None
+    last_decision: str | None = None
+    last_reason: str | None = None
+    last_decided_at: str | None = None
+    run_count: int | None = None
+    next_look_at: str | None = None
+    account_url: str | None = None
+
+
+class CoreConnectedStore(CoreModel):
+    integration_account_id: str
+    kind: str | None = None
+    name: str | None = None
+    last_sync_at: str | None = None
+
+
+class CoreAutomationLimits(CoreModel):
+    max_enabled: int | None = None
+    enabled: int | None = None
+    max_runs_per_day: int | None = None
+    max_stops_per_day: int | None = None
+
+
+class CoreAutomationList(CoreModel):
+    automations: list[CoreAutomation] = Field(default_factory=list)
+    stores: list[CoreConnectedStore] = Field(default_factory=list)
+    limits: CoreAutomationLimits | None = None
+    account_url: str | None = None
+
+
+class CoreAutomationCreated(CoreModel):
+    automation: CoreAutomation
+    missing: list[str] = Field(default_factory=list)
+    enabled: bool | None = None
+    account_url: str | None = None
+
+
 class CoreJobResult(CoreJobStatusResponse):
     # What the optimization ran with (depot, vehicles, schedule); null for jobs recorded before runs.
     request: dict[str, Any] | None = None

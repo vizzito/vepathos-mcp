@@ -84,6 +84,10 @@ class FakeCoreState:
     company_name: str | None = None
     fleets: list[dict[str, Any]] = field(default_factory=list)
     vehicles: list[dict[str, Any]] = field(default_factory=list)
+    # Standing rules, keyed by automation_id, and the stores an account has connected.
+    automations: dict[str, dict[str, Any]] = field(default_factory=dict)
+    stores: list[dict[str, Any]] = field(default_factory=list)
+    max_enabled_automations: int = 1
     clock: Any = time.time
 
 
@@ -724,7 +728,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                     "id": stop.get("id"),
                     "lat": -34.6 + digest[0] / 2550.0,
                     "lng": -58.4 + digest[1] / 2550.0,
-                    "band": "valid",
+                    # "(unsure)" in an address stands for a match the geocoder would flag for review.
+                    "band": "review" if "(unsure)" in str(stop.get("address", "")) else "valid",
                     "confidence": 0.8,
                     "matched_address": stop.get("address"),
                 }
@@ -842,6 +847,17 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         row = state.imports.get(import_id)
         if row is None or row["account"] != account:
             return _error(404, "IMPORT_NOT_FOUND", "Unknown import.")
+        # Same shapes as Core's route: a field name, null, or {field, unit?, format?}.
+        mapping = (await request.json()).get("mapping") or {}
+        for column, value in mapping.items():
+            spec_ok = isinstance(value, dict) and isinstance(value.get("field"), str)
+            if value is not None and not isinstance(value, str) and not spec_ok:
+                return _error(
+                    422,
+                    "INVALID_INPUT",
+                    f"mapping.{column} must be a field, null or {{field, unit, format}}.",
+                )
+        row["mapping"] = mapping
         return await get_import(request)
 
     async def list_datasets(request: Request) -> JSONResponse:
@@ -931,6 +947,108 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             return _error(404, "PLAN_NOT_FOUND", "No plan with this id exists for this account.")
         return JSONResponse(plan_view(plan_id, detail=True))
 
+    async def list_automations(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        rows = [row for row in state.automations.values() if row["account"] == account]
+        return JSONResponse(
+            {
+                "automations": [{k: v for k, v in row.items() if k != "account"} for row in rows],
+                "stores": state.stores,
+                "limits": {
+                    "max_enabled": state.max_enabled_automations,
+                    "enabled": len([row for row in rows if row.get("enabled")]),
+                    "max_runs_per_day": 4,
+                    "max_stops_per_day": 500,
+                },
+                "account_url": "https://vepathos.test/dashboard/automations",
+            }
+        )
+
+    async def create_automation(request: Request) -> JSONResponse:
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        body = await request.json()
+        if state.max_enabled_automations < 1:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "AUTOMATION_NOT_INCLUDED",
+                        "message": "Not included.",
+                        "retryable": False,
+                    }
+                },
+                status_code=403,
+            )
+        owned = body.get("ownedPlan") or {}
+        template = state.plans.get(owned.get("templatePlanId") or "")
+        if owned.get("templatePlanId") and not template:
+            return JSONResponse(
+                {"error": {"code": "PLAN_NOT_FOUND", "message": "No such plan.", "retryable": False}},
+                status_code=404,
+            )
+        # The same operation_id is the same rule: the real channel derives its ids from it.
+        operation = owned.get("operationId") or ""
+        for existing_id, row in state.automations.items():
+            if row["account"] == account and row.get("operation") == operation:
+                return JSONResponse(
+                    {
+                        "automation": {k: v for k, v in row.items() if k not in {"account", "operation"}},
+                        "missing": row.get("missing", []),
+                        "enabled": False,
+                        "account_url": f"https://vepathos.test/dashboard/automations/{existing_id}",
+                    }
+                )
+        automation_id = f"auto_{len(state.automations) + 1}"
+        once = body["windowFromMin"] == body["windowToMin"]
+
+        def hhmm(minutes: int) -> str:
+            return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+        # A template whose depot is not a catalog one cannot be run from (a run refuses an ad-hoc depot):
+        # the rule is still written, and what it lacks is said out loud instead of being discovered by the
+        # scheduler three failures later. A plan an agent made always has an ad-hoc depot.
+        depot = (template or {}).get("depot")
+        missing = [] if depot and depot.get("kind") == "catalog" else ["depot"]
+        row = {
+            "account": account,
+            "operation": operation,
+            "automation_id": automation_id,
+            "name": body["name"],
+            "mode": body["mode"],
+            "status": "draft",
+            "enabled": False,
+            "timezone": body["timezone"],
+            "days": body["windowDays"],
+            "looks_at": hhmm(body["windowFromMin"]) if once else None,
+            "window_from": None if once else hhmm(body["windowFromMin"]),
+            "window_to": None if once else hhmm(body["windowToMin"]),
+            "every_minutes": None if once else body["everyMinutes"],
+            "min_orders": body["minOrders"],
+            "match_tags": body["matchTags"],
+            "max_units": body["maxUnits"],
+            "stops_per_vehicle": body["stopsPerVehicle"],
+            "plan_name": body["name"],
+            "plan_owned": True,
+            "plan_missing": False,
+            "depot_name": (depot or {}).get("name"),
+            "run_count": 0,
+            "account_url": f"https://vepathos.test/dashboard/automations/{automation_id}",
+            "missing": missing,
+        }
+        state.automations[automation_id] = row
+        return JSONResponse(
+            {
+                "automation": {k: v for k, v in row.items() if k not in {"account", "operation", "missing"}},
+                "missing": missing,
+                "enabled": False,
+                "account_url": row["account_url"],
+            },
+            status_code=201,
+        )
+
     return Starlette(
         routes=[
             Route("/api/mcp/v1/health", health, methods=["GET"]),
@@ -948,6 +1066,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/datasets/{dataset_id}", get_dataset, methods=["GET"]),
             Route("/api/mcp/v1/plans", list_plans, methods=["GET"]),
             Route("/api/mcp/v1/plans/{plan_id}", get_plan, methods=["GET"]),
+            Route("/api/mcp/v1/automations", list_automations, methods=["GET"]),
+            Route("/api/mcp/v1/automations", create_automation, methods=["POST"]),
         ]
     )
 

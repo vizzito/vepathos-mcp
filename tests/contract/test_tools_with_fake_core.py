@@ -53,6 +53,8 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
         "get_geocode_result",
         "get_account",
         "list_fleet",
+        "list_automations",
+        "create_automation",
     }
     plans = tools["list_plans"]
     assert plans.annotations is not None and plans.annotations.read_only_hint is True
@@ -530,3 +532,111 @@ async def test_a_server_without_imports_reruns_a_plan_free_with_optimize_plan(
         _, plan = await call(client, "list_plans", {"plan_id": first["plan_id"]})
     # The excluded stop shaped one run only: the plan keeps all five.
     assert plan["plan"]["stops"] == 5
+
+
+async def test_automations_are_read_and_prepared_but_never_switched_on(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    """The whole point of the pair: an agent may set a rule up, and cannot start it."""
+
+    core_state.stores = [
+        {"integration_account_id": "acc-1", "kind": "mercadolibre", "name": "Mi tienda", "last_sync_at": None}
+    ]
+    async with await mcp_client() as client:
+        # Nothing yet: the account's stores are still worth answering, they are how a rule gets fed.
+        _, empty = await call(client, "list_automations", {})
+        assert empty["empty"] is True
+        assert empty["stores"][0]["integration_account_id"] == "acc-1"
+
+        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        is_error, created = await call(
+            client,
+            "create_automation",
+            {
+                "name": "Reparto de la mañana",
+                "template_plan_id": plan["plan_id"],
+                "integration_account_id": "acc-1",
+                "looks_at": "08:00",
+                "days": [1, 2, 3, 4, 5],
+                "min_orders": 5,
+                "mode": "auto",
+                "operation_id": "chat-draft-0001",
+            },
+        )
+        assert not is_error, created
+        # Switched off, and what a run would still lack is said now rather than discovered by the
+        # scheduler: a plan an agent made carries an ad-hoc depot, which a run refuses.
+        assert created["enabled"] is False
+        assert created["automation"]["status"] == "draft"
+        assert created["missing"] == ["depot"]
+        assert created["account_url"].endswith(created["automation"]["automation_id"])
+        # Its own plan is not an id an agent may hold: optimizing it by hand would spend the rule's stops.
+        assert "plan_id" not in created["automation"]
+
+        # The same attempt twice is one rule, not two.
+        _, again = await call(
+            client,
+            "create_automation",
+            {
+                "name": "Reparto de la mañana",
+                "template_plan_id": plan["plan_id"],
+                "integration_account_id": "acc-1",
+                "looks_at": "08:00",
+                "operation_id": "chat-draft-0001",
+            },
+        )
+        assert again["automation"]["automation_id"] == created["automation"]["automation_id"]
+
+        _, listed = await call(client, "list_automations", {})
+        assert len(listed["automations"]) == 1
+        rule = listed["automations"][0]
+        # One time of day is reported as one time, not as a window that starts and ends together.
+        assert rule["looks_at"] == "08:00" and "window_from" not in rule
+        assert rule["enabled"] is False
+
+
+async def test_an_automation_needs_to_be_told_where_its_orders_come_from(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    async with await mcp_client() as client:
+        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        base = {"name": "Sin origen", "template_plan_id": plan["plan_id"], "operation_id": "chat-draft-0002"}
+        is_error, refused = await call(client, "create_automation", base)
+        assert is_error and refused["error"]["code"] == "INVALID_INPUT"
+
+        # A window that ends before it starts is not a window.
+        is_error, backwards = await call(
+            client,
+            "create_automation",
+            {**base, "use_plan_stops": True, "window_from": "14:00", "window_to": "10:00"},
+        )
+        assert is_error and backwards["error"]["code"] == "INVALID_INPUT"
+
+        # A plan that is not in the account cannot be the template.
+        is_error, gone = await call(
+            client,
+            "create_automation",
+            {**base, "use_plan_stops": True, "template_plan_id": "plan_nope"},
+        )
+        assert is_error and gone["error"]["code"] == "PLAN_NOT_FOUND"
+
+
+async def test_an_account_without_automations_is_told_so_before_anything_is_written(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    core_state.max_enabled_automations = 0
+    async with await mcp_client() as client:
+        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        is_error, refused = await call(
+            client,
+            "create_automation",
+            {
+                "name": "No incluida",
+                "template_plan_id": plan["plan_id"],
+                "use_plan_stops": True,
+                "operation_id": "chat-draft-0003",
+            },
+        )
+    assert is_error and refused["error"]["code"] == "AUTOMATION_NOT_INCLUDED"
+    assert refused["error"]["retryable"] is False
+    assert not core_state.automations, "nothing is written for an account that could never switch it on"

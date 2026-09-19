@@ -28,6 +28,8 @@ from vepathos_mcp import __version__
 from vepathos_mcp.clients.breaker import CircuitBreaker
 from vepathos_mcp.clients.core_models import (
     CoreAccount,
+    CoreAutomationCreated,
+    CoreAutomationList,
     CoreCatalog,
     CoreDataset,
     CoreGeocodeCreated,
@@ -194,6 +196,48 @@ class VepathosApiClient:
             ),
         )
         return self._parse(CoreAccount, data)
+
+    async def list_automations(self, call: CallContext) -> CoreAutomationList:
+        """The account's standing rules, the stores one could be pointed at, and how many may run."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/automations",
+            call,
+            operation="automations_list",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not expose automations yet.",
+                suggestion=(
+                    "Skip list_automations. The user can see and change their automations in the "
+                    "Vepathos dashboard."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAutomationList, data)
+
+    async def create_automation(
+        self, call: CallContext, body: dict[str, Any], *, operation_id: str
+    ) -> CoreAutomationCreated:
+        """Writes a rule, switched off. Only the person turns one on, on their own screen."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/automations",
+            call,
+            operation="automations_create",
+            json_body=body,
+            # Same key, same rule: a retried call returns the one already written instead of a second.
+            idempotency_key=f"automation:{operation_id}",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment cannot create automations yet.",
+                suggestion="Ask the user to set the automation up in the Vepathos dashboard.",
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAutomationCreated, data)
 
     async def get_catalog(self, call: CallContext) -> CoreCatalog:
         """The account's own fleets and vehicles, already in kilograms and cubic metres."""

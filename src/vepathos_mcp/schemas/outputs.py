@@ -45,17 +45,24 @@ class FreeRetryFields(OutputModel):
 
     next_optimize_charged: bool | None = Field(
         None,
-        description="True: the next optimization of this plan charges its stops. False: it is the "
-        "plan's free retry.",
+        description="True: the next run of this plan charges its stops to the monthly allowance. "
+        "False: it is another try (same stops or fewer, within the 24 h window) — no stops charged. "
+        "When speaking to the user: English 'another try', Spanish 'otro intento'; never call a run free.",
     )
     free_retries_allowed: int | None = Field(
-        None, description="Free retries a charged run gives on this account plan."
+        None,
+        description="How many other tries a charged run opens on this account plan (field name is "
+        "historical; say 'other tries' / 'otros intentos', not that the run is free).",
     )
     free_retries_remaining: int | None = Field(
-        None, description="Free retries left in the open 24 h window. 0 when no window is open."
+        None,
+        description="Other tries left in the open 24 h window. 0 when no window is open. Tell the user "
+        "the count and the deadline (free_retry_window_ends_at); do not call the run free.",
     )
     free_retry_window_ends_at: str | None = Field(
-        None, description="When the free retry stops applying (UTC). Null when no window is open."
+        None,
+        description="When the other-try window closes (UTC). Null when no window is open. "
+        "Always mention this deadline when next_optimize_charged is false.",
     )
     charged_because: str | None = Field(
         None,
@@ -117,7 +124,7 @@ class ResultSummary(OutputModel):
     )
     charged_stops: int | None = Field(
         None,
-        description="Stops billed to the account for this job. 0 on a plan's free retry or the trial.",
+        description="Stops billed to the account for this job. 0 on another try of the plan or the trial.",
     )
 
 
@@ -201,6 +208,14 @@ class OptimizationResult(OutputModel):
         return self
 
 
+class DepotResolved(OutputModel):
+    """The depot the server geocoded from an address, so the user can confirm it."""
+
+    matched_address: str | None = Field(None, description="The address the geocoder matched.")
+    latitude: float = Field(description="Resolved depot latitude.")
+    longitude: float = Field(description="Resolved depot longitude.")
+
+
 class PreflightPlan(OutputModel):
     """The connected plan's side of the check. Absent when the account could not be read."""
 
@@ -209,7 +224,7 @@ class PreflightPlan(OutputModel):
     max_stops_per_request: int | None = Field(None, description="Stops allowed in one call. Null: unlimited.")
     stops_remaining: int | None = Field(None, description="Before this optimization. Null: unlimited.")
     stops_remaining_after: int | None = Field(
-        None, description="Projected remaining after this run's charge (unchanged on a free retry)."
+        None, description="Projected remaining after this run's charge (unchanged on another try)."
     )
     fits: bool | None = Field(None, description="False when the plan would reject this request.")
     missing_features: list[str] | None = Field(
@@ -222,7 +237,7 @@ class Preflight(OutputModel):
 
     stops: int = Field(description="Stops that would be sent.")
     charges_stops: int = Field(
-        description="Stops this would charge to the account. 0 when the plan's free retry applies."
+        description="Stops this would charge to the monthly allowance. 0 when another try applies."
     )
     total_weight_kg: float | None = Field(None, description="Sum of stop weights. Null when weight unused.")
     total_volume_m3: float | None = Field(None, description="Sum of stop volumes. Null when volume unused.")
@@ -250,13 +265,13 @@ class Preflight(OutputModel):
         description="Fingerprint of depot+stops, or plan:… / dataset:… for stored stops.",
     )
     plan_id: str | None = Field(None, description="The stored plan that would run, when there is one.")
-    charged_because: str | None = Field(
-        None, description="Why the plan's free retry does not apply (see list_plans)."
-    )
-    free_retry_window_ends_at: str | None = Field(
-        None, description="When the plan's free retry stops applying (UTC)."
-    )
+    charged_because: str | None = Field(None, description="Why another try does not apply (see list_plans).")
+    free_retry_window_ends_at: str | None = Field(None, description="When another try stops applying (UTC).")
     plan: PreflightPlan | None = Field(None, description="Plan/quota check; absent if account lookup failed.")
+    depot_resolved: DepotResolved | None = Field(
+        None,
+        description="Present when the depot was given as an address: tell the user the matched address.",
+    )
     warnings: list[dict[str, Any]] | None = Field(
         None,
         description="Non-blocking issues: stop near depot, unknown vehicle_id, tight min/max stops, etc.",
@@ -293,13 +308,17 @@ class OptimizeResult(OutputModel):
         None, description="Stops left in the plan's current billing period (null means unlimited)."
     )
     quota_charged: bool | None = Field(
-        None, description="False when this run is the plan's free retry or the trial: no stops charged."
+        None, description="False when this run is another try of the plan or the trial: no stops charged."
     )
-    free_retry: bool | None = Field(None, description="True when this run is the plan's free retry.")
+    free_retry: bool | None = Field(
+        None,
+        description="True when this run is another try (no monthly stops charged). Say 'another try' / "
+        "'otro intento'; never call it free.",
+    )
     free_retries_remaining: int | None = Field(
         None,
-        description="Retries of this plan that stay free after this run completes: within 24 h, with "
-        "the same stops or fewer, by plan_id.",
+        description="Other tries of this plan still available after this run: within 24 h, same stops "
+        "or fewer, by plan_id. Say 'other tries' / 'otros intentos'; do not call the run free.",
     )
     full_trial_applied: FullTrialApplied | None = Field(
         None, description="Present when this job used the one-time MCP full trial."
@@ -310,6 +329,11 @@ class OptimizeResult(OutputModel):
     )
     result: OptimizationResult | None = Field(
         None, description="Present when the optimization finished within the call."
+    )
+    depot_resolved: DepotResolved | None = Field(
+        None,
+        description="Present when the depot was given as an address: tell the user the matched address "
+        "the routes start from.",
     )
     preflight: Preflight | None = Field(
         None,

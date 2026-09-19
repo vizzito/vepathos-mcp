@@ -11,6 +11,7 @@ from mcp_types import CallToolResult
 from pydantic import Field, ValidationError, model_validator
 
 from vepathos_mcp.clients.core_models import CoreDataset, CorePlan
+from vepathos_mcp.clients.google_drive import normalize_public_download_url
 from vepathos_mcp.clients.public_fetch import PublicFetchError, fetch_public_https
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.schemas.inputs import (
@@ -22,6 +23,7 @@ from vepathos_mcp.schemas.inputs import (
 )
 from vepathos_mcp.schemas.outputs import (
     ACCOUNT_URL_DESCRIPTION,
+    DepotResolved,
     FreeRetryFields,
     OptimizeResult,
     OutputModel,
@@ -44,6 +46,33 @@ OPTIMIZE_PLAN_TOOL = "optimize_plan"
 
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 
+# Smart Import rejects anything outside this set with 415 (mapped upstream to a user error).
+_SI_SUFFIXES = frozenset({".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".json"})
+_MIME_TO_SI_SUFFIX: dict[str, str] = {
+    "text/csv": ".csv",
+    "text/tab-separated-values": ".tsv",
+    "text/plain": ".txt",
+    "application/json": ".json",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-excel.sheet.macroenabled.12": ".xlsm",
+}
+
+
+def smart_import_filename(name: str | None, mime_type: str | None = None) -> str:
+    """Filename SI will accept. ChatGPT often omits an extension; never fall back to `.bin`."""
+
+    raw = (name or "").strip().replace("\\", "/").rsplit("/", 1)[-1] or "delivery"
+    raw = raw[:200]
+    lower = raw.lower()
+    for suffix in _SI_SUFFIXES:
+        if lower.endswith(suffix):
+            return raw
+    mime = (mime_type or "").split(";", 1)[0].strip().lower()
+    ext = _MIME_TO_SI_SUFFIX.get(mime) or ".txt"
+    stem = raw.rsplit(".", 1)[0].strip() or "delivery"
+    return f"{stem}{ext}"[:200]
+
 
 IMPORT_PLAN_ID_DESCRIPTION = (
     "Load the stops into this existing plan, replacing its stops and keeping its depot, fleet and "
@@ -63,13 +92,14 @@ class FileParam(StrictModel):
 class ImportFileInput(StrictModel):
     file: FileParam | None = Field(
         None,
-        description="ChatGPT attachment. Prefer this over pasting stops. "
-        "Absent/expired downloads return INVALID_INPUT asking to re-attach.",
+        description="The attachment, filled in by hosts that hand files to tools (ChatGPT file params); "
+        "never build it by hand. Other hosts pass url.",
     )
     url: str | None = Field(
         None,
         max_length=2048,
-        description="Public https URL of the file (Claude/console). SSRF-blocked.",
+        description="Public https URL of the file, or a Google Drive, Sheets or Docs share link. For "
+        "hosts without attachment parameters (Claude, Gemini, Cursor, a console).",
     )
     filename: str | None = Field(None, max_length=200)
     timezone: str | None = Field(None, max_length=64)
@@ -88,10 +118,29 @@ class GetImportInput(StrictModel):
     import_id: str = Field(min_length=8, max_length=200)
 
 
+class ColumnMapping(StrictModel):
+    """A column whose values need more than a rename: another unit, or a date or number format."""
+
+    field: str = Field(min_length=1, max_length=64, description="The vepathos field, e.g. weight_kg.")
+    unit: str | None = Field(
+        None,
+        max_length=32,
+        description="Unit the column is in: kg, g, lb, oz, t; cm, mm, m, in, ft; m3, cm3, l, ml, ft3; "
+        "min, s, h; cents, units. It is converted to the field's unit.",
+    )
+    format: str | None = Field(
+        None,
+        max_length=64,
+        description="Date pattern (dd/mm/yyyy hh:mm, MM/DD/YYYY hh:mm AM/PM, iso) or number format "
+        "(decimal comma, decimal point).",
+    )
+
+
 class UpdateMappingInput(StrictModel):
     import_id: str = Field(min_length=8, max_length=200)
-    mapping: dict[str, str | None] = Field(
-        description="Source column → vepathos field (or null to ignore).",
+    mapping: dict[str, str | ColumnMapping | None] = Field(
+        description="Source column → vepathos field, null to ignore the column, or {field, unit, format} "
+        "when its values are in another unit or format.",
     )
 
 
@@ -120,7 +169,12 @@ class DatasetDepot(StrictModel):
     address: str | None = Field(
         None,
         max_length=300,
-        description="Depot as an address; the server geocodes it and shows what it found.",
+        description="Depot as an address; the server geocodes it and shows what it found "
+        "(depot_resolved). An uncertain match is refused until the user confirms its coordinates.",
+    )
+    city: str | None = Field(None, max_length=120, description="City of the depot address, when known.")
+    country: str | None = Field(
+        None, max_length=64, description="Country name or ISO code of the depot address, when known."
     )
 
 
@@ -263,7 +317,12 @@ _DOWNLOAD_FAILURES: dict[str, tuple[str, str]] = {
     ),
     "redirect": (
         "The file download redirected, and redirects are not followed.",
-        "Attach the file again and call import_delivery_file.",
+        "Use a public Google Drive share link, a direct https file URL, or attach the file.",
+    ),
+    "not_a_file": (
+        "The link returned a web page instead of the file, so it is not shared publicly.",
+        "Ask the user to share it as 'Anyone with the link' (Google Drive: Share, General access), or to "
+        "attach the file.",
     ),
     "too_large": (
         f"File is too large (max {MAX_IMPORT_BYTES} bytes).",
@@ -284,7 +343,8 @@ async def _download_bytes(deps: ToolDeps, url: str, *, max_bytes: int) -> bytes:
             raise DomainError(
                 ErrorCode.INVALID_INPUT,
                 f"The file download failed (HTTP {exc.status_code}).",
-                suggestion="The download URL may have expired. Attach the file again.",
+                suggestion="The link may have expired or is not public. Share it as 'Anyone with the "
+                "link', or attach the file again.",
             ) from None
         message, suggestion = _DOWNLOAD_FAILURES[exc.reason]
         if exc.reason == "too_large":
@@ -349,19 +409,22 @@ def make_import_file_tool(deps: ToolDeps) -> Any:
             if file_ref and file_ref.download_url:
                 data = await _download_bytes(deps, file_ref.download_url, max_bytes=MAX_IMPORT_BYTES)
                 body["content_base64"] = base64.b64encode(data).decode("ascii")
-                body["filename"] = (inp.filename or file_ref.file_name or "attachment.bin")[:200]
+                body["filename"] = smart_import_filename(
+                    inp.filename or file_ref.file_name, file_ref.mime_type
+                )
                 if file_ref.mime_type:
                     body["mime_type"] = file_ref.mime_type
             elif inp.url:
-                body["url"] = inp.url
-                if inp.filename:
-                    body["filename"] = inp.filename
+                # Core applies the same Drive rewrite; normalize here so logs/errors match.
+                body["url"] = normalize_public_download_url(inp.url)
+                body["filename"] = smart_import_filename(inp.filename)
             else:
                 raise DomainError(
                     ErrorCode.INVALID_INPUT,
                     "No delivery file arrived with this call.",
-                    suggestion="Attach the file again (ChatGPT fileParams) or pass url. "
-                    "About 1 in 10 fileParams calls arrive without the parameter.",
+                    suggestion="If the host passes attachments to tools (ChatGPT), attach the file again: "
+                    "about 1 in 10 calls arrive without it. Otherwise pass url (a public https or Google "
+                    "Drive link), or send the file's text to import_delivery_text.",
                 )
 
             deps.rate_limiter.check(identity.subject, "calls")
@@ -421,9 +484,11 @@ def make_update_mapping_tool(deps: ToolDeps) -> Any:
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
             deps.rate_limiter.check(identity.subject, "calls")
-            result = await deps.core.update_import_mapping(
-                identity.call, inp.import_id, {"mapping": inp.mapping}
-            )
+            mapping = {
+                column: value.model_dump(exclude_none=True) if isinstance(value, ColumnMapping) else value
+                for column, value in inp.mapping.items()
+            }
+            result = await deps.core.update_import_mapping(identity.call, inp.import_id, {"mapping": mapping})
             return success_result(import_view(result, inp.import_id, poll=True))
 
         return await instrumented(UPDATE_MAPPING_TOOL, ctx, deps, handle)
@@ -539,24 +604,30 @@ def plan_warnings(plan: CorePlan) -> list[dict[str, Any]]:
 
 
 CHARGED_BECAUSE_NOTES = {
-    "stops_changed": " Its free retry does not apply: stops were added or moved since the charged run "
-    "(excluding those stops can make it free).",
-    "allowance_used": " The plan's free retry was already used.",
-    "window_closed": " The plan's 24 h free-retry window has closed.",
+    "stops_changed": " Another try does not apply: stops were added or moved since the charged run "
+    "(excluding those stops can open another try).",
+    "allowance_used": " The plan's other tries for this window were already used.",
+    "window_closed": " The plan's 24 h window for another try has closed.",
 }
 
 
 def billing_note(state: StoredStops) -> str:
-    """What the preflight adds about the charge: the plan's free retry, or why it does not apply."""
+    """What the preflight adds about the charge: another try, or why stops are charged."""
 
     if state.next_optimize_charged is False:
-        return " This is the plan's free retry: no stops are charged; plan limits still apply."
+        return (
+            " This is another try of the plan (otro intento): no monthly stops are charged; "
+            "plan limits still apply. Tell the user the window end if free_retry_window_ends_at is set."
+        )
     if state.next_optimize_charged is None:
         return ""
-    note = " This run charges its stops."
+    note = " This run charges its stops to the monthly allowance."
     note += CHARGED_BECAUSE_NOTES.get(state.charged_because or "", "")
     if state.free_retries_allowed:
-        note += " Once it completes, rerunning this plan within 24 h with the same stops or fewer is free."
+        note += (
+            " Once it completes, rerunning this plan within 24 h with the same stops or fewer is "
+            "another try (no stops charged)."
+        )
     return note
 
 
@@ -613,6 +684,70 @@ async def dataset_preflight(
     )
 
 
+def depot_region(depot: DatasetDepot) -> dict[str, str]:
+    """The region hint Smart Import searches in. Without an explicit city, "street, city, country" reads
+    its city from the segment before the last one: the last one is usually the country."""
+
+    address = depot.address or ""
+    parts = [part.strip() for part in address.split(",") if part.strip()]
+    city = (depot.city or "").strip()
+    country = (depot.country or "").strip()
+    if not city:
+        if len(parts) >= 3:
+            city, country = parts[-2], country or parts[-1]
+        else:
+            city = parts[-1] if parts else address
+    return {"city": city, **({"country": country} if country else {})}
+
+
+async def resolve_depot_address(
+    deps: ToolDeps, identity: RequestIdentity, inp: OptimizePlanInput
+) -> DepotResolved:
+    """Geocodes the depot through the geocode path. Every route starts there, so a match the geocoder is
+    not sure of is handed back for the user to confirm instead of being optimized (and charged) on."""
+
+    import anyio
+
+    address = inp.depot.address
+    if not address:
+        raise DomainError(
+            ErrorCode.INVALID_INPUT,
+            "Depot needs latitude/longitude or an address.",
+            suggestion="Pass depot coordinates, or an address to geocode.",
+        )
+    geo_body = {"stops": [{"id": "depot", "address": address}], **depot_region(inp.depot)}
+    geo_job = await deps.core.create_geocode(
+        identity.call, geo_body, f"depot-{(inp.plan_id or inp.dataset_id or '')[:24]}"
+    )
+    geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
+    if not geo.is_terminal and deps.settings.optimize_inline_wait_seconds > 0:
+        for _ in range(5):
+            await anyio.sleep(1.5)
+            geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
+            if geo.is_terminal:
+                break
+    pin = geo.stops[0] if geo.stops else None
+    if pin is None or pin.lat is None or pin.lng is None:
+        raise DomainError(
+            ErrorCode.INVALID_INPUT,
+            "Could not geocode the depot address.",
+            suggestion="Pass depot latitude and longitude explicitly.",
+            details={"matched_address": getattr(pin, "matched_address", None)},
+        )
+    resolved = DepotResolved(matched_address=pin.matched_address, latitude=pin.lat, longitude=pin.lng)
+    # No address or coordinates in logs (docs/privacy-mcp.md): the band says how good the match was.
+    log_event("depot_geocoded", logging.INFO, band=pin.band)
+    if pin.band is not None and pin.band != "valid":
+        raise DomainError(
+            ErrorCode.INVALID_INPUT,
+            "The depot address matched with low confidence, so nothing was optimized or charged.",
+            suggestion="Tell the user the matched address. After their yes, call again with depot "
+            "latitude and longitude from depot_resolved; otherwise ask for a more precise address.",
+            details={"depot_resolved": resolved.model_dump()},
+        )
+    return resolved
+
+
 def make_optimize_plan_tool(deps: ToolDeps) -> Any:
     from vepathos_mcp.schemas.mapping import request_fingerprint
     from vepathos_mcp.tools.optimize import submit_optimization
@@ -625,48 +760,10 @@ def make_optimize_plan_tool(deps: ToolDeps) -> Any:
                 )
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
+            depot_resolved: DepotResolved | None = None
             if inp.depot.latitude is None or inp.depot.longitude is None:
-                if not inp.depot.address:
-                    raise DomainError(
-                        ErrorCode.INVALID_INPUT,
-                        "Depot needs latitude/longitude or an address.",
-                        suggestion="Pass depot coordinates, or an address to geocode.",
-                    )
-                # Geocode a single depot address through the existing tool path.
-                address = inp.depot.address
-                geo_body = {
-                    "stops": [{"id": "depot", "address": address}],
-                    "city": address.split(",")[-1].strip() if "," in address else address,
-                }
-                geo_job = await deps.core.create_geocode(
-                    identity.call, geo_body, f"depot-{(inp.plan_id or inp.dataset_id or '')[:24]}"
-                )
-                geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
-                # Brief poll
-                if not geo.is_terminal and deps.settings.optimize_inline_wait_seconds > 0:
-                    import anyio
-
-                    for _ in range(5):
-                        await anyio.sleep(1.5)
-                        geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
-                        if geo.is_terminal:
-                            break
-                pin = geo.stops[0] if geo.stops else None
-                if pin is None or pin.lat is None or pin.lng is None:
-                    raise DomainError(
-                        ErrorCode.INVALID_INPUT,
-                        "Could not geocode the depot address.",
-                        suggestion="Pass depot latitude and longitude explicitly.",
-                        details={"matched_address": getattr(pin, "matched_address", None)},
-                    )
-                depot_lat, depot_lng = pin.lat, pin.lng
-                log_event(
-                    "depot_geocoded",
-                    logging.INFO,
-                    matched_address=getattr(pin, "matched_address", None),
-                    lat=depot_lat,
-                    lng=depot_lng,
-                )
+                depot_resolved = await resolve_depot_address(deps, identity, inp)
+                depot_lat, depot_lng = depot_resolved.latitude, depot_resolved.longitude
             else:
                 depot_lat, depot_lng = inp.depot.latitude, inp.depot.longitude
 
@@ -721,11 +818,9 @@ def make_optimize_plan_tool(deps: ToolDeps) -> Any:
             # The preflight reads the plan's or dataset's counts from Core instead of expanding stops here.
             if deps.settings.confirm_before_optimize and not inp.confirmed:
                 deps.rate_limiter.check(identity.subject, "calls")
-                return success_result(
-                    OptimizeResult(
-                        preflight=await dataset_preflight(deps, identity, inp, depot_lat, depot_lng)
-                    )
-                )
+                preflight = await dataset_preflight(deps, identity, inp, depot_lat, depot_lng)
+                preflight.depot_resolved = depot_resolved
+                return success_result(OptimizeResult(preflight=preflight))
 
             deps.rate_limiter.check(identity.subject, "optimize")
             fingerprinted = dict(body)
@@ -746,6 +841,7 @@ def make_optimize_plan_tool(deps: ToolDeps) -> Any:
                 idempotency_key,
                 vehicles_available=sum(v.count for v in inp.vehicles),
                 schedule_date=inp.date,
+                depot_resolved=depot_resolved,
             )
 
         return await instrumented(OPTIMIZE_PLAN_TOOL, ctx, deps, handle)

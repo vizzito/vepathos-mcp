@@ -89,8 +89,10 @@ optimizer (workers, RabbitMQ, Redis)
 ```
 
 - **Tools:** `geocode_addresses`, `get_geocode_result`, `optimize_delivery_routes`, `get_optimization_result`,
-  `get_account` (which account is connected, and what its plan allows) and `list_fleet` (the
-  account's own vehicles, so a plan uses the real fleet). No cancel tool.
+  `get_account` (which account is connected, and what its plan allows), `list_fleet` (the
+  account's own vehicles, so a plan uses the real fleet), and `list_automations` /
+  `create_automation` (standing rules; created switched off — only the user turns one on).
+  No cancel tool.
 - **MCP channel in Core:** same pattern as the RapidAPI and Shopify channels (shared job engine),
   but identity is a **Vepathos account** and entitlements come from the **account's plan**.
 - **Python** because SDK v2 is Tier 1 and stable on `2026-07-28`, supports stateless Streamable

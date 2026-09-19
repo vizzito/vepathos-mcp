@@ -1,6 +1,6 @@
 # Tools
 
-# Vepathos MCP exposes eight read/plan tools, plus five import tools when
+# Vepathos MCP exposes ten read/plan tools, plus five import tools when
 # `MCP_IMPORT_TOOLS_ENABLED=true` (off by default, so deploying the code publishes nothing new; the
 # server instructions only name the tools a server publishes), plus `create_optimization_map` when
 # `MCP_MAP_SHARES_ENABLED=true`. There is intentionally no cancel tool: a submitted optimization always
@@ -32,8 +32,8 @@ names tools the server publishes.
 
 | Tool | Title | Annotations |
 |---|---|---|
-| `import_delivery_file` | Import delivery file | `readOnlyHint: false` |
-| `import_delivery_text` | Import pasted deliveries | `readOnlyHint: false` |
+| `import_delivery_file` | Import delivery file | `readOnlyHint: false`, `idempotentHint: false` |
+| `import_delivery_text` | Import pasted deliveries | `readOnlyHint: false`, `idempotentHint: false` |
 | `get_import_result` | Get import result | `readOnlyHint: true` |
 | `update_import_mapping` | Update import mapping | `readOnlyHint: false` |
 | `list_datasets` | List datasets | `readOnlyHint: true` |
@@ -45,8 +45,11 @@ names tools the server publishes.
 | `get_optimization_result` | Get optimization result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `list_fleet` | List fleet | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 | `get_account` | Get connected account | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `list_automations` | List automations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `create_automation` | Prepare an automation | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
 
-`optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
+The two import tools are the only ones that say `idempotentHint: false`: every call starts a new import
+(and a new plan), so a client must not retry them on its own. `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
 
@@ -95,12 +98,19 @@ absent), so a new chat can repeat or vary the last run after confirming it. Neve
 
 ## `import_delivery_file` / `import_delivery_text`
 
-Upload a delivery file (ChatGPT `fileParams` or `url`) or a short pasted list. Returns `import_id` and
+Three ways in, so every host has one: `file` for hosts that hand attachments to tools (ChatGPT
+`fileParams`); `url` for the rest (Claude, Gemini, Cursor, a console): a public https link, or a Google
+Drive, Sheets or Docs share link as the user copied it; and `import_delivery_text` for rows the user
+pasted or the text of a CSV or JSON file when the host has neither (a few hundred rows). A link that
+answers with a web page instead of the file is reported as not shared publicly, and the download has a
+90 s total deadline. Returns `import_id` and
 `plan_id` (null until the stops load). Optional `plan_id` loads the stops into that plan, replacing its
 stops and keeping its depot, fleet and settings (`PLAN_NOT_FOUND` if it does not exist); without it a
 new plan is named after the file. Poll `get_import_result` for `plan_id`, `account_url`, `dataset_id`,
 `summary` (never all rows), `needs_confirmation`, the free-retry fields and `plan_replaced` /
-`plan_temporary`. `update_import_mapping` corrects columns without re-upload. `list_datasets` lists
+`plan_temporary`. `update_import_mapping` corrects columns without re-upload: `{column: field}`, `null` to ignore a
+column, or `{field, unit, format}` when the column is in another unit (lb, in, l) or date/number format;
+Smart Import converts it, and a unit or format it does not accept answers `INVALID_INPUT`. `list_datasets` lists
 imports with their `plan_id`, `plan_replaced` / `plan_temporary` (only when true) and `last_run`. A
 `dataset_id` expires after 24 h; its plan stays. `import_delivery_file` also returns `account_url` once
 the plan is known.
@@ -109,10 +119,15 @@ the plan is known.
 
 Published on every server. Runs stored stops: exactly one of `plan_id` (the plan's stops) or
 `dataset_id` (an import's copy, run in the plan it loaded; named in the description only when the
-import tools are published). Takes the same run parameters as before (`depot` with coordinates or an address,
+import tools are published). Takes the same run parameters as before (`depot` with coordinates, or an address with optional `city` / `country`,
 `vehicles[]`, `exclude_stop_ids`, `use_weight` / `use_volume` / `use_time_windows`, `route_start_time`,
 `time_zone`, `service_time_minutes`, `max_route_minutes`, `date`, `confirmed`, `idempotency_key`) plus
-`depot_name`. The run's depot, fleet and schedule are written to the plan. `exclude_stop_ids` applies to
+`depot_name`. A depot given as an address is geocoded and comes back as `depot_resolved`
+(`matched_address`, `latitude`, `longitude`) in the preflight and in the run, for the agent to tell the
+user. A match that is not in the `valid` band is refused with `INVALID_INPUT` and `depot_resolved` in its
+details, before anything is optimized or charged: after the user's yes the agent calls again with those
+coordinates. Logs record only the match band, never the address or coordinates. The run's depot, fleet
+and schedule are written to the plan. `exclude_stop_ids` applies to
 that run only: the plan keeps every stop (the launch freezes the stops that ran). Output is the same as
 `optimize_delivery_routes`, with `plan_id`, `plan_name`, `account_url` and the billing fields above.
 
@@ -165,6 +180,32 @@ or quota rejection. Plan and quota errors therefore also carry `details.connecte
 same label, cached briefly per caller.
 
 Requires `GET /api/mcp/v1/account` in Core; until Core serves it, the tool returns a not-found error.
+
+## `list_automations` / `create_automation`
+
+An automation is a standing rule: it looks at the orders waiting, and when there are enough it works
+out the routes — every weekday at 08:00, or as soon as a shop has thirty orders. `list_automations`
+reads the account's rules (when each one looks, what it takes, whether it is on, what it last
+decided) and the stores it could be fed from; `create_automation` prepares one.
+
+**Nothing here switches a rule on.** `create_automation` always writes it with `enabled: false`, and
+answers with `account_url`: only its owner turns it on, in the dashboard, because a rule that is on
+spends their stops unattended, on a schedule nobody is watching. An agent that reports a rule as
+running is wrong, and the tool's own description says so, because some hosts never show the server
+instructions.
+
+The rule keeps **a plan of its own**, copied from `template_plan_id`: the person is never asked to
+pick a container for their deliveries, and editing or deleting the plan they copied does not change
+the rule. That plan's id is deliberately absent from the answer — an id in an agent's hands is an id
+it could pass to `optimize_plan`, spending the rule's stops by hand and moving the revision its next
+batch checks against.
+
+`operation_id` is the caller's own id for the attempt: the same one twice returns the rule already
+written, never a second one. `missing` says what a run would still lack (today: `depot`, when the
+copied plan's depot is not one from the account's catalog, which a run refuses).
+
+Requires `GET`/`POST /api/mcp/v1/automations` in Core; until Core serves them, both tools return a
+not-found error and the user is pointed at the dashboard.
 
 ## `geocode_addresses`
 

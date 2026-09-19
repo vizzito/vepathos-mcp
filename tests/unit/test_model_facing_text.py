@@ -24,10 +24,16 @@ from vepathos_mcp.tools import descriptions as d
 from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 
 # Roughly 2,800 tokens; every conversation pays it. Raised with import/dataset tools (0.4.0), then for the
-# dispatcher instructions (0.6.1): ChatGPT/Codex treat the first 512 characters as self-contained;
-# Claude still reads the inspect → propose → yes → run → summarize loop below.
-MAX_TOTAL_CHARS = 12_200
-MAX_INSTRUCTION_CHARS = 4_700
+# dispatcher instructions (0.6.1); another-try wording (no "free"/gratis) adds a small margin. 0.6.3 spends
+# about 450 more on the import flow for hosts without attachment parameters (url, or the file's text) and
+# on naming the next tool in each description, because some hosts never show the instructions.
+# 0.7.0 adds the two automation tools (~1,360 chars) and the instructions line that names them
+# (~340): reading the account's standing rules, and preparing one switched off. The descriptions
+# carry the rule that only the user turns one on, because some hosts never show the instructions.
+MAX_TOTAL_CHARS = 14_750
+# 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
+# descriptions, because an agent that never lists those tools still must not claim a rule is running.
+MAX_INSTRUCTION_CHARS = 5_050
 OPENAI_INSTRUCTION_WINDOW = 512
 
 TOOL_NAMES = (
@@ -38,6 +44,8 @@ TOOL_NAMES = (
     "get_optimization_result",
     "list_plans",
     "optimize_plan",
+    "list_automations",
+    "create_automation",
 )
 IMPORT_TOOL_NAMES = ("import_delivery_file", "get_import_result")
 
@@ -136,7 +144,8 @@ def test_plan_description_states_the_one_free_retry_rule(imports: bool) -> None:
     # One rule for dashboard and MCP (api-doc billing/free-retry-policy.ts).
     for gate in (True, False):
         text = d.optimize_plan_description(confirm_before_optimize=gate, import_tools=imports).lower()
-        assert "free retry" in text and "24 h" in text and "same stops or fewer" in text
+        assert "another try" in text and "24 h" in text and "same stops or fewer" in text
+        assert "free retry" not in text
         assert "next_optimize_charged" in text and "plan limits still apply" in text
         assert "plan_replaced" in text and "plan_temporary" in text
         assert "exclude_stop_ids for this run only" in text
@@ -147,7 +156,8 @@ def test_plan_description_states_the_one_free_retry_rule(imports: bool) -> None:
 def test_instructions_explain_plans_and_the_free_retry_on_every_server(gate: bool, imports: bool) -> None:
     text = d.server_instructions(confirm_before_optimize=gate, import_tools=imports)
     assert "saved as a plan" in text and "list_plans" in text and "account_url" in text
-    assert "free within 24 h" in text and "same stops or fewer" in text
+    assert "another try" in text and "24 h" in text and "same stops or fewer" in text
+    assert "never call a run free" in text.lower() or "never call it free" in text.lower()
     assert "optimize_plan" in text
 
 

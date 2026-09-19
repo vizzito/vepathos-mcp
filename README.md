@@ -18,6 +18,11 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `optimize_plan` | Rerun or vary a saved plan by `plan_id`; within 24 h of its charged run the same stops or fewer run free. |
 | `get_account` | Read which Vepathos account is connected, its plan limits and period usage. |
 | `list_fleet` | Read the account's own vehicles and fleets, ready to pass to an optimization. |
+| `list_automations` | Read the account's standing rules and the stores they can take orders from. |
+| `create_automation` | Prepare a rule that routes on a schedule, switched off for its owner to turn on. |
+
+No tool switches an automation on: `create_automation` always writes it switched off, and only its
+owner turns it on in the dashboard, because a rule that is on spends their stops unattended.
 
 There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
 through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.

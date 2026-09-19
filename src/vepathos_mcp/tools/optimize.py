@@ -26,6 +26,7 @@ from vepathos_mcp.schemas.mapping import (
     to_core_request,
 )
 from vepathos_mcp.schemas.outputs import (
+    DepotResolved,
     FullTrialApplied,
     OptimizeResult,
     Preflight,
@@ -171,6 +172,7 @@ async def submit_optimization(
     *,
     vehicles_available: int | None,
     schedule_date: str | None,
+    depot_resolved: DepotResolved | None = None,
 ) -> CallToolResult:
     """Create the job, then wait inline for a fast one. Shared by every optimize tool."""
 
@@ -178,6 +180,7 @@ async def submit_optimization(
     if not created.idempotent_replay:
         metrics.OPTIMIZATION_STOPS.observe(created.submitted_stops)
     output = created_output(created, vehicles_available=vehicles_available, schedule_date=schedule_date)
+    output.depot_resolved = depot_resolved
 
     if deps.settings.optimize_inline_wait_seconds <= 0 and created.status != "completed":
         output.poll_after_seconds = POLL_AFTER_SECONDS

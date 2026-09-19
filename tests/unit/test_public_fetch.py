@@ -161,3 +161,25 @@ async def test_network_errors_are_reported_as_network() -> None:
             transport=httpx.MockTransport(fail),
         )
     assert exc.value.reason == "network"
+
+
+async def test_a_download_that_trickles_bytes_ends_at_the_total_deadline() -> None:
+    import asyncio
+
+    class Trickle(httpx.AsyncByteStream):
+        async def __aiter__(self):  # type: ignore[no-untyped-def]
+            while True:
+                await asyncio.sleep(0.02)  # never idle long enough for the per-read timeout
+                yield b"x"
+
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, stream=Trickle()))
+    with pytest.raises(PublicFetchError) as exc:
+        await fetch_public_https(
+            "https://files.example.com/a.csv",
+            max_bytes=1024 * 1024,
+            timeout_seconds=5,
+            total_timeout_seconds=0.2,
+            resolver=resolver_for(PUBLIC_V4),
+            transport=transport,
+        )
+    assert exc.value.reason == "network"
