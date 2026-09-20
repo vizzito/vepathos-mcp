@@ -66,7 +66,8 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
 
     optimize = tools["optimize_delivery_routes"]
     assert optimize.annotations is not None
-    assert optimize.annotations.read_only_hint is False and optimize.annotations.destructive_hint is False
+    # A run can replace the oldest plan in a full library (plan_replaced), so it is not called harmless.
+    assert optimize.annotations.read_only_hint is False and optimize.annotations.destructive_hint is True
     assert optimize.annotations.idempotent_hint is True and optimize.annotations.title
     assert optimize.input_schema["additionalProperties"] is False
     assert "$defs" not in str(optimize.input_schema)
@@ -762,3 +763,15 @@ async def test_depots_are_read_on_every_server_but_written_only_behind_the_flag(
         _, fleet = await call(client, "list_fleet", {})
     assert not names & {"manage_vehicle", "manage_depot"}
     assert fleet["depots"][0]["name"] == "Barracas"
+
+
+async def test_tools_that_overwrite_something_saved_say_so(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    for name in ("optimize_delivery_routes", "optimize_plan", "manage_vehicle", "manage_depot"):
+        annotations = tools[name].annotations
+        assert annotations is not None
+        assert annotations.destructive_hint is True and annotations.read_only_hint is False, name
+    for name in ("list_fleet", "get_account", "create_automation", "geocode_addresses"):
+        annotations = tools[name].annotations
+        assert annotations is not None and annotations.destructive_hint is False, name

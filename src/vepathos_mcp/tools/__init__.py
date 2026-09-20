@@ -135,6 +135,8 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             description=descriptions.optimize_description(confirm_before_optimize=confirm),
             schema_model=OptimizeInput,
             read_only=False,
+            # A run in a full plan library replaces the oldest plan (plan_replaced).
+            destructive=True,
             confirm_before_optimize=confirm,
         ),
         _tool(
@@ -164,6 +166,8 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             ),
             schema_model=OptimizePlanInput,
             read_only=False,
+            # A run in a full plan library replaces the oldest plan (plan_replaced).
+            destructive=True,
             confirm_before_optimize=confirm,
         ),
     ]
