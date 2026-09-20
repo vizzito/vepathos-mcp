@@ -17,7 +17,7 @@ from vepathos_mcp import __version__
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
 
-# Frozen on 0.7.0 (automations: read the account's standing rules, and prepare one switched off).
+# Frozen on 0.8.0 (catalog master data: manage_vehicle and manage_depot, behind their flag).
 # Update deliberately with the version.
 EXPECTED_TOOL_NAMES = (
     "optimize_delivery_routes",
@@ -33,13 +33,18 @@ EXPECTED_TOOL_NAMES = (
     "get_geocode_result",
     "get_account",
     "list_fleet",
+    "manage_vehicle",
+    "manage_depot",
     "list_automations",
     "create_automation",
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-# Changed on 0.7.0: the two automation tools.
-EXPECTED_DESC_HASH_GATE_OFF = "48cbd4b74fa1336945247d7c1a3519f347ede60e9f61399580d04a38ab1a275b"
+# Changed on 0.8.0: catalog master data (manage_vehicle, manage_depot, depots in list_fleet).
+EXPECTED_DESC_HASH_GATE_OFF = "30996195a00a4288f752b79538f3c064f22520cc67e09c4c0e9467bf73fe1b31"
+
+
+CATALOG_WRITE_TOOLS = {"manage_vehicle", "manage_depot"}
 
 
 def _desc_hash(tools: list[Any]) -> str:
@@ -62,7 +67,12 @@ async def _list_tools(core_client_factory, clock: FakeClock, **overrides: str) -
 @pytest.fixture
 async def listed_tools(core_client_factory, clock: FakeClock):
     # The surface as ChatGPT staging will see it: import tools on.
-    tools, _ = await _list_tools(core_client_factory, clock, MCP_IMPORT_TOOLS_ENABLED="true")
+    tools, _ = await _list_tools(
+        core_client_factory,
+        clock,
+        MCP_IMPORT_TOOLS_ENABLED="true",
+        MCP_CATALOG_WRITE_TOOLS_ENABLED="true",
+    )
     return tools
 
 
@@ -77,10 +87,22 @@ async def test_import_tools_stay_hidden_until_enabled(core_client_factory, clock
         "list_datasets",
     }
     assert not names & hidden
-    assert names == set(EXPECTED_TOOL_NAMES) - hidden
+    assert names == set(EXPECTED_TOOL_NAMES) - hidden - CATALOG_WRITE_TOOLS
     for name in hidden:
         assert name not in instructions
         assert all(name not in (t.description or "") for t in tools)
+
+
+async def test_catalog_write_tools_stay_hidden_until_enabled(core_client_factory, clock: FakeClock) -> None:
+    # Same rule as the import tools: deploying the code publishes nothing, and no text names them.
+    tools, instructions = await _list_tools(core_client_factory, clock, MCP_IMPORT_TOOLS_ENABLED="true")
+    assert not {t.name for t in tools} & CATALOG_WRITE_TOOLS
+    for name in CATALOG_WRITE_TOOLS:
+        assert name not in instructions
+        assert all(name not in (t.description or "") for t in tools)
+
+    _, enabled = await _list_tools(core_client_factory, clock, MCP_CATALOG_WRITE_TOOLS_ENABLED="true")
+    assert "manage_vehicle" in enabled and "master data" in enabled
 
 
 async def test_plans_are_published_without_the_import_tools(core_client_factory, clock: FakeClock) -> None:

@@ -1,4 +1,4 @@
-"""list_fleet — the account's own vehicles, ready to pass to optimize_delivery_routes.
+"""list_fleet — the account's own vehicles and depots, ready to pass to optimize_delivery_routes.
 
 Without it an assistant invents a fleet, and the plan it produces is geometric only: it cannot
 respect what a vehicle actually carries, and the route ids mean nothing to whoever drives them.
@@ -17,7 +17,7 @@ from mcp_types import CallToolResult
 
 from vepathos_mcp.clients.core_models import CoreCatalog, CoreCatalogVehicle
 from vepathos_mcp.schemas.inputs import VEHICLE_ID_PATTERN, parse_list_fleet_input
-from vepathos_mcp.schemas.outputs import Fleet, FleetCatalog, FleetVehicle
+from vepathos_mcp.schemas.outputs import Fleet, FleetCatalog, FleetVehicle, SavedDepot
 from vepathos_mcp.tools.rendering import success_result
 from vepathos_mcp.tools.runtime import RequestIdentity, ToolDeps, instrumented
 
@@ -73,6 +73,7 @@ def to_catalog(catalog: CoreCatalog) -> FleetCatalog:
     return FleetCatalog(
         fleets=fleets,
         vehicles=vehicles or None,
+        depots=[SavedDepot(**row.model_dump()) for row in catalog.depots] or None,
         empty=True if not fleets and not vehicles else None,
     )
 

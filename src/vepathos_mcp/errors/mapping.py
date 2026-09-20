@@ -103,6 +103,16 @@ def _plan_upgrade(message: str, details: dict[str, Any]) -> DomainError:
         suggestion = "Reduce the number of vehicles or upgrade the Vepathos plan."
     elif reason == "ROUTE_STOP_LIMIT_EXCEEDED":
         suggestion = "Lower max_stops per vehicle or upgrade the Vepathos plan."
+    elif reason == "CATALOG_VEHICLE_LIMIT":
+        suggestion = (
+            "The plan's saved-vehicle limit is reached. Plan with this vehicle in vehicles[] without "
+            "saving it, remove one in the dashboard, or upgrade the Vepathos plan."
+        )
+    elif reason == "CATALOG_DEPOT_LIMIT":
+        suggestion = (
+            "The plan's saved-depot limit is reached. Pass the depot coordinates to the optimize call "
+            "without saving it, remove one in the dashboard, or upgrade the Vepathos plan."
+        )
     else:
         suggestion = "Adjust the request or upgrade the Vepathos plan."
 
@@ -285,6 +295,30 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 "No import with this dataset_id exists for the connected Vepathos account, or it expired.",
                 suggestion="Imports are kept 24 hours. Optimize the plan it loaded into by plan_id "
                 "(list_plans), or import the file again.",
+            )
+        case "NAME_TAKEN":
+            existing = _as_dict(details.get("existing"))
+            return DomainError(
+                ErrorCode.NAME_TAKEN,
+                _clip(message or "The account already has one with this name."),
+                suggestion="Tell the user it exists and how it differs, then ask: update that one "
+                "(action=update with its id) or save this one under another name.",
+                details={"existing": existing} if existing else None,
+                retryable=False,
+            )
+        case "VEHICLE_NOT_FOUND":
+            return DomainError(
+                ErrorCode.VEHICLE_NOT_FOUND,
+                "No saved vehicle with this vehicle_id exists in the connected Vepathos account.",
+                suggestion="Call list_fleet and use a vehicle_id from its top-level vehicles.",
+                retryable=False,
+            )
+        case "DEPOT_NOT_FOUND":
+            return DomainError(
+                ErrorCode.DEPOT_NOT_FOUND,
+                "No saved depot with this depot_id exists in the connected Vepathos account.",
+                suggestion="Call list_fleet and use a depot_id from its depots.",
+                retryable=False,
             )
         case "PLAN_NOT_FOUND":
             return DomainError(

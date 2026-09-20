@@ -178,3 +178,39 @@ def test_quota_rejection_keeps_why_the_free_retry_did_not_apply() -> None:
     )
     assert err.details["free_retry"] == free_retry
     assert err.suggestion is not None and "same stops or fewer" in err.suggestion
+
+
+def test_a_taken_name_hands_back_the_one_that_has_it() -> None:
+    existing = {"vehicle_id": "7", "name": "Sprinter", "max_weight_kg": 1200}
+    err = from_core_error(409, envelope("NAME_TAKEN", "Taken.", existing=existing, matches=1))
+    assert err.code is ErrorCode.NAME_TAKEN and err.retryable is False
+    assert err.details == {"existing": existing}
+    assert err.suggestion is not None and "action=update" in err.suggestion
+    assert from_core_error(409, envelope("NAME_TAKEN")).details == {}
+
+
+def test_an_unknown_saved_vehicle_or_depot_points_back_to_list_fleet() -> None:
+    for code, expected in (
+        ("VEHICLE_NOT_FOUND", ErrorCode.VEHICLE_NOT_FOUND),
+        ("DEPOT_NOT_FOUND", ErrorCode.DEPOT_NOT_FOUND),
+    ):
+        err = from_core_error(404, envelope(code))
+        assert err.code is expected and err.retryable is False
+        assert err.suggestion is not None and "list_fleet" in err.suggestion
+
+
+def test_a_catalog_cap_says_the_plan_can_still_run_without_saving() -> None:
+    err = from_core_error(
+        403,
+        envelope(
+            "PLAN_UPGRADE_REQUIRED",
+            "Your plan allows up to 3 vehicles.",
+            reason="CATALOG_VEHICLE_LIMIT",
+            upgrade_url="https://api.vepathos.com/dashboard/billing?source=mcp",
+        ),
+    )
+    assert err.code is ErrorCode.PLAN_UPGRADE_REQUIRED
+    assert err.suggestion is not None and "without saving it" in err.suggestion
+    assert err.details["reason"] == "CATALOG_VEHICLE_LIMIT" and err.details["upgrade_url"]
+    depot = from_core_error(403, envelope("PLAN_UPGRADE_REQUIRED", "cap", reason="CATALOG_DEPOT_LIMIT"))
+    assert depot.suggestion is not None and "saved-depot" in depot.suggestion

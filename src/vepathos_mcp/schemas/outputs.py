@@ -473,12 +473,24 @@ class Fleet(OutputModel):
     vehicles: list[FleetVehicle] = Field(default_factory=list)
 
 
+class SavedDepot(OutputModel):
+    """A depot saved in the account, shaped to drop straight into an optimization's depot."""
+
+    depot_id: str = Field(description="Pass as depot_id to manage_depot when the user wants it changed.")
+    name: str | None = Field(None, description="Label the account gave it, for talking to the user.")
+    latitude: float = Field(description="Pass as depot to optimize_delivery_routes or optimize_plan.")
+    longitude: float = Field(description="Pass as depot to optimize_delivery_routes or optimize_plan.")
+
+
 class FleetCatalog(OutputModel):
     """Output of list_fleet: the account's own fleets and vehicles."""
 
     fleets: list[Fleet] | None = None
     vehicles: list[FleetVehicle] | None = Field(
         None, description="Vehicles in the account, including any that belong to no fleet."
+    )
+    depots: list[SavedDepot] | None = Field(
+        None, description="Depots saved in the account: where routes can start."
     )
     empty: bool | None = Field(
         None,

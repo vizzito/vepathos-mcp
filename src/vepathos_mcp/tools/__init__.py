@@ -27,6 +27,14 @@ from vepathos_mcp.tools.automations import (
     make_create_automation_tool,
     make_list_automations_tool,
 )
+from vepathos_mcp.tools.catalog_admin import (
+    MANAGE_DEPOT_TOOL,
+    MANAGE_VEHICLE_TOOL,
+    ManageDepotInput,
+    ManageVehicleInput,
+    make_manage_depot_tool,
+    make_manage_vehicle_tool,
+)
 from vepathos_mcp.tools.fleet import TOOL_NAME as LIST_FLEET_TOOL
 from vepathos_mcp.tools.fleet import make_list_fleet_tool
 from vepathos_mcp.tools.geocode import (
@@ -85,6 +93,7 @@ def _tool(
     read_only: bool,
     confirm_before_optimize: bool | None = None,
     idempotent: bool = True,
+    destructive: bool = False,
 ) -> Tool:
     tool = Tool.from_function(
         fn,
@@ -94,7 +103,7 @@ def _tool(
         annotations=ToolAnnotations(
             title=title,
             read_only_hint=read_only,
-            destructive_hint=False,
+            destructive_hint=destructive,
             idempotent_hint=idempotent,
             open_world_hint=False,
         ),
@@ -193,6 +202,31 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=ListFleetInput,
             read_only=True,
         ),
+    ]
+    if deps.settings.catalog_write_tools_enabled:
+        # Master data, behind its own flag: deploying the code publishes nothing new.
+        tools += [
+            _tool(
+                make_manage_vehicle_tool(deps),
+                name=MANAGE_VEHICLE_TOOL,
+                title=descriptions.MANAGE_VEHICLE_TITLE,
+                description=descriptions.MANAGE_VEHICLE_DESCRIPTION,
+                schema_model=ManageVehicleInput,
+                read_only=False,
+                # An update overwrites what the account had saved.
+                destructive=True,
+            ),
+            _tool(
+                make_manage_depot_tool(deps),
+                name=MANAGE_DEPOT_TOOL,
+                title=descriptions.MANAGE_DEPOT_TITLE,
+                description=descriptions.MANAGE_DEPOT_DESCRIPTION,
+                schema_model=ManageDepotInput,
+                read_only=False,
+                destructive=True,
+            ),
+        ]
+    tools += [
         _tool(
             make_list_automations_tool(deps),
             name=LIST_AUTOMATIONS_TOOL,

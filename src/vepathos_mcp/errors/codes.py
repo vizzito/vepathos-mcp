@@ -34,6 +34,10 @@ class ErrorCode(StrEnum):
     DATASET_NOT_FOUND = "DATASET_NOT_FOUND"
     PLAN_NOT_FOUND = "PLAN_NOT_FOUND"
     PLAN_BUSY = "PLAN_BUSY"
+    # Catalog master data: a saved name that already exists, or an id the account does not have.
+    NAME_TAKEN = "NAME_TAKEN"
+    VEHICLE_NOT_FOUND = "VEHICLE_NOT_FOUND"
+    DEPOT_NOT_FOUND = "DEPOT_NOT_FOUND"
     BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
     TIMEOUT = "TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"

@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     # Import tools (import_delivery_file … list_datasets). Off until the ChatGPT staging smoke
     # passes: deploying the code must not publish new tools. The instructions follow it.
     import_tools_enabled: bool = Field(False, validation_alias=_env("MCP_IMPORT_TOOLS_ENABLED"))
+    # Catalog write tools (manage_vehicle, manage_depot). Off until the staging smoke passes
+    # (docs/smoke-prompts.md T19): deploying the code must not publish new tools. The instructions follow it.
+    catalog_write_tools_enabled: bool = Field(False, validation_alias=_env("MCP_CATALOG_WRITE_TOOLS_ENABLED"))
     # Optimizing spends the account's stops, so it is confirmed by default. Turning this off makes
     # `confirmed` moot and lets an unattended integration optimize in one call; the published
     # description, instructions and schema follow it (tools/descriptions.py).
@@ -99,6 +102,10 @@ class Settings(BaseSettings):
     )
     rate_limit_calls_per_minute: int = Field(
         120, ge=1, validation_alias=_env("MCP_RATE_LIMIT_CALLS_PER_MINUTE")
+    )
+    # Saving master data is rare by nature; a loop that writes vehicles is a confused model.
+    rate_limit_catalog_writes_per_minute: int = Field(
+        20, ge=1, validation_alias=_env("MCP_RATE_LIMIT_CATALOG_WRITES_PER_MINUTE")
     )
 
     @field_validator("mcp_path")

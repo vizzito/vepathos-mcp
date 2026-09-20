@@ -30,10 +30,14 @@ from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 # 0.7.0 adds the two automation tools (~1,360 chars) and the instructions line that names them
 # (~340): reading the account's standing rules, and preparing one switched off. The descriptions
 # carry the rule that only the user turns one on, because some hosts never show the instructions.
-MAX_TOTAL_CHARS = 14_750
+# 0.8.0 adds the two catalog tools (~2,000 chars), depots in list_fleet and the master-data line (~300):
+# master data and plan settings are told apart in both descriptions, because the instructions may be cut.
+MAX_TOTAL_CHARS = 17_250
 # 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
 # descriptions, because an agent that never lists those tools still must not claim a rule is running.
-MAX_INSTRUCTION_CHARS = 5_050
+MAX_INSTRUCTION_CHARS = 5_350
+# Claude Code cuts server instructions and tool descriptions at this length.
+CLAUDE_CODE_TEXT_LIMIT = 2_048
 OPENAI_INSTRUCTION_WINDOW = 512
 
 TOOL_NAMES = (
@@ -58,7 +62,7 @@ EACH_IMPORT_SETTING = pytest.mark.parametrize("imports", [True, False], ids=["im
 def all_text(gate: bool) -> dict[str, str]:
     """Everything one server sends: the fixed texts, plus the ones built for its gate setting.
 
-    Import tools and map shares on: the longest texts a server can send."""
+    Import tools, map shares and catalog writes on: the longest texts a server can send."""
 
     fixed = {
         name: value
@@ -68,7 +72,7 @@ def all_text(gate: bool) -> dict[str, str]:
     return {
         **fixed,
         "server_instructions": d.server_instructions(
-            confirm_before_optimize=gate, import_tools=True, map_shares=True
+            confirm_before_optimize=gate, import_tools=True, map_shares=True, catalog_writes=True
         ),
         "optimize_description": d.optimize_description(confirm_before_optimize=gate),
         "optimize_plan_description": d.optimize_plan_description(
@@ -83,10 +87,14 @@ def test_model_facing_text_stays_within_budget(gate: bool) -> None:
     assert total <= MAX_TOTAL_CHARS, f"{total} characters of tool text sent every conversation"
     for imports in (True, False):
         for maps in (True, False):
-            instructions = d.server_instructions(
-                confirm_before_optimize=gate, import_tools=imports, map_shares=maps
-            )
-            assert len(instructions) <= MAX_INSTRUCTION_CHARS
+            for catalog in (True, False):
+                instructions = d.server_instructions(
+                    confirm_before_optimize=gate,
+                    import_tools=imports,
+                    map_shares=maps,
+                    catalog_writes=catalog,
+                )
+                assert len(instructions) <= MAX_INSTRUCTION_CHARS
 
 
 @EACH_GATE_SETTING
@@ -282,3 +290,54 @@ def test_dataset_texts_offer_the_last_run() -> None:
     assert "request" in d.GET_RESULT_DESCRIPTION
     assert "last_agent_run" in d.LIST_PLANS_DESCRIPTION
     assert "optimize_plan" in d.LIST_PLANS_DESCRIPTION
+
+
+def test_master_data_is_told_apart_from_plan_settings_wherever_it_can_be_read() -> None:
+    # "Use 25 vehicles" must never become 25 saved vehicles. The rule lives in both descriptions and in
+    # the instructions, because a host may show only one of them.
+    instructions = d.server_instructions(
+        confirm_before_optimize=False, import_tools=False, catalog_writes=True
+    )
+    for text in (d.MANAGE_VEHICLE_DESCRIPTION, d.MANAGE_DEPOT_DESCRIPTION, instructions):
+        assert "master data" in text and "plan setting" in text
+        assert "save nothing" in text
+    assert "never 25 new vehicles" in d.MANAGE_VEHICLE_DESCRIPTION
+    assert "One vehicle per call" in d.MANAGE_VEHICLE_DESCRIPTION
+    assert "geocode_addresses" in d.MANAGE_DEPOT_DESCRIPTION
+    for text in (d.MANAGE_VEHICLE_DESCRIPTION, d.MANAGE_DEPOT_DESCRIPTION):
+        assert "get a yes first" in text and "Does not consume plan stops" in text
+
+
+@EACH_GATE_SETTING
+def test_the_master_data_line_follows_its_flag(gate: bool) -> None:
+    for catalog in (True, False):
+        text = d.server_instructions(confirm_before_optimize=gate, import_tools=True, catalog_writes=catalog)
+        assert ("manage_vehicle" in text) is catalog
+        assert ("manage_depot" in text) is catalog
+    # list_fleet is published on every server, so it never names a tool that may be missing.
+    assert "manage_" not in d.LIST_FLEET_DESCRIPTION
+    assert "depots" in d.LIST_FLEET_DESCRIPTION
+
+
+def test_the_new_texts_do_not_speak_of_drivers() -> None:
+    # Drivers are not part of this surface (0.8.0): neither as a tool nor as a word in what is new.
+    for text in (
+        d.MANAGE_VEHICLE_DESCRIPTION,
+        d.MANAGE_DEPOT_DESCRIPTION,
+        d.LIST_FLEET_DESCRIPTION,
+        d._CATALOG,
+    ):
+        assert "driver" not in text.lower()
+
+
+@EACH_GATE_SETTING
+def test_every_tool_description_survives_the_shortest_host_limit(gate: bool) -> None:
+    for name, text in all_text(gate).items():
+        if name != "server_instructions":
+            assert len(text) <= CLAUDE_CODE_TEXT_LIMIT, f"{name}: {len(text)} characters"
+
+
+@EACH_GATE_SETTING
+def test_optimize_says_first_which_of_the_two_runs_to_call(gate: bool) -> None:
+    # The instructions may be cut before they tell the two apart, so the description opens with it.
+    assert "optimize_plan" in d.optimize_description(confirm_before_optimize=gate)[:260]

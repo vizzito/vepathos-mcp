@@ -108,6 +108,13 @@ _AUTOMATIONS = (
     "one from a saved plan it copies). Always created switched off: only the user turns one on, in the "
     "dashboard. Never say one is running.\n"
 )
+# Only on a server that publishes manage_vehicle / manage_depot (MCP_CATALOG_WRITE_TOOLS_ENABLED).
+_CATALOG = (
+    "Saved vehicles and depots are the account's master data (manage_vehicle, manage_depot): change them "
+    "only when the user asks to add, save or edit one. How many vehicles a plan uses, stops per vehicle, "
+    "a capacity or a depot for one run are plan settings: pass them to the optimize call and save "
+    "nothing.\n"
+)
 _INSTRUCTIONS_TAIL = (
     "Ask the user only what the tools cannot answer: the depot when unknown; which fleet when the "
     "account fleet does not match; whether weights/volumes are real when capacity matters. Ask one "
@@ -123,19 +130,25 @@ _INSTRUCTIONS_TAIL = (
 
 
 def server_instructions(
-    *, confirm_before_optimize: bool, import_tools: bool, map_shares: bool = False
+    *,
+    confirm_before_optimize: bool,
+    import_tools: bool,
+    map_shares: bool = False,
+    catalog_writes: bool = False,
 ) -> str:
     files = (_STEP_IMPORT if import_tools else "") + _STEP_UPLOAD
     run = _RUN + (_RUN_GATED if confirm_before_optimize else _RUN_DIRECT)
     report = _REPORT + (_NEXT_WITH_MAP if map_shares else _NEXT)
     steps = [files, *_STEPS, run, report]
     numbered = "".join(f"{number}. {step}\n" for number, step in enumerate(steps, start=1))
-    return _LEAD + _ROLE + _ACCOUNT + _DATA + numbered + _PLANS + _AUTOMATIONS + _INSTRUCTIONS_TAIL
+    catalog = _CATALOG if catalog_writes else ""
+    return _LEAD + _ROLE + _ACCOUNT + _DATA + numbered + _PLANS + _AUTOMATIONS + catalog + _INSTRUCTIONS_TAIL
 
 
 OPTIMIZE_TITLE = "Optimize delivery routes"
 _OPTIMIZE_INTRO = (
-    "Plan optimized delivery routes for a fleet (vehicle routing problem, VRP). Assigns each stop to a vehicle "
+    "Plan optimized delivery routes for stops given in this conversation (vehicle routing problem, VRP); "
+    "stops already saved in Vepathos run through optimize_plan instead. Assigns each stop to a vehicle "
     "and sequences every route from one depot, minimizing total distance while respecting the constraints you "
     "provide: maximum stops per vehicle, weight capacity (kg), volume capacity (m3) and delivery time windows. "
     "Built for large problems, from dozens to thousands of stops. Every stop needs latitude and longitude; "
@@ -174,12 +187,41 @@ def optimize_description(*, confirm_before_optimize: bool) -> str:
 
 LIST_FLEET_TITLE = "List fleet"
 LIST_FLEET_DESCRIPTION = (
-    "List the vehicles and fleets the connected Vepathos account already has: capacity in kilograms "
-    "and cubic meters, units per vehicle, and the ids to pass as vehicles[] to "
-    "optimize_delivery_routes or optimize_plan. Takes no arguments; read-only and it does not consume plan stops. "
-    "empty=true means the account has no fleet loaded, so ask the user to describe the vehicles or "
-    "let them add the fleet in the Vepathos dashboard. A vehicle with no capacity means the account "
-    "never set one, not that it carries nothing."
+    "List what the connected Vepathos account has saved: vehicles and fleets (capacity in kilograms and "
+    "cubic meters, units per vehicle, and the ids to pass as vehicles[] to optimize_delivery_routes or "
+    "optimize_plan) and depots (name and coordinates to pass as depot). Takes no arguments; read-only and "
+    "it does not consume plan stops. empty=true means the account has no vehicles saved, so ask the user "
+    "to describe them or let them add the fleet in the Vepathos dashboard. A vehicle with no capacity "
+    "means the account never set one, not that it carries nothing."
+)
+
+MANAGE_VEHICLE_TITLE = "Manage saved vehicles"
+MANAGE_VEHICLE_DESCRIPTION = (
+    "Add or change a vehicle saved in the user's Vepathos account: master data that stays after this "
+    "conversation and shows in their dashboard. Call it only when the user asks to add, save or edit a "
+    "vehicle ('add a 1,500 kg Sprinter', 'van 4 now carries 12 m3'). Not for one plan: how many vehicles "
+    "a run uses, stops per vehicle, a capacity for today only or a vehicle that is out tomorrow are plan "
+    "settings: pass them in vehicles[] to optimize_delivery_routes or optimize_plan and save nothing. "
+    "'Use 25 vehicles' is a plan setting, never 25 new vehicles. One vehicle per call: it is a type with "
+    "its capacity, and how many units a plan uses is count on that plan. action=create takes vehicle "
+    "(name, max_weight_kg, max_volume_m3); a name the account already has returns that vehicle "
+    "(outcome=already_existed) when the capacities match and NAME_TAKEN when they differ: ask whether to "
+    "update it or use another name. action=update takes vehicle_id (list_fleet vehicles) and changes. "
+    "Say what will be saved and get a yes first. Does not consume plan stops."
+)
+
+MANAGE_DEPOT_TITLE = "Manage saved depots"
+MANAGE_DEPOT_DESCRIPTION = (
+    "Add or change a depot saved in the user's Vepathos account, the place routes start from: master data "
+    "that stays after this conversation. Call it only when the user asks to add, save, rename or move a "
+    "depot. A depot for one run is a plan setting: pass its coordinates as depot to "
+    "optimize_delivery_routes or optimize_plan and save nothing. To use a saved one ('use the Barracas "
+    "depot'), read list_fleet depots and pass its coordinates. Takes latitude and longitude: an address "
+    "goes through geocode_addresses first; tell the user the matched address before saving and do not "
+    "invent coordinates. action=create takes depot (name, latitude, longitude); a name the account already "
+    "has returns that depot (outcome=already_existed) when it is the same place and NAME_TAKEN otherwise. "
+    "action=update takes depot_id (list_fleet depots) and changes. Say what will be saved and get a yes "
+    "first. Does not consume plan stops."
 )
 
 GET_ACCOUNT_TITLE = "Get connected account"

@@ -32,6 +32,7 @@ from vepathos_mcp.clients.core_models import (
     CoreAutomationList,
     CoreCatalog,
     CoreDataset,
+    CoreDepotSaved,
     CoreGeocodeCreated,
     CoreGeocodeResult,
     CoreJobCreated,
@@ -39,6 +40,7 @@ from vepathos_mcp.clients.core_models import (
     CoreJobStatusResponse,
     CorePlan,
     CorePlanList,
+    CoreVehicleSaved,
 )
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.errors.mapping import from_core_error
@@ -49,6 +51,22 @@ RETRYABLE_STATUS = frozenset({502, 503, 504})
 MAX_RETRY_AFTER_SECONDS = 5.0
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+# A Core from before catalog master data: the agent can still plan, it just cannot save.
+_CANNOT_SAVE_VEHICLES = DomainError(
+    ErrorCode.INTERNAL_ERROR,
+    "This Vepathos deployment cannot save vehicles yet.",
+    suggestion="Plan with the vehicle in vehicles[] without saving it; the user can add it in the "
+    "Vepathos dashboard.",
+    retryable=False,
+)
+_CANNOT_SAVE_DEPOTS = DomainError(
+    ErrorCode.INTERNAL_ERROR,
+    "This Vepathos deployment cannot save depots yet.",
+    suggestion="Pass the depot coordinates to the optimize call without saving it; the user can add it "
+    "in the Vepathos dashboard.",
+    retryable=False,
+)
 Observer = Callable[[str, float, int | None], None]
 
 
@@ -240,7 +258,7 @@ class VepathosApiClient:
         return self._parse(CoreAutomationCreated, data)
 
     async def get_catalog(self, call: CallContext) -> CoreCatalog:
-        """The account's own fleets and vehicles, already in kilograms and cubic metres."""
+        """The account's own fleets, vehicles and depots, already in kilograms, cubic metres and degrees."""
 
         data = await self._request(
             "GET",
@@ -258,6 +276,62 @@ class VepathosApiClient:
             ),
         )
         return self._parse(CoreCatalog, data)
+
+    async def create_vehicle(
+        self, call: CallContext, body: dict[str, Any], *, idempotency_key: str
+    ) -> CoreVehicleSaved:
+        """Saves a vehicle in the account. Core converges by name, so a retried call writes nothing new."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/catalog/vehicles",
+            call,
+            operation="catalog_vehicle_create",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            absent_error=_CANNOT_SAVE_VEHICLES,
+        )
+        return self._parse(CoreVehicleSaved, data)
+
+    async def update_vehicle(
+        self, call: CallContext, vehicle_id: str, body: dict[str, Any]
+    ) -> CoreVehicleSaved:
+        data = await self._request(
+            "PATCH",
+            f"{BASE_PATH}/catalog/vehicles/{vehicle_id}",
+            call,
+            operation="catalog_vehicle_update",
+            json_body=body,
+            absent_error=_CANNOT_SAVE_VEHICLES,
+        )
+        return self._parse(CoreVehicleSaved, data)
+
+    async def create_depot(
+        self, call: CallContext, body: dict[str, Any], *, idempotency_key: str
+    ) -> CoreDepotSaved:
+        """Saves a depot in the account. Core converges by name, so a retried call writes nothing new."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/catalog/depots",
+            call,
+            operation="catalog_depot_create",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            absent_error=_CANNOT_SAVE_DEPOTS,
+        )
+        return self._parse(CoreDepotSaved, data)
+
+    async def update_depot(self, call: CallContext, depot_id: str, body: dict[str, Any]) -> CoreDepotSaved:
+        data = await self._request(
+            "PATCH",
+            f"{BASE_PATH}/catalog/depots/{depot_id}",
+            call,
+            operation="catalog_depot_update",
+            json_body=body,
+            absent_error=_CANNOT_SAVE_DEPOTS,
+        )
+        return self._parse(CoreDepotSaved, data)
 
     async def create_import(
         self, call: CallContext, body: dict[str, Any], idempotency_key: str | None = None

@@ -258,9 +258,32 @@ class CoreCatalogFleet(CoreModel):
     vehicles: list[CoreCatalogVehicle] = Field(default_factory=list)
 
 
+class CoreCatalogDepot(CoreModel):
+    depot_id: str
+    name: str | None = None
+    latitude: float
+    longitude: float
+
+
 class CoreCatalog(CoreModel):
     fleets: list[CoreCatalogFleet] = Field(default_factory=list)
     vehicles: list[CoreCatalogVehicle] = Field(default_factory=list)
+    # Absent on a Core from before catalog master data: an older deployment simply has none to show.
+    depots: list[CoreCatalogDepot] = Field(default_factory=list)
+
+
+class CoreVehicleSaved(CoreModel):
+    """A vehicle written to (or already in) the account: outcome is created, updated or already_existed."""
+
+    vehicle: CoreCatalogVehicle
+    outcome: str = "created"
+    account_url: str | None = None
+
+
+class CoreDepotSaved(CoreModel):
+    depot: CoreCatalogDepot
+    outcome: str = "created"
+    account_url: str | None = None
 
 
 class CoreAutomation(CoreModel):

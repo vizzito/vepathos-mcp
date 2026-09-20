@@ -53,7 +53,13 @@ class Vehicle(StrictModel):
         "Echoed on every route it drives.",
         examples=["van-small"],
     )
-    count: int = Field(1, ge=1, le=500, description="Number of identical vehicles of this type available.")
+    count: int = Field(
+        1,
+        ge=1,
+        le=500,
+        description="Number of identical vehicles of this type available for this plan. A plan setting: "
+        "it never adds vehicles to the account.",
+    )
     min_stops: int | None = Field(
         None,
         ge=0,

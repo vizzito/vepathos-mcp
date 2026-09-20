@@ -46,6 +46,7 @@ def build_server(
             {
                 "optimize": settings.rate_limit_optimize_per_minute,
                 "calls": settings.rate_limit_calls_per_minute,
+                "catalog_writes": settings.rate_limit_catalog_writes_per_minute,
             }
         ),
         sleep=sleep,
@@ -63,6 +64,7 @@ def build_server(
             confirm_before_optimize=settings.confirm_before_optimize,
             import_tools=settings.import_tools_enabled,
             map_shares=settings.map_shares_enabled,
+            catalog_writes=settings.catalog_write_tools_enabled,
         ),
         website_url="https://vepathos.com",
         token_verifier=CompositeTokenVerifier(settings, jwks_verifier=jwks_verifier),

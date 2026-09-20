@@ -90,3 +90,15 @@ def test_an_account_with_no_fleet_says_so() -> None:
     out = to_catalog(catalog())
     assert out.empty is True
     assert out.fleets == [] and out.vehicles is None
+
+
+def test_saved_depots_come_with_coordinates_and_are_omitted_when_there_are_none() -> None:
+    out = to_catalog(
+        catalog(depots=[{"depot_id": "3", "name": "Barracas", "latitude": -34.6441, "longitude": -58.3816}])
+    )
+    assert out.depots is not None and out.depots[0].latitude == -34.6441
+    # empty speaks about vehicles: an account with a depot and no vehicle still has no fleet to plan with.
+    assert out.empty is True
+    assert "depots" not in to_catalog(catalog()).model_dump(exclude_none=True)
+    # A Core from before catalog master data sends no depots at all.
+    assert catalog(fleets=[], vehicles=[]).depots == []
