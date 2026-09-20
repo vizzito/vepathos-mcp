@@ -13,7 +13,9 @@ from vepathos_mcp import SERVER_NAME, SERVER_TITLE, __version__
 from vepathos_mcp.auth.verifier import CompositeTokenVerifier, JwksTokenVerifier
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.config import AuthMode, Settings
+from vepathos_mcp.prompts import register_prompts
 from vepathos_mcp.rate_limit import RateLimiter
+from vepathos_mcp.reference import build_reference, render_markdown
 from vepathos_mcp.tools import build_tools
 from vepathos_mcp.tools.descriptions import server_instructions
 from vepathos_mcp.tools.runtime import ToolDeps
@@ -52,7 +54,7 @@ def build_server(
         sleep=sleep,
         clock=clock,
     )
-    return MCPServer(
+    server = MCPServer(
         name=SERVER_NAME,
         title=SERVER_TITLE,
         version=__version__,
@@ -72,3 +74,25 @@ def build_server(
         tools=build_tools(deps),
         log_level=settings.log_level.upper(),  # type: ignore[arg-type]
     )
+    # For the user, not the model: prompts they pick, and the reference of what THIS server publishes.
+    # Neither travels in every conversation, and no tool needs them to be used correctly.
+    register_prompts(server)
+    rendered: list[str] = []
+
+    def tools_reference() -> str:
+        # Rendered on the first read and kept: it depends only on this server's settings.
+        if not rendered:
+            rendered.append(render_markdown(build_reference(settings), deployment=True))
+        return rendered[0]
+
+    server.resource(
+        "vepathos://docs/reference",
+        name="vepathos_reference",
+        title="Vepathos tools reference",
+        description=(
+            "Every tool this Vepathos server publishes: what it does, its inputs, and which tools follow "
+            "which. Generated from the server's own registry."
+        ),
+        mime_type="text/markdown",
+    )(tools_reference)
+    return server
