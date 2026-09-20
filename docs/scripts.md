@@ -146,3 +146,24 @@ En la VM de api-prod, post `git pull`:
 ```bash
 cd ~/vepathos-deploy/vepathos-mcp && git pull origin develop && scripts/deploy-api-prod.sh
 ```
+
+## `vepathos-mcp tools` / `workflows` / `doctor`
+
+No son scripts de `scripts/`: son subcomandos del propio paquete (`src/vepathos_mcp/__main__.py`).
+Sin subcomando, `vepathos-mcp` sigue levantando el servidor como siempre.
+
+```bash
+.venv/bin/vepathos-mcp --help            # tools agrupadas por tarea
+.venv/bin/vepathos-mcp tools             # qué hace cada una, anotaciones, con qué flag se publica
+.venv/bin/vepathos-mcp workflows         # qué tool sigue a cuál
+.venv/bin/vepathos-mcp tools --write-docs  # regenera docs/tools-reference.md y las tablas de README y página pública
+.venv/bin/vepathos-mcp tools --check       # sale 1 si algún documento generado quedó viejo (lo corre un test)
+.venv/bin/vepathos-mcp doctor --offline    # configuración, flags y tools que publica, sin llamar a Core
+```
+
+Todo sale del mismo registro (`build_tools`) que publica el servidor. Si cambiás una descripción o
+agregás una tool, corré `--write-docs` en el mismo commit.
+
+`doctor` sin `--offline` además llama a `/health` de Core con el service key. En la VM, con la imagen:
+`docker run --rm --env-file .env <imagen> doctor`. No imprime ningún secreto. Sale `0` ok, `1` Core no
+responde, `2` configuración inválida.

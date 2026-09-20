@@ -8,18 +8,28 @@ and sequences each route from one depot, at scales from dozens to thousands of s
 This repository is the remote MCP adapter (`mcp.vepathos.com`). It is not a product of its own.
 Web, REST and MCP share the same Vepathos account, plan, features, limits and monthly stop quota.
 
-| Tool | What it does |
-|---|---|
-| `geocode_addresses` | Turn street addresses into coordinates via Vepathos Smart Import. |
-| `get_geocode_result` | Read geocode status and pins. |
-| `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
-| `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
-| `list_plans` | Read the account's plans (every optimization is saved in one), with what their next run costs. |
-| `optimize_plan` | Rerun or vary a saved plan by `plan_id`; within 24 h of its charged run the same stops or fewer run free. |
-| `get_account` | Read which Vepathos account is connected, its plan limits and period usage. |
-| `list_fleet` | Read the account's own vehicles and fleets, ready to pass to an optimization. |
-| `list_automations` | Read the account's standing rules and the stores they can take orders from. |
-| `create_automation` | Prepare a rule that routes on a schedule, switched off for its owner to turn on. |
+<!-- BEGIN GENERATED: tools-table (vepathos-mcp tools --write-docs) -->
+| Tool | What it does | Changes data | Available |
+|---|---|---|---|
+| `get_account` | Show which Vepathos account this connection uses and what its plan allows. | no | always |
+| `optimize_delivery_routes` | Plan optimized delivery routes for stops given in this conversation (vehicle routing problem, VRP); stops already saved in Vepathos run through optimize_plan instead. | yes | always |
+| `optimize_plan` | Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or an import (dataset_id), exactly one, saving the run in that plan. | yes | always |
+| `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | always |
+| `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | always |
+| `import_delivery_file` | Import a delivery file (Excel, CSV, JSON, text). | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `import_delivery_text` | Import deliveries as text, through the same pipeline as a file, into a new plan or plan_id. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `get_import_result` | Status and summary of an import_delivery_file / import_delivery_text job. | no | `MCP_IMPORT_TOOLS_ENABLED` |
+| `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `list_datasets` | List imports from this or earlier chats. | no | `MCP_IMPORT_TOOLS_ENABLED` |
+| `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | always |
+| `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | always |
+| `list_fleet` | List what the connected Vepathos account has saved. | no | always |
+| `manage_vehicle` | Add or change a vehicle saved in the user's Vepathos account: master data that stays after this conversation and shows in their dashboard. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `manage_depot` | Add or change a depot saved in the user's Vepathos account, the place routes start from: master data that stays after this conversation. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `list_automations` | List the connected Vepathos account's standing rules. | no | always |
+| `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | always |
+| `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | `MCP_MAP_SHARES_ENABLED` |
+<!-- END GENERATED: tools-table -->
 
 No tool switches an automation on: `create_automation` always writes it switched off, and only its
 owner turns it on in the dashboard, because a rule that is on spends their stops unattended.
@@ -147,7 +157,8 @@ peer-reviewed publication.
 | [docs/core-channel-contract.md](docs/core-channel-contract.md) | HTTP contract `/api/mcp/v1` |
 | [docs/auth.md](docs/auth.md) | OAuth, API keys, service mode |
 | [docs/onboarding.md](docs/onboarding.md) | Connect, signup, upgrade |
-| [docs/tools.md](docs/tools.md) | Tool schemas, annotations, errors |
+| [docs/tools.md](docs/tools.md) | How the tools behave: plans, confirmation, master data, errors |
+| [docs/tools-reference.md](docs/tools-reference.md) | Generated reference: every tool, inputs, annotations, workflows |
 | [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
 | [docs/deployment.md](docs/deployment.md) | Operator index (container, Caddy, health) |
 | [docs/deploy-api-prod.md](docs/deploy-api-prod.md) | First prod cut on api-prod (2026-09-14): every step and pitfall |

@@ -212,10 +212,17 @@ def build_reference(settings: Settings | None = None) -> Reference:
     )
 
 
-def summary(description: str) -> str:
-    """The first sentence: what the tool is for, as its own description opens."""
+SUMMARY_MAX = 160
 
-    return description.split(". ", 1)[0].rstrip(".") + "."
+
+def summary(description: str) -> str:
+    """The first sentence: what the tool is for, as its own description opens. A sentence that goes on
+    to enumerate (": account label, plan name, …") is cut before the list, which the full text keeps."""
+
+    sentence = description.split(". ", 1)[0]
+    if len(sentence) > SUMMARY_MAX:
+        sentence = sentence.split(": ", 1)[0]
+    return sentence.rstrip(".") + "."
 
 
 def _yes(value: bool | None) -> str:

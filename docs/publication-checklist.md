@@ -57,3 +57,9 @@ needs a separate explicit OK.
 ## 5. README buttons
 
 Add "Add to Claude / Cursor / VS Code / Codex" entries only after each flow is verified end to end.
+
+## Notes
+
+- 0.8.0: tools, annotations, prompts and the reference resource reviewed; the list of tools is generated
+  in [tools-reference.md](tools-reference.md) (`vepathos-mcp tools --write-docs`). `server.json` still
+  says the last registered version: bump it to the version that is live when publishing.

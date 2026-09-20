@@ -18,12 +18,28 @@ ask the assistant to optimize deliveries. No API keys for that flow.
 
 ## Tools
 
-| Tool | Use it when |
-|---|---|
-| `geocode_addresses` | You have street addresses and need coordinates |
-| `get_geocode_result` | You need to wait for or review those pins |
-| `optimize_delivery_routes` | You already have lat/lng (or just finished geocode) |
-| `get_optimization_result` | You need status, a summary, stop order or unassigned ids |
+<!-- BEGIN GENERATED: tools-table (vepathos-mcp tools --write-docs) -->
+| Tool | What it does | Changes data | Available |
+|---|---|---|---|
+| `get_account` | Show which Vepathos account this connection uses and what its plan allows. | no | Always |
+| `optimize_delivery_routes` | Plan optimized delivery routes for stops given in this conversation (vehicle routing problem, VRP); stops already saved in Vepathos run through optimize_plan instead. | yes | Always |
+| `optimize_plan` | Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or an import (dataset_id), exactly one, saving the run in that plan. | yes | Always |
+| `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | Always |
+| `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | Always |
+| `import_delivery_file` | Import a delivery file (Excel, CSV, JSON, text). | yes | Rolling out (imports) |
+| `import_delivery_text` | Import deliveries as text, through the same pipeline as a file, into a new plan or plan_id. | yes | Rolling out (imports) |
+| `get_import_result` | Status and summary of an import_delivery_file / import_delivery_text job. | no | Rolling out (imports) |
+| `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | Rolling out (imports) |
+| `list_datasets` | List imports from this or earlier chats. | no | Rolling out (imports) |
+| `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | Always |
+| `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | Always |
+| `list_fleet` | List what the connected Vepathos account has saved. | no | Always |
+| `manage_vehicle` | Add or change a vehicle saved in the user's Vepathos account: master data that stays after this conversation and shows in their dashboard. | yes | Rolling out (saved vehicles and depots) |
+| `manage_depot` | Add or change a depot saved in the user's Vepathos account, the place routes start from: master data that stays after this conversation. | yes | Rolling out (saved vehicles and depots) |
+| `list_automations` | List the connected Vepathos account's standing rules. | no | Always |
+| `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | Always |
+| `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | Rolling out (shareable maps) |
+<!-- END GENERATED: tools-table -->
 
 `optimize_delivery_routes` does not invent coordinates. If the geocoder leaves gaps, confirm
 them before optimizing. There is no cancel tool: a submitted job runs to completion.

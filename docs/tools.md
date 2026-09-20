@@ -1,10 +1,16 @@
 # Tools
 
-# Vepathos MCP exposes ten read/plan tools, plus five import tools when
-# `MCP_IMPORT_TOOLS_ENABLED=true` (off by default, so deploying the code publishes nothing new; the
-# server instructions only name the tools a server publishes), plus `create_optimization_map` when
-# `MCP_MAP_SHARES_ENABLED=true`. There is intentionally no cancel tool: a submitted optimization always
-# runs to completion.
+This document explains how the tools **behave**: plans, the confirmation before a charge, master data,
+errors. The list of tools, their inputs, annotations and the workflows that chain them are in
+[tools-reference.md](tools-reference.md), which is **generated from the tool registry**
+(`vepathos-mcp tools --write-docs`; a test fails when it is stale), so it cannot disagree with the
+server.
+
+Optional groups are published by a switch, off by default so that deploying the code publishes nothing
+new, and the server instructions only name the tools a server publishes: `MCP_IMPORT_TOOLS_ENABLED`
+(imports), `MCP_MAP_SHARES_ENABLED` (`create_optimization_map`) and `MCP_CATALOG_WRITE_TOOLS_ENABLED`
+(`manage_vehicle`, `manage_depot`). There is intentionally no cancel tool: a submitted optimization
+always runs to completion.
 
 ## Server instructions
 
@@ -28,25 +34,13 @@ tool also live in that tool's description, because some hosts truncate or ignore
 
 It never carries an account, company, tenant or user id: the connection binds the account. It changes
 with `MCP_CONFIRM_BEFORE_OPTIMIZE`, `MCP_IMPORT_TOOLS_ENABLED` and `MCP_MAP_SHARES_ENABLED`, so it only
-names tools the server publishes.
+names tools the server publishes. `MCP_CATALOG_WRITE_TOOLS_ENABLED` adds the master-data line.
 
-| Tool | Title | Annotations |
-|---|---|---|
-| `import_delivery_file` | Import delivery file | `readOnlyHint: false`, `idempotentHint: false` |
-| `import_delivery_text` | Import pasted deliveries | `readOnlyHint: false`, `idempotentHint: false` |
-| `get_import_result` | Get import result | `readOnlyHint: true` |
-| `update_import_mapping` | Update import mapping | `readOnlyHint: false` |
-| `list_datasets` | List datasets | `readOnlyHint: true` |
-| `list_plans` | List plans | `readOnlyHint: true` (always published) |
-| `optimize_plan` | Optimize a plan | `readOnlyHint: false` (always published) |
-| `geocode_addresses` | Geocode addresses | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `get_geocode_result` | Get geocode result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `optimize_delivery_routes` | Optimize delivery routes | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `get_optimization_result` | Get optimization result | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `list_fleet` | List fleet | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `get_account` | Get connected account | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `list_automations` | List automations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
-| `create_automation` | Prepare an automation | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+Annotations per tool are in [tools-reference.md](tools-reference.md). Two choices worth explaining:
+`optimize_delivery_routes`, `optimize_plan`, `manage_vehicle` and `manage_depot` say
+`destructiveHint: true` — a run in a full plan library replaces the oldest plan (`plan_replaced`), and
+an update overwrites what the account had saved — so a host that asks before destructive calls asks
+for these.
 
 The two import tools are the only ones that say `idempotentHint: false`: every call starts a new import
 (and a new plan), so a client must not retry them on its own. `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
@@ -155,16 +149,58 @@ increasing the vehicle count to cover the demand, not a "test" fleet.
 
 ## `list_fleet`
 
-The vehicles and fleets the account already has, with capacity in kg and m³, shaped to drop into
-`optimize_delivery_routes` as `vehicles[]`. No arguments, read-only, charges no stops. `empty: true`
-means the account has no fleet loaded — then ask the user to describe it.
+What the account has saved: vehicles and fleets, with capacity in kg and m³, shaped to drop into
+`optimize_delivery_routes` as `vehicles[]`, and **depots** (`depot_id`, `name`, `latitude`,
+`longitude`) to pass as `depot`. No arguments, read-only, charges no stops. `empty: true` means the
+account has no vehicles saved — then ask the user to describe them. Depots are RouteHub milestones
+tagged `DEPOT` (all of them when the account tagged none, as the dashboard does).
 
 Catalog ids are reshaped to the `vehicle_id` pattern optimize accepts (a RouteHub UUID is longer
 than the 32-character limit) and kept unique within each fleet, so the output can be passed through
-unchanged. Requires `GET /api/mcp/v1/catalog` in Core.
+unchanged. Requires `GET /api/mcp/v1/catalog` in Core; a Core from before depots simply sends none.
 
 Use it before planning a real delivery day: a fleet invented in conversation produces a geometric
 plan that ignores what each vehicle carries, and route ids nobody in the operation recognises.
+
+## `manage_vehicle` / `manage_depot`
+
+Published with `MCP_CATALOG_WRITE_TOOLS_ENABLED=true`. They save the account's **master data**; they
+never touch a plan. Neither spends stops. There is no delete, and no tool for fleets or drivers: which
+vehicles form a fleet is arranged in the dashboard.
+
+### Master data and plan settings
+
+| | Master data | Plan settings |
+|---|---|---|
+| What | saved vehicles (a type and its capacity), saved depots | how many vehicles a run uses (`count`), stops per vehicle, a capacity or a depot for one day, a vehicle that is out tomorrow |
+| Lives | in the account, after the conversation | in one optimization |
+| Tool | `manage_vehicle`, `manage_depot` | `vehicles[]` / `depot` of `optimize_delivery_routes` or `optimize_plan` |
+
+| The user says | What happens |
+|---|---|
+| "Add a 1,500 kg Sprinter." | `manage_vehicle` create, after a yes |
+| "Add 3 Sprinters of 1,500 kg." | **one** create: a vehicle is a type; the 3 is `count` on each plan |
+| "Use 25 vehicles tomorrow." | nothing is saved: `count: 25` on the run |
+| "Van 4 now carries 12 m³." | `list_fleet` → `manage_vehicle` update |
+| "The Sprinter is out tomorrow." | nothing is saved: it is left out of that run |
+| "Use the Barracas depot." | `list_fleet` depots → its coordinates as `depot`; nothing is saved |
+| "Save a depot at San Martín 700." | `geocode_addresses` → the user confirms the match → `manage_depot` create |
+
+The shape defends the line: one vehicle per call, and no `count`, `available` or list exists, so
+"use 25 vehicles" cannot become 25 saved vehicles — an unknown field is `INVALID_INPUT`.
+`manage_depot` takes coordinates, never an address, for the same reason optimize does.
+
+`action: "create"` takes `vehicle` (`name`, `max_weight_kg`, `max_volume_m3`) or `depot` (`name`,
+`latitude`, `longitude`); `action: "update"` takes the id from `list_fleet` and `changes`, and only
+what is sent changes (a depot moves with both coordinates or neither).
+
+A create **converges by name**, because RouteHub has neither unique names nor idempotency. Names are
+compared normalized (case, accents, `-_/.`). The same name with the same values answers the one that
+exists with `outcome: "already_existed"` and writes nothing, so a retry is safe; the same name with
+other values is `NAME_TAKEN` with `details.existing`, and the agent asks: update it, or another name.
+The plan's catalog caps answer `PLAN_UPGRADE_REQUIRED` (`CATALOG_VEHICLE_LIMIT`,
+`CATALOG_DEPOT_LIMIT`) before anything is written; the run can still use the vehicle or depot
+without saving it. Requires the `/api/mcp/v1/catalog/*` routes in Core.
 
 ## `get_account`
 
@@ -435,11 +471,33 @@ Errors are tool results with `isError: true` and a structured `error` object:
 | `RATE_LIMITED` | Too many calls from this connection. | yes |
 | `OPTIMIZATION_NOT_FOUND` / `OPTIMIZATION_EXPIRED` | Unknown id, or an unfinished or pre-plan run past retention (24 h). Completed plan runs never expire. | no |
 | `PLAN_NOT_FOUND` | No such plan in the connected account (deleted, or replaced to make room). | no |
+| `NAME_TAKEN` | A saved vehicle or depot already has this name with other values; `details.existing` is the one that has it. | no |
+| `VEHICLE_NOT_FOUND` / `DEPOT_NOT_FOUND` | No saved vehicle or depot with this id in the connected account. | no |
 | `PLAN_BUSY` | The plan is optimizing; wait for that run (`retry_after_seconds`). | yes |
 | `IMPORT_NOT_FOUND` / `DATASET_NOT_FOUND` | Unknown or expired import (24 h); its plan stays. | no |
 | `OPTIMIZATION_FAILED` | The optimization ended without a result; it was not charged. | yes |
 | `BACKEND_UNAVAILABLE` / `TIMEOUT` | Temporary; identical requests are safe to resend. | yes |
 | `INTERNAL_ERROR` | Unexpected error. | no |
+
+## Help, prompts and the reference resource
+
+Where each kind of help lives, so no text is written twice:
+
+| Question | Answered by | Sent in every conversation |
+|---|---|---|
+| What does this tool do, and when not to use it? | the tool description and each field's description | yes |
+| How do the tools chain? | `server_instructions()` | yes (some hosts cut it) |
+| "Start this flow" / "what can I do here?" | an MCP prompt (`src/vepathos_mcp/prompts.py`) | no |
+| The full reference | the resource `vepathos://docs/reference`, and [tools-reference.md](tools-reference.md) | no |
+| At a terminal, or operating the server | `vepathos-mcp tools`, `workflows`, `doctor` | no |
+
+There is no `help` tool: it would cost context in every conversation and teach the model nothing its
+tool list does not already say. A user asks in the chat, or picks a prompt in hosts that show them
+(Claude Code, Claude Desktop): `vepathos_help` (plain language, no tool names), `vepathos_tools`
+(technical names), `plan_deliveries`, `rerun_plan`. Prompts name no tool, so they never name one a
+server does not publish. The resource is rendered from the server's own registry and lists only what
+that deployment publishes. Nothing a tool needs lives only in a prompt or the resource: hosts differ
+in whether they show them.
 
 ## Capability notes
 
