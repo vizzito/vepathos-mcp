@@ -280,6 +280,7 @@ class CoreAutomation(CoreModel):
     min_orders: int | None = None
     match_tags: list[str] = Field(default_factory=list)
     fill_by: str | None = None
+    vehicle_type_id: str | None = None
     max_units: int | None = None
     stops_per_vehicle: int | None = None
     plan_name: str | None = None
@@ -315,8 +316,15 @@ class CoreAutomationList(CoreModel):
     account_url: str | None = None
 
 
+class CoreAutomationVehicleOption(CoreModel):
+    id: str
+    name: str
+
+
 class CoreAutomationCreated(CoreModel):
     automation: CoreAutomation
+    replayed: bool = False
+    vehicle_options: list[CoreAutomationVehicleOption] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
     enabled: bool | None = None
     account_url: str | None = None

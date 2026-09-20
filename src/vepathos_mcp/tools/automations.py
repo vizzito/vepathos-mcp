@@ -15,13 +15,13 @@ checks against.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver.context import Context
 from mcp_types import CallToolResult
 from pydantic import Field, ValidationError, model_validator
 
-from vepathos_mcp.clients.core_models import CoreAutomation, CoreAutomationList
+from vepathos_mcp.clients.core_models import CoreAutomation, CoreAutomationCreated, CoreAutomationList
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.schemas.inputs import StrictModel, coerce_json_fields, validation_error_to_domain
 from vepathos_mcp.schemas.outputs import ACCOUNT_URL_DESCRIPTION, OutputModel
@@ -88,6 +88,16 @@ class CreateAutomationInput(StrictModel):
         max_length=20,
         description="Only orders carrying these tags, e.g. ml:flex, ship:envio-a-domicilio.",
     )
+    vehicle_type_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=64,
+        description="Template vehicle entry. Omit for a single type; otherwise choose in the dashboard.",
+    )
+    look: Literal["clock", "fill", "both"] = "clock"
+    fill_by: Literal["orders", "packages", "stops", "weight", "volume"] = "orders"
+    min_packages: int = Field(5, ge=1, le=100_000)
+    fill_percent: int = Field(80, ge=1, le=100)
     max_units: int = Field(
         1, ge=1, le=10_000, description="Vehicles the user can actually put on the street."
     )
@@ -136,6 +146,7 @@ class AutomationView(OutputModel):
     fill_by: str | None = Field(
         None, description="What 'enough to route' is measured in, when it waits for a load."
     )
+    vehicle_type_id: str | None = None
     max_units: int | None = None
     stops_per_vehicle: int | None = None
     plan_name: str | None = None
@@ -175,9 +186,21 @@ class AutomationsResult(OutputModel):
     account_url: str | None = Field(None, description=ACCOUNT_URL_DESCRIPTION)
 
 
+class VehicleOption(OutputModel):
+    id: str
+    name: str
+
+
 class CreatedAutomationResult(OutputModel):
     automation: AutomationView
-    enabled: bool = Field(description="Always false: only the user switches a rule on, in the dashboard.")
+    enabled: bool = Field(
+        description="New rules are off. A replay preserves the current state, including a user activation."
+    )
+    replayed: bool = False
+    vehicle_options: list[VehicleOption] | None = Field(
+        None,
+        description="Template vehicle choices. Select in the dashboard; replay never edits the rule.",
+    )
     missing: list[str] | None = Field(
         None,
         description="What a run would still lack (depot, fleet). Empty: the user only has to switch it on.",
@@ -201,6 +224,7 @@ def _view(row: CoreAutomation) -> AutomationView:
         min_orders=row.min_orders,
         match_tags=row.match_tags or None,
         fill_by=row.fill_by,
+        vehicle_type_id=row.vehicle_type_id,
         max_units=row.max_units,
         stops_per_vehicle=row.stops_per_vehicle,
         plan_name=row.plan_name,
@@ -252,6 +276,8 @@ def to_core_body(inp: CreateAutomationInput) -> dict[str, Any]:
     else:
         start = _minutes(inp.window_from) if inp.window_from else 10 * 60
         end = _minutes(inp.window_to) if inp.window_to else max(start, 14 * 60)
+    if inp.look == "fill":
+        start, end = 0, 1439
     return {
         "name": inp.name,
         "mode": inp.mode,
@@ -259,21 +285,27 @@ def to_core_body(inp: CreateAutomationInput) -> dict[str, Any]:
         # is this tool saying the same thing out loud.
         "enabled": False,
         "timezone": inp.timezone,
-        "windowDays": sorted(set(inp.days)),
+        "windowDays": list(range(7)) if inp.look == "fill" else sorted(set(inp.days)),
         "windowFromMin": start,
         "windowToMin": end,
-        "everyMinutes": inp.every_minutes or max(MIN_EVERY_MINUTES, 120),
+        "everyMinutes": MIN_EVERY_MINUTES if inp.look == "fill" else inp.every_minutes or 120,
         "minOrders": inp.min_orders,
         "maxOrders": None,
         "matchTags": inp.match_tags,
         "objective": "balance",
-        "vehicleTypeId": None,
+        "vehicleTypeId": inp.vehicle_type_id,
         "maxUnits": inp.max_units,
         "stopsPerVehicle": inp.stops_per_vehicle,
         "onOverflow": "refuse",
         "dailyStopBudget": None,
         "notifyOwnerEmail": True,
         "notifyDrivers": False,
+        "notifyJson": {
+            "look": inp.look,
+            "fillBy": inp.fill_by,
+            "minPackages": inp.min_packages,
+            "fillPercent": inp.fill_percent,
+        },
         "ownedPlan": {
             "operationId": inp.operation_id,
             "templatePlanId": inp.template_plan_id,
@@ -304,6 +336,25 @@ def make_list_automations_tool(deps: ToolDeps) -> Any:
     return list_automations
 
 
+def created_result(created: CoreAutomationCreated) -> CreatedAutomationResult:
+    enabled = created.enabled is True or created.automation.enabled is True
+    if enabled and not created.replayed:
+        raise DomainError(
+            ErrorCode.INTERNAL_ERROR,
+            "Vepathos reported a new automation as already switched on.",
+            suggestion="Ask the user to check it in the Vepathos dashboard.",
+            retryable=False,
+        )
+    return CreatedAutomationResult(
+        automation=_view(created.automation),
+        enabled=enabled,
+        replayed=created.replayed,
+        missing=created.missing or None,
+        vehicle_options=[VehicleOption(id=v.id, name=v.name) for v in created.vehicle_options] or None,
+        account_url=created.account_url,
+    )
+
+
 def make_create_automation_tool(deps: ToolDeps) -> Any:
     async def create_automation(ctx: Context) -> Annotated[CallToolResult, CreatedAutomationResult]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
@@ -318,23 +369,7 @@ def make_create_automation_tool(deps: ToolDeps) -> Any:
             created = await deps.core.create_automation(
                 identity.call, to_core_body(inp), operation_id=inp.operation_id
             )
-            if created.enabled:
-                # The channel is not supposed to be able to do this; if it ever did, say so rather than
-                # reporting a rule as prepared while it is already spending the account's stops.
-                raise DomainError(
-                    ErrorCode.INTERNAL_ERROR,
-                    "Vepathos reported the automation as already switched on.",
-                    suggestion="Ask the user to check it in the Vepathos dashboard.",
-                    retryable=False,
-                )
-            return success_result(
-                CreatedAutomationResult(
-                    automation=_view(created.automation),
-                    enabled=False,
-                    missing=created.missing or None,
-                    account_url=created.account_url,
-                )
-            )
+            return success_result(created_result(created))
 
         return await instrumented(CREATE_TOOL_NAME, ctx, deps, handle)
 

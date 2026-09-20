@@ -1,7 +1,7 @@
 # Automations over MCP
 
 **Status:** implemented, not deployed. Spans `vepathos-api-doc` (the channel routes and the owned
-plan), `vepathos-mcp` 0.7.0 (the two tools) and the web client (which uses its own proxy, not these
+plan), `vepathos-mcp` 0.7.1 (the two tools) and the web client (which uses its own proxy, not these
 tools). Ship api-doc first: a new adapter against an older Core answers "this deployment does not
 expose automations yet", which is correct but useless.
 
@@ -22,7 +22,7 @@ This is not caution for its own sake. A rule that is on spends the account's mon
 schedule nobody is watching, in an operation the agent cannot see. Consent for that belongs to the
 person, on a screen that shows what the rule will do. The tool descriptions repeat it, because some
 hosts never show the server instructions, and `create_automation` refuses its own answer if Core ever
-reports the rule as already on.
+reports a newly created rule as already on. Replays report the current state without changing it.
 
 ## The rule owns its plan
 
@@ -63,3 +63,16 @@ a rule made by an agent opens in both.
 
 Answer in the user's language. The rule's own words are the operation's: *pedidos*, *paradas*,
 *depósito*, *flota*. "It is prepared and switched off" is the sentence; "it is running" is never.
+
+
+## E4 · 0.7.1 contract
+
+`vehicle_type_id` optionally selects a template entry. When omitted, a template with exactly one valid entry selects it automatically. Several entries leave `missing: ["fleet"]` and return `vehicle_options` (`id`, `name`); the user chooses in the dashboard. Replaying an operation does not edit it.
+
+`look` accepts `clock`, `fill`, or `both`; `fill_by` accepts orders, packages, stops, weight, or volume. `min_packages` and `fill_percent` travel in the backend trigger. A fill-only rule uses the scheduler's all-day 15-minute cadence.
+
+Creation always starts off. A replay returns `replayed: true` and the actual current `enabled` state, including a subsequent user activation. An intentionally deleted operation returns HTTP 409 (`automation_attempt_deleted` in the error message). A new user-requested creation needs a new operation id. Do not silently retry deletion errors under another id.
+
+Quota counts only enabled rules; blocked rules release their slot and must pass the current quota and readiness checks before being enabled again. The backend validates a catalog depot and a selected template vehicle on every enable.
+
+The backend opt-in regression `tests/unit/automation-e4-contract.test.ts` invokes this Python serializer and response parser against the real API handler and disposable PostgreSQL. Only authentication is mocked; no provider or production database is called.
