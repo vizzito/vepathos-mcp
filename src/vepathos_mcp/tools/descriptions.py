@@ -280,7 +280,8 @@ GET_GEOCODE_DESCRIPTION = (
 
 GET_RESULT_DESCRIPTION = (
     "Get the status and outcome of a route optimization by its optimization_id. While it runs, "
-    "returns status and progress. When complete, detail=summary "
+    "returns status and progress: tell the user the percent and the stage in one line, and wait "
+    "poll_after_seconds before asking again. When complete, detail=summary "
     "returns totals and per-route metrics; detail=stops returns ordered stop_ids with arrival times "
     "(driver clock, service at earlier stops included). request shows the depot, vehicles and "
     "schedule it ran with. Completed results are kept with their plan: plan_id, and account_url, which "
@@ -292,7 +293,10 @@ IMPORT_FILE_DESCRIPTION = (
     "Import a delivery file (Excel, CSV, JSON, text). Pass file when your host hands "
     "attachments to tools (ChatGPT: _meta openai/fileParams); otherwise pass url: a public https link, or "
     "a Google Drive, Sheets or Docs share link as copied. With neither, send the file's text to "
-    "import_delivery_text. Do not shell out (curl/gdown/pip). Returns import_id; the stops load into a "
+    "import_delivery_text. A path on the user's disk is not a url: this server cannot read it. When your "
+    "host can read local files, send a CSV or JSON file's text to import_delivery_text; for a spreadsheet "
+    "(.xlsx) ask for a share link or a CSV export. Do not shell out (curl/gdown/pip), and never parse or "
+    "convert the file with a script. Returns import_id; the stops load into a "
     "new plan named after the file, or replace the stops of plan_id. Never paste thousands of stops into "
     "optimize_delivery_routes. Next: get_import_result until plan_id, then optimize_plan."
 )
@@ -316,8 +320,9 @@ GET_IMPORT_DESCRIPTION = (
 UPDATE_MAPPING_TITLE = "Update import mapping"
 UPDATE_MAPPING_DESCRIPTION = (
     "Correct an import's column mapping without re-uploading: {source_column: vepathos_field}, or "
-    "{field, unit, format} for a column in another unit (lb, in, l) or date/number format. Returns the "
-    "updated summary."
+    "{field, unit, format} for a column in another unit (lb, in, l) or date/number format. When the "
+    "user corrects a unit ('those were cm3'), fix it here, never by converting the rows yourself. "
+    "Returns the updated summary."
 )
 
 OPTIMIZE_PLAN_TITLE = "Optimize a plan"

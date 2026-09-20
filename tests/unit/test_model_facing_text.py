@@ -32,7 +32,9 @@ from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 # carry the rule that only the user turns one on, because some hosts never show the instructions.
 # 0.8.0 adds the two catalog tools (~2,000 chars), depots in list_fleet and the master-data line (~300):
 # master data and plan settings are told apart in both descriptions, because the instructions may be cut.
-MAX_TOTAL_CHARS = 17_250
+# The local smoke of 2026-09-20 adds ~470: a local path is not a url, a unit is fixed in the mapping, and
+# progress is said to the user, because a host with a shell parsed and converted the file on its own.
+MAX_TOTAL_CHARS = 17_750
 # 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
 # descriptions, because an agent that never lists those tools still must not claim a rule is running.
 MAX_INSTRUCTION_CHARS = 5_350
@@ -341,3 +343,18 @@ def test_every_tool_description_survives_the_shortest_host_limit(gate: bool) -> 
 def test_optimize_says_first_which_of_the_two_runs_to_call(gate: bool) -> None:
     # The instructions may be cut before they tell the two apart, so the description opens with it.
     assert "optimize_plan" in d.optimize_description(confirm_before_optimize=gate)[:260]
+
+
+def test_a_host_with_a_shell_is_told_not_to_do_the_servers_work() -> None:
+    # Local smoke, 2026-09-20: given a local .xlsx, Claude Code parsed it with Python, converted cm3 by
+    # script and went for optimize_delivery_routes with the rows. The import pipeline does all three.
+    imports = d.IMPORT_FILE_DESCRIPTION
+    assert "A path on the user's disk is not a url" in imports
+    assert "share link or a CSV export" in imports
+    assert "never parse or convert the file with a script" in imports
+    assert "never by converting the rows yourself" in d.UPDATE_MAPPING_DESCRIPTION
+
+
+def test_progress_reaches_the_user_because_a_chat_has_no_progress_bar() -> None:
+    text = d.GET_RESULT_DESCRIPTION
+    assert "tell the user the percent and the stage" in text and "poll_after_seconds" in text
