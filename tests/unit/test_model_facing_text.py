@@ -34,7 +34,7 @@ from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 # master data and plan settings are told apart in both descriptions, because the instructions may be cut.
 # The local smoke of 2026-09-20 adds ~470: a local path is not a url, a unit is fixed in the mapping, and
 # progress is said to the user, because a host with a shell parsed and converted the file on its own.
-MAX_TOTAL_CHARS = 17_750
+MAX_TOTAL_CHARS = 18_100
 # 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
 # descriptions, because an agent that never lists those tools still must not claim a rule is running.
 MAX_INSTRUCTION_CHARS = 5_350
@@ -358,3 +358,12 @@ def test_a_host_with_a_shell_is_told_not_to_do_the_servers_work() -> None:
 def test_progress_reaches_the_user_because_a_chat_has_no_progress_bar() -> None:
     text = d.GET_RESULT_DESCRIPTION
     assert "tell the user the percent and the stage" in text and "poll_after_seconds" in text
+
+
+def test_the_way_out_of_needs_mapping_is_written_where_the_agent_reads_the_status() -> None:
+    # Local smoke, 2026-09-20: the agent corrected other columns twice and the import never left
+    # needs_mapping, because only answering the uncertain columns themselves clears the review.
+    text = d.GET_IMPORT_DESCRIPTION
+    assert "status=needs_mapping" in text and "rows_to_review" in text
+    assert "Answer EVERY one through update_import_mapping" in text
+    assert "null to ignore it" in text and "does not clear it" in text
