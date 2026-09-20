@@ -117,7 +117,8 @@ async def test_download_sends_host_and_sni_and_returns_the_body() -> None:
 @pytest.mark.parametrize(
     ("response", "reason", "status"),
     [
-        (httpx.Response(302, headers={"location": "https://127.0.0.1/"}), "redirect", 302),
+        # A redirect with nowhere to go is still a failure to name.
+        (httpx.Response(302), "redirect", 302),
         (httpx.Response(403), "http_status", 403),
         (httpx.Response(200, headers={"content-length": "4096"}, content=b"x" * 4096), "too_large", None),
     ],
@@ -183,3 +184,46 @@ async def test_a_download_that_trickles_bytes_ends_at_the_total_deadline() -> No
             transport=transport,
         )
     assert exc.value.reason == "network"
+
+
+async def test_a_redirect_is_followed_only_through_the_same_checks() -> None:
+    # Google's export answers 307 to googleusercontent.com (2026-09-20: every Sheets link failed).
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["host"])
+        if request.headers["host"] == "docs.example.com":
+            return httpx.Response(307, headers={"location": "https://files.example.net/export/a.xlsx"})
+        return httpx.Response(200, content=b"PK-xlsx", headers={"content-type": "application/zip"})
+
+    body, _ = await fetch_public_https(
+        "https://docs.example.com/export?format=xlsx",
+        max_bytes=1024,
+        resolver=resolver_for(PUBLIC_V4),
+        transport=httpx.MockTransport(handler),
+    )
+    assert body == b"PK-xlsx" and seen == ["docs.example.com", "files.example.net"]
+
+
+@pytest.mark.parametrize(
+    ("location", "reason"),
+    [
+        ("https://internal.example.com/secret", "blocked_host"),  # resolves to a private address
+        ("http://files.example.net/a.csv", "invalid_url"),  # leaves https
+        ("https://docs.example.com/again", "redirect"),  # loops until the hop budget is spent
+    ],
+)
+async def test_a_redirect_cannot_reach_what_the_first_url_could_not(location: str, reason: str) -> None:
+    async def resolve(host: str) -> list[str]:
+        return ["10.0.0.5"] if host == "internal.example.com" else [PUBLIC_V4]
+
+    with pytest.raises(PublicFetchError) as exc:
+        await fetch_public_https(
+            "https://docs.example.com/start",
+            max_bytes=1024,
+            resolver=resolve,
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(302, headers={"location": location})
+            ),
+        )
+    assert exc.value.reason == reason

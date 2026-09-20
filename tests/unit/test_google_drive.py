@@ -1,4 +1,4 @@
-"""Public Google Drive share links rewrite to a no-redirect download URL."""
+"""Public Google share links rewrite to a direct download URL (Google still answers one checked hop)."""
 
 from __future__ import annotations
 

@@ -11,7 +11,11 @@ Postgres and the cloud metadata endpoint. So the download:
 - connects to the address it checked, sending the hostname as Host and TLS SNI, so a second DNS
   answer cannot swap in an internal address (DNS rebinding) and the certificate is still verified
   against the hostname;
-- follows no redirect, stops reading past the size cap and gives up after the timeout.
+- follows at most MAX_REDIRECTS hops, and puts every hop through the same checks as the first URL
+  (https only, public addresses only, pinned address): Google's own export answers 307 to
+  googleusercontent.com, so refusing every redirect refused every Sheets link, while a redirect
+  to an internal address is still refused;
+- stops reading past the size cap and gives up after the timeout.
 """
 
 from __future__ import annotations
@@ -22,12 +26,14 @@ import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
 from vepathos_mcp.clients.google_drive import normalize_public_download_url
 
+# Google's Sheets and Drive exports take one hop to googleusercontent.com; nothing legitimate needs many.
+MAX_REDIRECTS = 3
 FetchFailure = Literal[
     "invalid_url", "blocked_host", "redirect", "http_status", "not_a_file", "too_large", "network"
 ]
@@ -115,6 +121,25 @@ def _looks_like_html_interstitial(body: bytes, content_type: str | None) -> bool
     return False
 
 
+async def _read_file(response: httpx.Response, max_bytes: int) -> tuple[bytes, str | None]:
+    if response.status_code >= 400:
+        raise PublicFetchError("http_status", response.status_code)
+    declared = response.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > max_bytes:
+        raise PublicFetchError("too_large")
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        body.extend(chunk)
+        if len(body) > max_bytes:
+            raise PublicFetchError("too_large")
+    content_type = response.headers.get("content-type")
+    raw = bytes(body)
+    # A sign-in or confirm page answers 200 with HTML: the link is not a public file.
+    if _looks_like_html_interstitial(raw, content_type):
+        raise PublicFetchError("not_a_file")
+    return raw, content_type
+
+
 async def fetch_public_https(
     url: str,
     *,
@@ -130,36 +155,31 @@ async def fetch_public_https(
     whole download, so a server that trickles bytes cannot hold the call open."""
 
     url = normalize_public_download_url(url)
-    checked = await check_public_https_url(url, resolver)
     try:
         async with (
             asyncio.timeout(total_timeout_seconds),
             httpx.AsyncClient(follow_redirects=False, timeout=timeout_seconds, transport=transport) as client,
-            client.stream(
-                "GET",
-                checked.target,
-                headers={"Host": checked.host, "Accept": "*/*"},
-                extensions={"sni_hostname": checked.host},
-            ) as response,
         ):
-            if response.is_redirect:
-                raise PublicFetchError("redirect", response.status_code)
-            if response.status_code >= 400:
-                raise PublicFetchError("http_status", response.status_code)
-            declared = response.headers.get("content-length")
-            if declared and declared.isdigit() and int(declared) > max_bytes:
-                raise PublicFetchError("too_large")
-            body = bytearray()
-            async for chunk in response.aiter_bytes():
-                body.extend(chunk)
-                if len(body) > max_bytes:
-                    raise PublicFetchError("too_large")
-            content_type = response.headers.get("content-type")
-            raw = bytes(body)
-            # A sign-in or confirm page answers 200 with HTML: the link is not a public file.
-            if _looks_like_html_interstitial(raw, content_type):
-                raise PublicFetchError("not_a_file")
-            return raw, content_type
+            # Redirects are followed by hand so that each hop is checked and pinned like the first URL:
+            # httpx following them itself would connect wherever a Location header says.
+            status: int | None = None
+            for _hop in range(MAX_REDIRECTS + 1):
+                checked = await check_public_https_url(url, resolver)
+                async with client.stream(
+                    "GET",
+                    checked.target,
+                    headers={"Host": checked.host, "Accept": "*/*"},
+                    extensions={"sni_hostname": checked.host},
+                ) as response:
+                    location = response.headers.get("location")
+                    if response.is_redirect and location:
+                        status = response.status_code
+                        url = urljoin(url, location)
+                        continue
+                    if response.is_redirect:
+                        raise PublicFetchError("redirect", response.status_code)
+                    return await _read_file(response, max_bytes)
+            raise PublicFetchError("redirect", status)
     except PublicFetchError:
         raise
     except (httpx.HTTPError, TimeoutError):
