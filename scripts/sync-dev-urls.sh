@@ -4,6 +4,7 @@
 #   ./scripts/sync-dev-urls.sh up 8080              # ChatGPT + chat del dashboard (lo usual)
 #   ./scripts/sync-dev-urls.sh up 8080 3000 3005    # además UI/Google desde internet
 #   ./scripts/sync-dev-urls.sh start --mcp-only     # alias de up 8080
+#   ./scripts/sync-dev-urls.sh stores                # pin fixed ngrok store callbacks
 #   ./scripts/sync-dev-urls.sh clean
 #   ./scripts/sync-dev-urls.sh status
 #

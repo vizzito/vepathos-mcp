@@ -224,7 +224,7 @@ def restart_hint(*, web: bool = False) -> None:
     print("Smart Import (:8100) no hace falta reiniciar.")
     print()
     print("ChatGPT connector / VEPATHOS_MCP_HTTP_URL = túnel de :8080 + /mcp")
-    print("INTEGRATIONS_PUBLIC_BASE_URL / Shopify     = túnel de :3000 (si lo levantaste)")
+    print(f"Store callbacks = {env_get(API_LOCAL, 'INTEGRATIONS_PUBLIC_BASE_URL') or 'not configured'} (dedicated ingress when pinned)")
 
 
 def env_get(path: Path, key: str) -> str | None:
@@ -307,6 +307,23 @@ def print_google_internet_steps(*, api: str, web: str) -> None:
     print("  (no abro Google Console — pegá el URI vos en Credentials → OAuth client)")
 
 
+def configure_stores(raw: str) -> None:
+    """Pin only store callbacks. Never use this restricted host as API/auth/MCP origin."""
+    parsed = urlparse(raw.strip())
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+            or parsed.port or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+        die("stores URL must be an HTTPS origin without credentials, port, path, query or fragment")
+    origin = f"https://{parsed.hostname}"
+    upsert(API_LOCAL, {"INTEGRATIONS_DEV_PUBLIC_BASE_URL": origin,
+                       "INTEGRATIONS_PUBLIC_BASE_URL": origin})
+    print(f"Stores only: {origin} → ingress 127.0.0.1:3011 → API :3000")
+    for kind in ("mercadolibre", "shopify", "tiendanube"):
+        print(f"  {kind} callback: {origin}/api/integrations/{kind}/callback")
+        print(f"  {kind} webhook:  {origin}/api/integrations/{kind}/webhook")
+    print("Restart api-doc if it does not reload .env.local. MCP/auth/UI settings unchanged.")
+    print(f"ngrok http http://127.0.0.1:3011 --url {origin} --inspect=false")
+
+
 def apply(urls: Urls) -> None:
     mode = "localhost" if is_loopback(urls.mcp_host) and is_loopback(urls.api_host) else "tunnel"
     web_for_report = urls.web or resolve_web_url_for_report()
@@ -352,7 +369,9 @@ def apply(urls: Urls) -> None:
             "NEXT_PUBLIC_APP_URL": urls.api,
             "NEXT_PUBLIC_ROUTER_APP_URL": router_public,
             "SMART_IMPORT_URL": urls.smart_import,
-            **({} if api_is_local else {"INTEGRATIONS_PUBLIC_BASE_URL": urls.api}),
+            **({"INTEGRATIONS_PUBLIC_BASE_URL": env_get(API_LOCAL, "INTEGRATIONS_DEV_PUBLIC_BASE_URL")}
+               if env_get(API_LOCAL, "INTEGRATIONS_DEV_PUBLIC_BASE_URL")
+               else ({} if api_is_local else {"INTEGRATIONS_PUBLIC_BASE_URL": urls.api})),
         },
     )
     if API_ENV.is_file():
@@ -1033,7 +1052,13 @@ def main(argv: list[str]) -> None:
     p_tunnel.add_argument("--login", "--api", dest="api_url_flag", default=None, help=argparse.SUPPRESS)
     p_tunnel.add_argument("--web", dest="web_url", default=None)
 
+    p_stores = sub.add_parser("stores", help="Pin store callback origin independently of API/MCP tunnels")
+    p_stores.add_argument("url", nargs="?", default="https://uninstall-resale-bring.ngrok-free.dev")
+
     args = parser.parse_args(argv)
+    if args.cmd == "stores":
+        configure_stores(args.url)
+        return
 
     if args.cmd == "status":
         show_status()
