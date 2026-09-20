@@ -14,7 +14,7 @@ Distances are kilometres, durations minutes, weights kilograms, volumes cubic me
 |---|---|---|
 | `X-Vepathos-MCP-Service-Key` | yes | Authenticates the `vepathos-mcp` service. Grants no account access by itself. |
 | `Authorization` | yes | `Bearer <user credential>`: an OAuth access token issued by Vepathos for `https://mcp.vepathos.com/mcp`, or a developer credential `<client_id>:<client_secret>` with scope `mcp:optimize`. The account is derived **only** from this credential. |
-| `Idempotency-Key` | yes on `POST /optimization/jobs` | 8–128 chars, `[A-Za-z0-9_.:-]`. Same key + same body returns the existing job; same key + different body → `409 IDEMPOTENCY_CONFLICT`. Rejected requests do not store the key. |
+| `Idempotency-Key` | yes on `POST /optimization/jobs`; sent and **ignored** on `POST /catalog/*` (those converge by name) | 8–128 chars, `[A-Za-z0-9_.:-]`. Same key + same body returns the existing job; same key + different body → `409 IDEMPOTENCY_CONFLICT`. Rejected requests do not store the key. |
 | `X-Vepathos-MCP-Client` | no | Normalized client label for analytics only (`claude`, `claude-code`, `cursor`, `vscode`, `codex`, `chatgpt`, `other`). Never used for authorization. |
 | `traceparent` / `tracestate` | no | W3C trace context, propagated to logs. |
 
@@ -76,7 +76,8 @@ unauthorized credential returns the usual `401 AUTHENTICATION_REQUIRED` / `INVAL
 
 ## `GET /api/mcp/v1/catalog`
 
-The account's own fleets and vehicles, so an optimization can use the real fleet. Read-only, no
+The account's own fleets, vehicles and depots, so an optimization can use the real fleet and start
+where the account's routes start. Read-only, no
 stop quota: `GET /fleets` and `GET /vehicles` are not billable triggers. Scoped to the caller's
 company by the RouteHub tenant guard.
 
@@ -94,6 +95,9 @@ company by the RouteHub tenant guard.
   ],
   "vehicles": [
     { "vehicle_id": "v9", "name": "KIA", "count": null, "max_weight_kg": 800, "max_volume_m3": 6 }
+  ],
+  "depots": [
+    { "depot_id": "3", "name": "Barracas", "latitude": -34.6441, "longitude": -58.3816 }
   ]
 }
 ```
@@ -107,6 +111,70 @@ as the user does; both are present because a vehicle can belong to no fleet.
 digits, `_`, `-`, `.`): `vepathos-mcp` reshapes it before publishing, keeping it unique per fleet.
 When neither resource answers, Core returns `503 BACKEND_UNAVAILABLE`; when only one fails, the
 other is still returned.
+
+`depots[]` are RouteHub milestones with `category: "DEPOT"`; an account that has milestones but tagged
+none gets all of them (the dashboard's rule, `lib/dashboard/depot-utils.ts filterDepots`). A milestone
+whose `location` is not readable ISO 6709 is skipped. When only the milestones read fails, `depots` is
+`[]` and the rest still answers.
+
+## Catalog master data (writes)
+
+Vehicles and depots saved in the account. **Master data, not plan settings**: how many vehicles a run
+uses, stops per vehicle or a depot for one day travel in the optimization request and never here, so no
+route below takes `count`, `available` or a list. Unknown fields are `400 INVALID_INPUT`.
+
+RouteHub has no unique names and no idempotency (ids are auto-increment), so **a create converges by
+name**. Names are compared normalized: trim, lowercase, NFD without diacritics, `[-_/.]+` to a space,
+spaces collapsed. The same name with the same values answers the row that exists (`200`,
+`outcome: "already_existed"`, nothing written): a retry is safe. The same name with other values, or a
+name several rows share, is `409 NAME_TAKEN` with `details.existing` for the person to decide.
+`Idempotency-Key` is accepted and ignored. Vehicles whose name ends in ` (run-only)` (the web
+optimizer's ephemeral ones) are not the catalog and are not compared.
+
+Tenant scoping, the plan's catalog caps and usage accounting come from the RouteHub proxy every other
+surface writes through. A cap answers `403 PLAN_UPGRADE_REQUIRED` with `details.reason`
+`CATALOG_VEHICLE_LIMIT` or `CATALOG_DEPOT_LIMIT` and an `upgrade_url`, before anything is written.
+
+### `POST /api/mcp/v1/catalog/vehicles`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string 1–120 | yes | |
+| `max_weight_kg` | number > 0, ≤ 1,000,000 | no | |
+| `max_volume_m3` | number > 0, ≤ 10,000 | no | |
+
+`201` (or `200` when it already existed; capacities equal within 1e-6, absent equals only absent):
+
+```json
+{
+  "vehicle": { "vehicle_id": "12", "name": "Sprinter", "count": null, "max_weight_kg": 1500, "max_volume_m3": 14 },
+  "outcome": "created",
+  "account_url": "https://vepathos.com/dashboard/vehicles"
+}
+```
+
+RouteHub stores capacities as integers: Core writes whole kilograms / cubic metres as such and a
+fractional value one unit down (`GRAMS`, `LITER`), so nothing is rounded away. It also writes the
+dashboard's defaults, `category_type: "TRUCK"` and `engine_type: "DIESEL"`.
+
+### `PATCH /api/mcp/v1/catalog/vehicles/{vehicle_id}`
+
+Any of `name`, `max_weight_kg`, `max_volume_m3`, at least one; only what is sent changes. `200` with
+the same body and `outcome: "updated"`. An id that is not numeric or not the account's is
+`404 VEHICLE_NOT_FOUND`. Renaming onto **another** vehicle's name is `409 NAME_TAKEN`.
+
+### `POST /api/mcp/v1/catalog/depots`
+
+`{ "name": string 1–120, "latitude": -90..90, "longitude": -180..180 }`, all required. Coordinates
+only: an address is geocoded by the caller first. Written as a milestone with `category: "DEPOT"`.
+Same responses with `depot` (`depot_id`, `name`, `latitude`, `longitude`) and
+`account_url` `…/dashboard/milestones`. "The same place", for `already_existed`, is both coordinates
+within 0.0005°.
+
+### `PATCH /api/mcp/v1/catalog/depots/{depot_id}`
+
+Any of `name`, `latitude`, `longitude`, at least one; **`latitude` and `longitude` change together**.
+`404 DEPOT_NOT_FOUND`, `409 NAME_TAKEN`.
 
 ## Plans
 
@@ -629,7 +697,10 @@ Every error has the same envelope:
 |---|---|---|
 | 400/422 | `INVALID_INPUT` | `issues: [{path, message}]` (first 20) |
 | 422 | `INVALID_COORDINATES` | `stop_ids`, `max_distance_km` |
-| 403 | `PLAN_UPGRADE_REQUIRED` | `reason` (`STOP_LIMIT_EXCEEDED` \| `FEATURE_NOT_AVAILABLE` \| `VEHICLE_LIMIT_EXCEEDED` \| `ROUTE_STOP_LIMIT_EXCEEDED`), `requested`, `current_limit`, `required_capability`, `eligible_plans: [{id, name}]`, `upgrade_url` or `contact_url`, optional `full_trial: {available, max_stops}` |
+| 403 | `PLAN_UPGRADE_REQUIRED` | `reason` (`STOP_LIMIT_EXCEEDED` \| `FEATURE_NOT_AVAILABLE` \| `VEHICLE_LIMIT_EXCEEDED` \| `ROUTE_STOP_LIMIT_EXCEEDED` \| `CATALOG_VEHICLE_LIMIT` \| `CATALOG_DEPOT_LIMIT`), `requested`, `current_limit`, `required_capability`, `eligible_plans: [{id, name}]`, `upgrade_url` or `contact_url`, optional `full_trial: {available, max_stops}` |
+| 409 | `NAME_TAKEN` | `existing` (the vehicle or depot that has the name), `matches` |
+| 404 | `VEHICLE_NOT_FOUND` | |
+| 404 | `DEPOT_NOT_FOUND` | |
 | 429 | `QUOTA_EXCEEDED` | `stops_remaining`, `requested`, `period_ends_at`, optional `upgrade_url`, `free_retry` (plan runs) |
 | 429 | `CONCURRENT_OPTIMIZATION_LIMIT` | `limit`, `active_job_ids`; `Retry-After` header |
 | 409 | `IDEMPOTENCY_CONFLICT` | — |

@@ -16,6 +16,7 @@ import math
 import os
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -84,6 +85,11 @@ class FakeCoreState:
     company_name: str | None = None
     fleets: list[dict[str, Any]] = field(default_factory=list)
     vehicles: list[dict[str, Any]] = field(default_factory=list)
+    # Catalog master data: saved depots, the plan's catalog caps, and the next RouteHub-like numeric id.
+    depots: list[dict[str, Any]] = field(default_factory=list)
+    max_vehicles: int | None = None
+    max_depots: int | None = None
+    next_catalog_id: int = 100
     # Standing rules, keyed by automation_id, and the stores an account has connected.
     automations: dict[str, dict[str, Any]] = field(default_factory=dict)
     stores: list[dict[str, Any]] = field(default_factory=list)
@@ -96,6 +102,20 @@ def _error(status: int, code: str, message: str, details: dict[str, Any] | None 
     if details:
         body["error"]["details"] = details
     return JSONResponse(body, status_code=status)
+
+
+def _norm(value: str) -> str:
+    """Core's name normalization: 'Sprinter-08' and 'sprínter 08' are one name."""
+
+    folded = unicodedata.normalize("NFD", value.strip().lower())
+    plain = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return re.sub(r"\s+", " ", re.sub(r"[-_/.]+", " ", plain)).strip()
+
+
+def _same(a: Any, b: Any, tolerance: float) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return abs(float(a) - float(b)) < tolerance
 
 
 def _iso(ts: float) -> str:
@@ -209,7 +229,78 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         account = authenticate(request)
         if isinstance(account, JSONResponse):
             return account
-        return JSONResponse({"fleets": state.fleets, "vehicles": state.vehicles})
+        return JSONResponse({"fleets": state.fleets, "vehicles": state.vehicles, "depots": state.depots})
+
+    async def write_catalog(request: Request, kind: str) -> JSONResponse:
+        """POST creates (converging by name), PATCH changes what is sent. Same rules as Core."""
+
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        vehicle = kind == "vehicle"
+        rows = state.vehicles if vehicle else state.depots
+        key = "vehicle_id" if vehicle else "depot_id"
+        values = ("max_weight_kg", "max_volume_m3") if vehicle else ("latitude", "longitude")
+        tolerance = 1e-6 if vehicle else 0.0005
+        url = ACCOUNT_URL + ("/vehicles" if vehicle else "/milestones")
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) - {"name", *values}:
+            return _error(400, "INVALID_INPUT", f"The {kind} is not valid.")
+
+        def answer(row: dict[str, Any], outcome: str, status: int) -> JSONResponse:
+            return JSONResponse({kind: row, "outcome": outcome, "account_url": url}, status_code=status)
+
+        target_id = request.path_params.get(key)
+        if target_id is not None:
+            row = next((r for r in rows if r[key] == target_id), None)
+            if row is None:
+                return _error(404, f"{kind.upper()}_NOT_FOUND", f"No saved {kind} with this id.")
+            if not body or (not vehicle and ("latitude" in body) != ("longitude" in body)):
+                return _error(400, "INVALID_INPUT", f"The {kind} is not valid.")
+            wanted = _norm(body.get("name", ""))
+            others = [r for r in rows if r is not row and _norm(r.get("name") or "") == wanted]
+            if "name" in body and others:
+                taken = {"existing": others[0], "matches": len(others)}
+                return _error(409, "NAME_TAKEN", "Name taken.", taken)
+            row.update(body)
+            return answer(row, "updated", 200)
+
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip() or (not vehicle and None in map(body.get, values)):
+            return _error(400, "INVALID_INPUT", f"The {kind} is not valid.")
+        matches = [r for r in rows if _norm(r.get("name") or "") == _norm(name)]
+        if matches:
+            same = len(matches) == 1 and all(_same(matches[0].get(v), body.get(v), tolerance) for v in values)
+            if same:
+                return answer(matches[0], "already_existed", 200)
+            return _error(409, "NAME_TAKEN", "Name taken.", {"existing": matches[0], "matches": len(matches)})
+        cap = state.max_vehicles if vehicle else state.max_depots
+        if cap is not None and len(rows) >= cap:
+            return _error(
+                403,
+                "PLAN_UPGRADE_REQUIRED",
+                f"Your plan allows up to {cap} saved {kind}s.",
+                {
+                    "reason": "CATALOG_VEHICLE_LIMIT" if vehicle else "CATALOG_DEPOT_LIMIT",
+                    "upgrade_url": "https://app.example.test/dashboard/billing",
+                },
+            )
+        state.next_catalog_id += 1
+        created: dict[str, Any] = {key: str(state.next_catalog_id), "name": name.strip()}
+        if vehicle:
+            created["count"] = None
+        created.update({v: body.get(v) for v in values})
+        rows.append(created)
+        return answer(created, "created", 201)
+
+    async def write_vehicle(request: Request) -> JSONResponse:
+        return await write_catalog(request, "vehicle")
+
+    async def write_depot(request: Request) -> JSONResponse:
+        return await write_catalog(request, "depot")
 
     def free_retry_state(plan_id: str, stops: list[dict[str, Any]] | None) -> dict[str, Any]:
         """Core's shared rule (billing/free-retry-policy.ts): after a plan's completed billed run, a run
@@ -1054,6 +1145,10 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/health", health, methods=["GET"]),
             Route("/api/mcp/v1/account", get_account, methods=["GET"]),
             Route("/api/mcp/v1/catalog", get_catalog, methods=["GET"]),
+            Route("/api/mcp/v1/catalog/vehicles", write_vehicle, methods=["POST"]),
+            Route("/api/mcp/v1/catalog/vehicles/{vehicle_id}", write_vehicle, methods=["PATCH"]),
+            Route("/api/mcp/v1/catalog/depots", write_depot, methods=["POST"]),
+            Route("/api/mcp/v1/catalog/depots/{depot_id}", write_depot, methods=["PATCH"]),
             Route("/api/mcp/v1/optimization/jobs", create_job, methods=["POST"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}", get_job, methods=["GET"]),
             Route("/api/mcp/v1/optimization/jobs/{job_id}/result", get_result, methods=["GET"]),
