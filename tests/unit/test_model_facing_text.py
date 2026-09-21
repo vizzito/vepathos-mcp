@@ -34,7 +34,7 @@ from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 # master data and plan settings are told apart in both descriptions, because the instructions may be cut.
 # The local smoke of 2026-09-20 adds ~470: a local path is not a url, a unit is fixed in the mapping, and
 # progress is said to the user, because a host with a shell parsed and converted the file on its own.
-MAX_TOTAL_CHARS = 18_100
+MAX_TOTAL_CHARS = 18_350
 # 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
 # descriptions, because an agent that never lists those tools still must not claim a rule is running.
 MAX_INSTRUCTION_CHARS = 5_350
@@ -369,3 +369,5 @@ def test_the_way_out_of_needs_mapping_is_written_where_the_agent_reads_the_statu
     assert "status=needs_mapping" in text and "rows_to_review" in text
     assert "Answer EVERY one through update_import_mapping" in text
     assert "null to ignore it" in text and "does not clear it" in text
+    # Same smoke, minutes later: to get unstuck the agent CONFIRMED a column of dates as "phone".
+    assert "never confirm one that does not fit" in text and "against the sample values" in text

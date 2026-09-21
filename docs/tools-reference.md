@@ -329,7 +329,7 @@ Import deliveries as text, through the same pipeline as a file, into a new plan 
 
 **Get import result**
 
-Status and summary of an import_delivery_file / import_delivery_text job. When complete: plan_id (the plan the stops loaded into), account_url, summary (counts, mapping, sample, needs_confirmation) and whether the next run is charged. Tell the user when plan_replaced or plan_temporary is set. status=needs_mapping: the import waits on the columns it is unsure of, each named in summary.rows_to_review with its suggested field. Answer EVERY one through update_import_mapping (the suggested field to confirm it, another to correct it, null to ignore it); changing other columns does not clear it. Never returns all rows. Then call optimize_plan with plan_id.
+Status and summary of an import_delivery_file / import_delivery_text job. When complete: plan_id (the plan the stops loaded into), account_url, summary (counts, mapping, sample, needs_confirmation) and whether the next run is charged. Tell the user when plan_replaced or plan_temporary is set. status=needs_mapping: the import waits on the columns it is unsure of, each named in summary.rows_to_review with its suggested field. Answer EVERY one through update_import_mapping (the suggested field to confirm it, another to correct it, null to ignore it); changing other columns does not clear it. Check each suggestion against the sample values first: never confirm one that does not fit (dates suggested as phone) just to move on; ignore that column with null, or ask the user when it may matter to the routes. Never returns all rows. Then call optimize_plan with plan_id.
 
 - Read only: yes · Destructive: no · Idempotent: yes · Open world: no
 - Published: `MCP_IMPORT_TOOLS_ENABLED`
