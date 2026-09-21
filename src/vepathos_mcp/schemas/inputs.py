@@ -141,8 +141,10 @@ class Schedule(StrictModel):
         None,
         ge=30,
         le=24 * 60,
-        description="Maximum journey length per route in minutes (travel + service). "
-        "Activates the engine time cap when set.",
+        description="Target journey length per route in minutes (travel + service). A balancing target, not "
+        "a hard limit: the engine evens routes out towards it and some may run longer. Tell the user it is a "
+        "target, check the durations in the result, and when routes exceed it offer more vehicles or fewer "
+        "stops per vehicle.",
     )
 
     @field_validator("date")

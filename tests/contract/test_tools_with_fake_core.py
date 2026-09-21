@@ -786,3 +786,17 @@ async def test_only_the_tool_that_fetches_a_callers_url_is_open_world(mcp_client
         name for name, tool in tools.items() if tool.annotations and tool.annotations.open_world_hint
     }
     assert open_world == {"import_delivery_file"}
+
+
+async def test_the_route_duration_is_published_as_the_target_it_is(mcp_client: Callable[..., Any]) -> None:
+    # Local smoke, 2026-09-21: the field said "maximum", the agent promised no route over 60 minutes, and 7
+    # of 18 ran 67-70. Core sends it as rebalance_by_time: a soft target. The text must not promise more.
+    async with await mcp_client() as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    inline = tools["optimize_delivery_routes"].input_schema["properties"]["schedule"]["properties"]
+    for text in (
+        inline["max_route_minutes"]["description"],
+        tools["optimize_plan"].input_schema["properties"]["max_route_minutes"]["description"],
+    ):
+        assert "not a hard limit" in text.replace("not \n", "not ") and "target" in text
+        assert "Maximum" not in text

@@ -221,7 +221,10 @@ class OptimizePlanInput(StrictModel):
         None,
         ge=30,
         le=24 * 60,
-        description="Maximum journey length per route in minutes. Activates the engine time cap.",
+        description="Target journey length per route in minutes (travel + service). A balancing target, not "
+        "a hard limit: the engine evens routes out towards it and some may run longer. Tell the user it is "
+        "a target, check the durations in the result, and when routes exceed it offer more vehicles or "
+        "fewer stops per vehicle.",
     )
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     confirmed: bool = False

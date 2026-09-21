@@ -80,7 +80,7 @@ Plan optimized delivery routes for stops given in this conversation (vehicle rou
 | `schedule.route_start_time` | string | no | Time routes leave the depot, local HH:MM. Required when any stop has a time_window. |
 | `schedule.time_zone` | string | no | IANA time zone for dates and times, e.g. America/New_York. |
 | `schedule.service_time_minutes` | number | no | Minutes spent at each stop (unloading, hand-off). |
-| `schedule.max_route_minutes` | number | no | Maximum journey length per route in minutes (travel + service). Activates the engine time cap when set. |
+| `schedule.max_route_minutes` | number | no | Target journey length per route in minutes (travel + service). A balancing target, not a hard limit: the engine evens routes out towards it and some may run longer. Tell the user it is a target, check the durations in the result, and when routes exceed it offer more vehicles or fewer stops per vehicle. |
 | `use_weight` | boolean | no | Optimize by weight capacity. Omit to follow the data; false keeps weights for reference. |
 | `use_volume` | boolean | no | Optimize by volume capacity. Omit to follow the data; false keeps volumes for reference. |
 | `max_load_ratio` | number | no | Highest share of each vehicle's weight/volume capacity to fill. Default 0.95 (5% margin); 1 only when the user asks to fill vehicles completely. |
@@ -222,7 +222,7 @@ Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or
 | `route_start_time` | string | no |  |
 | `time_zone` | string | no |  |
 | `service_time_minutes` | number | no |  |
-| `max_route_minutes` | number | no | Maximum journey length per route in minutes. Activates the engine time cap. |
+| `max_route_minutes` | number | no | Target journey length per route in minutes (travel + service). A balancing target, not a hard limit: the engine evens routes out towards it and some may run longer. Tell the user it is a target, check the durations in the result, and when routes exceed it offer more vehicles or fewer stops per vehicle. |
 | `date` | string | no |  |
 | `idempotency_key` | string | no |  |
 | `depot_name` | string | no | Depot name shown in the plan. |
