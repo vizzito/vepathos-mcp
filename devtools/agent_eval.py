@@ -638,8 +638,14 @@ def compare() -> None:
         print("no hay resultados todavía en", " ni ".join(str(d) for d in directories))
         return
     columns = [f"{r['label']}/{r['model']}" for r in reports]
+    # When a check is fixed its name often stays, so an old column keeps printing the verdict the old
+    # definition gave and reads as if it were comparable to today's. `volumen` sat at 0/3 beside a 1/1
+    # for exactly that reason. The date is what tells them apart, so it goes in the header.
+    dates = [str(r.get("at", "")).replace("-", "")[4:] or "?" for r in reports]
+    dates = [f"{d[:4]} {d[5:10]}" if len(d) > 9 else d for d in dates]
     width = max(24, max(len(c) for c in columns) + 2)
     print(f"{'':58}" + "".join(f"{c:>{width}}" for c in columns))
+    print(f"{'':58}" + "".join(f"{d:>{width}}" for d in dates))
 
     def row(case: str, name: str) -> None:
         cells = []
