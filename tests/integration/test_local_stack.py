@@ -38,7 +38,13 @@ def credential(name: str) -> str:
 
 @pytest.fixture
 async def core() -> AsyncIterator[VepathosApiClient]:
-    client = VepathosApiClient(BASE_URL, os.environ.get("VEPATHOS_MCP_SERVICE_KEY", ""), timeout_seconds=60)
+    # Without the service key Core rejects the SERVICE, and every test here fails as though the product
+    # were broken: `assert await core.health()` says only False, and an unauthorized-credential test
+    # reports "misconfigured" instead of the credential it meant to check. Missing config is a skip.
+    service_key = os.environ.get("VEPATHOS_MCP_SERVICE_KEY", "").strip()
+    if not service_key:
+        pytest.skip("VEPATHOS_MCP_SERVICE_KEY not set (see docs/testing.md)")
+    client = VepathosApiClient(BASE_URL, service_key, timeout_seconds=60)
     try:
         yield client
     finally:
