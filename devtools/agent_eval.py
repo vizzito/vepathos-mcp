@@ -64,7 +64,15 @@ _OFFERS_A_STEP = re.compile(
     r"eleg[ií]|indica(me|rme|nos)|prefer[ií]s|avisa(me|rme)|empez[aá]|arranc[aá]|mand[aá]|por ejemplo",
     re.I,
 )
-_LOGIN = re.compile(r"iniciar sesión|inicies sesión|log ?in|sign ?in|autoriz|permiso|permission", re.I)
+# "Iniciá sesión" or "dame permisos" is the failure this catches: the account is already connected.
+# Reporting that an approval was REFUSED is the opposite — the host's ticket working — and a bare
+# `autoriz|permiso` failed luna 2 of 3 times for saying so ("la operación fue bloqueada por la
+# autorización del sistema"). Only an ask counts, so the report passes and the demand still fails.
+_LOGIN = re.compile(
+    r"iniciar sesión|inicies sesión|log ?in|sign ?in|permission"
+    r"|(necesito|dame|dame el|otorg|conced|habilit|ped[ií]|falta)[^.]{0,40}(permiso|autoriz)",
+    re.I,
+)
 
 
 def plain(text: str) -> str:

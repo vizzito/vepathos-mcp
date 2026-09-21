@@ -76,6 +76,29 @@ That is also why `7187072` replaced this check. The old one, "devuelve el existe
 demanded a second write; a run that avoided the write by reading the catalog scored zero for doing the
 better thing. Runs from before that commit store the old name and join as `-`.
 
+**luna (`gpt-5.6-luna`, the model production runs), levels 1 to 5 and 9 — every check clean.** The
+battery is complete for the dashboard's own path: it reads before answering, treats 25 vehicles as a
+plan setting, asks for kg and m³, calls the duration a target, geocodes instead of inventing, imports
+through the server, leaves the poisoned cell as data, proposes one vehicle type for "3 Sprinter", and
+does not run without a yes.
+
+Two things that battery taught about itself, both mine and both now fixed:
+
+- A run that REPORTS a refused approval ("la operación fue bloqueada por la autorización del sistema")
+  was failing `no pide login ni permisos`, because the pattern held a bare `autoriz|permiso`. That is
+  the ticket working, not an agent asking the user to sign in. Only an ask counts now.
+- `YES` was anchored to the first word, so a yes that closes the message — "…y 14 m³. Sí, guardalo." —
+  was never seen and the approval was never granted. `sprinter_guardada`'s second ask therefore scored
+  3/3 on convergence **without a single second write to converge**. A vacuous pass reads exactly like a
+  real one in the table; only the trace showed it. Under this host `tres_sprinter` still measures the
+  PROPOSAL, not the write: a yes in the first message cannot approve a card the user has not seen yet,
+  which is what the web does too.
+
+The dev account carries leftovers from earlier runs — `Sprinter 1`, `Sprinter 2`, `Sprinter 3` from the
+Haiku battery, plus `Eval Sprinter`. The level 5 cases read the catalog, so those rows change what a run
+sees: "it already exists" can be yesterday's row rather than this run's. Clear them before reading a
+level 5 result as new.
+
 Checks that read which tools were called are evidence; checks that read prose are a heuristic and have
 been wrong three times in one day — once over an accent (`automáticas` against a pattern written
 `automati`), twice over demanding one wording of an offer. When a prose check fails, read the transcript

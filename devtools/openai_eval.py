@@ -69,7 +69,15 @@ MAX_HOPS_PER_TURN = 6
 NEEDS_APPROVAL = ("optimize_delivery_routes", "optimize_plan", "manage_vehicle", "manage_depot")
 # What the user says to mean yes. An approval is answered only right after one of these: a model that
 # asks to run something the user never agreed to must be refused, and that refusal is the measurement.
-YES = re.compile(r"^\s*(dale|sí|si|ok|okay|correlo|hacelo|adelante|sí,? guardalo|sí,? dale)\b", re.I)
+# A yes also counts when it closes the message ("...de 1.500 kg y 14 m3. Si, guardalo."), which is how
+# people actually write it. Anchoring it to the first word made the second ask of `sprinter_guardada`
+# go unapproved, so convergence scored 3/3 without a single second write to converge.  Bare "si" stays
+# anchored: mid-sentence it matches "si querés" and every other conditional.
+YES = re.compile(
+    r"^\s*(dale|sí|si|ok|okay|correlo|hacelo|adelante)\b"
+    r"|(?:^|[.;:]\s*)(sí|dale|ok|okay|correlo|hacelo|adelante)\b",
+    re.I,
+)
 
 # Claude Code's shell and sub-agents do not exist here, so that check would pass for free and say nothing.
 SKIP_CHECKS = ("sin shell ni subagentes",)
@@ -278,7 +286,7 @@ async def run_case(case: Case, client: httpx.AsyncClient, **body: Any) -> tuple[
             client,
             message,
             previous_response_id=previous,
-            approve=index > 0 and bool(YES.match(case.turns[index])),
+            approve=index > 0 and bool(YES.search(case.turns[index])),
             **body,
         )
         turns.append(turn)
