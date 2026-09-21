@@ -159,6 +159,7 @@ peer-reviewed publication.
 | [docs/onboarding.md](docs/onboarding.md) | Connect, signup, upgrade |
 | [docs/tools.md](docs/tools.md) | How the tools behave: plans, confirmation, master data, errors |
 | [docs/tools-reference.md](docs/tools-reference.md) | Generated reference: every tool, inputs, annotations, workflows |
+| [docs/agent-test-plan.md](docs/agent-test-plan.md) | Every scenario to run with a real agent, from health to a connected store, and the open findings |
 | [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
 | [docs/deployment.md](docs/deployment.md) | Operator index (container, Caddy, health) |
 | [docs/deploy-api-prod.md](docs/deploy-api-prod.md) | First prod cut on api-prod (2026-09-14): every step and pitfall |
