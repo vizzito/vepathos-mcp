@@ -27,6 +27,14 @@ One text, not a ChatGPT fork and a Claude fork. OpenAI documents that ChatGPT an
 is the dispatcher Claude already followed (inspect → propose → yes → run → summarize). Rules for one
 tool also live in that tool's description, because some hosts truncate or ignore `instructions`.
 
+**Order is part of the contract.** Claude Code keeps about **2,048 characters** of the instructions,
+whatever the model; ChatGPT and Codex keep 512 as self-contained; the dashboard passes all of it. So the
+text runs: the 512-character lead, then who to be and how to speak (the user's language, no tool names),
+then the loop in five short steps (inspect, propose with numbers and ask which fleet, run only after a
+yes, report with the percent, files), and only then what elaborates it (context, account, plans,
+automations, master data, when to ask). `test_what_a_cutting_host_keeps` fails when a rule the loop
+needs falls past the cut, for every flag combination. `vepathos-mcp doctor` prints the length.
+
 - ChatGPT, Claude, Gemini, Cursor and Codex: `initialize`.
 - Vepathos AI (`vepathos-router-client`, `/ai`): `getMcpServerProfile()` reads `initialize`, then
   `buildAiInstructions()` prepends account chrome (email, plan, language, cards). Do not duplicate

@@ -37,7 +37,9 @@ from vepathos_mcp.tools.maps import DESCRIPTION as MAP_DESCRIPTION
 MAX_TOTAL_CHARS = 18_350
 # 0.7.0: +234 for the automations line. It has to be in the instructions and not only in the two tool
 # descriptions, because an agent that never lists those tools still must not claim a rule is running.
-MAX_INSTRUCTION_CHARS = 5_350
+# Reordered on 2026-09-20 around the cut (see test_what_a_cutting_host_keeps): +~40 for 'ask which
+# fleet, never pick a single vehicle' and saying the percent while a run is in progress.
+MAX_INSTRUCTION_CHARS = 5_400
 # Claude Code cuts server instructions and tool descriptions at this length.
 CLAUDE_CODE_TEXT_LIMIT = 2_048
 OPENAI_INSTRUCTION_WINDOW = 512
@@ -371,3 +373,31 @@ def test_the_way_out_of_needs_mapping_is_written_where_the_agent_reads_the_statu
     assert "null to ignore it" in text and "does not clear it" in text
     # Same smoke, minutes later: to get unstuck the agent CONFIRMED a column of dates as "phone".
     assert "never confirm one that does not fit" in text and "against the sample values" in text
+
+
+EACH_FLAG_SETTING = pytest.mark.parametrize("catalog", [True, False], ids=["catalog_on", "catalog_off"])
+
+
+@EACH_GATE_SETTING
+@EACH_IMPORT_SETTING
+@EACH_FLAG_SETTING
+def test_what_a_cutting_host_keeps(gate: bool, imports: bool, catalog: bool) -> None:
+    """Claude Code keeps ~2,048 characters of the instructions, whatever the model. Local smoke,
+    2026-09-20: with the loop past the cut, the agent proposed one van for 250 stops without a number,
+    read tool names out to the user and narrated in English. What prevents that must come first."""
+
+    for maps in (True, False):
+        kept = d.server_instructions(
+            confirm_before_optimize=gate, import_tools=imports, map_shares=maps, catalog_writes=catalog
+        )[:CLAUDE_CODE_TEXT_LIMIT]
+        assert kept.startswith(d._LEAD), "the first 512 characters belong to ChatGPT: do not move them"
+        for rule in (
+            "in the user's language",
+            "Do not mention MCP, OAuth, tokens, tool or parameter names",
+            "Inspect before proposing",
+            "Propose with numbers",
+            "ask which one; never pick a single vehicle for the user",
+            "Run only after an explicit yes",
+            "saying the percent while it runs",
+        ):
+            assert rule in kept, f"lost to the cut: {rule!r}"
