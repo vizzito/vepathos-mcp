@@ -186,17 +186,38 @@ def parse_stream(stdout: str) -> Run:
                 texts.append(str(block.get("text") or ""))
             elif block.get("type") == "tool_use":
                 name = str(block.get("name") or "")
+                if (
+                    name == "ToolSearch"
+                ):  # the host loading deferred tool schemas, not a decision of the agent
+                    continue
                 tools.append(name.rsplit("__", 1)[-1])
                 inputs.append(block.get("input") if isinstance(block.get("input"), dict) else {})
     return Run(text="\n\n".join(t for t in texts if t.strip()), tools=tools, inputs=inputs)
 
 
-def run_once(prompt: str, *, model: str, connector: str, timeout: int) -> Run:
+def connector_config(connector: str) -> Path:
+    """An MCP config with ONLY the connector under test.
+
+    The first measurement was worthless without this (2026-09-20): the developer's Claude Code also had
+    an unauthenticated Google Drive connector, so given a Drive link the agent answered "the Drive
+    connector needs to sign in" and never reached import_delivery_file. A user's other connectors are
+    their environment, not this server's behaviour. The OAuth session is reused by connector name."""
+
+    listed = subprocess.run(["claude", "mcp", "list"], capture_output=True, text=True, check=False).stdout  # noqa: S607
+    match = re.search(rf"^{re.escape(connector)}: (\S+)", listed, re.M)
+    if not match:
+        raise SystemExit(f"no MCP connector named {connector!r}: add it with `claude mcp add`")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / "_mcp.json"
+    path.write_text(json.dumps({"mcpServers": {connector: {"type": "http", "url": match.group(1)}}}))
+    return path
+
+
+def run_once(prompt: str, *, model: str, connector: str, config: Path, timeout: int) -> Run:
     command = [
         "claude", "-p", prompt, "--model", model, "--output-format", "stream-json", "--verbose",
-        # Only the connector under test may act; the production connector must never be touched.
+        "--strict-mcp-config", "--mcp-config", str(config),
         "--allowedTools", f"mcp__{connector}",
-        "--disallowedTools", "mcp__claude_ai_Vepathos_route_planner",
     ]  # fmt: skip
     try:
         # The command is built here from fixed flags; only the prompt varies, and it is one of CASES.
@@ -204,13 +225,18 @@ def run_once(prompt: str, *, model: str, connector: str, timeout: int) -> Run:
     except subprocess.TimeoutExpired:
         return Run(text="", tools=[], inputs=[], error="timeout")
     run = parse_stream(done.stdout)
-    if not run.text and not run.tools:
+    if f'"name": "{connector}", "status": "connected"' not in done.stdout.replace('":"', '": "').replace(
+        '","', '", "'
+    ):
+        run.error = f"{connector} did not connect (tunnel down, or sign in again with /mcp)"
+    elif not run.text and not run.tools:
         run.error = (done.stderr or done.stdout)[-300:] or "empty transcript"
     return run
 
 
 def evaluate(label: str, model: str, runs: int, only: list[str], connector: str, timeout: int) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    config = connector_config(connector)
     report: dict[str, Any] = {
         "label": label,
         "model": model,
@@ -225,7 +251,7 @@ def evaluate(label: str, model: str, runs: int, only: list[str], connector: str,
         passed = dict.fromkeys(all_checks, 0)
         transcripts: list[dict[str, Any]] = []
         for index in range(runs):
-            run = run_once(prompt, model=model, connector=connector, timeout=timeout)
+            run = run_once(prompt, model=model, connector=connector, config=config, timeout=timeout)
             verdicts = {name: (run.error is None and check(run)) for name, check in all_checks.items()}
             for name, ok in verdicts.items():
                 passed[name] += ok
@@ -248,7 +274,11 @@ def evaluate(label: str, model: str, runs: int, only: list[str], connector: str,
 
 
 def compare() -> None:
-    reports = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(OUT_DIR.glob("*.json"))]
+    reports = [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in sorted(OUT_DIR.glob("*.json"))
+        if not p.name.startswith("_")
+    ]
     if not reports:
         print("no hay resultados todavía en", OUT_DIR)
         return
