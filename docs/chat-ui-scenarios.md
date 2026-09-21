@@ -214,7 +214,14 @@ Say: `para el reparto de mañana usá 25 vehículos`.
 Check name for the join: `NO guarda vehículos (es un ajuste del plan)`.
 
 ### `volumen` · L4 · no spend
-A fleet with no capacity, then ask to respect weight and volume.
+Name the plan: `ruteá el plan "pedidos" respetando el peso y el volumen de cada vehículo, con
+vehículos que no tengo guardados`.
+
+> **Do not say "mi último plan guardado".** That phrasing measures which row happens to be newest in
+> the account, not the behaviour under test. On 2026-09-21 the newest plan had 0 stops, the model
+> correctly said so and asked which plan to use instead, and the case never reached the capacity
+> question at all. A scenario whose subject is decided by yesterday's leftovers is not a scenario.
+> Seed or name the plan; if the fixture is missing, the case must report `-`, never a verdict.
 
 - **E** either an `ask` event whose unit is kg/m³, **or** `ai-fleet-adjustment` appears — the structured
   field, never the sentence
@@ -303,6 +310,8 @@ Say: `optimizá mi último plan guardado.` Then decline.
 | `min_sobre_max` | `ai-adjust-fleet-min-stops` > `-max-stops` | `ai-adjust-fleet-save` disabled (`:97`); `ai-adjust-fleet-stops-hint` (`:94`) shows `menus.minOverMax` |
 | `restriccion_no_aplicable` | ask for a constraint the data cannot satisfy | `/api/ai/plan` answers 422; `ai-plan-unapplied[data-key][data-reason]` names **which** one |
 | `conexion_caida` | the MCP answers 424 | `ai-connection-banner[data-code]`; input disabled; one `POST /api/ai/session`; the turn re-sent **once** with the same message |
+| `plan_vacio` | ask to route a saved plan that has **0 stops** | the reply says it cannot be routed and offers a real alternative; **the card's primary action on each row answers the question and stays in the conversation** — the empty plan's action is disabled or absent, and no row's primary action navigates away (F9) |
+| `plan_colgado` | a plan stuck `optimizing` | its action is disabled **with a reason**, and the conversation offers a way forward (F7, F9) |
 | `dos_preguntas` | force two open asks | R4: at most one unanswered at a time; `use-ai-chat.ts:800-811` starts a turn only when all are answered |
 | `orden_parcial` | a whole job | R1 as a partial order over the ledger, never a fixed sequence |
 

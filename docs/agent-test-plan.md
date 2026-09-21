@@ -295,6 +295,7 @@ Same prompts (L1.2, L3.1, L4.1, L4.3, L5.1), different hosts. What differs is th
 | F6 | MCP channel | no rebalancing by distance; `objective` is distance or duration only |
 | F7 | Audit 09-18 | single-stop run hangs; `contact_url` 404; `GEOCODE_EXPIRED` seconds after the first read; `arrival_time` without `route_start_time` |
 | F8 | Repo | production host and SSH user in public docs |
+| F9 | Web `/ai` | the plans card answers a question with navigation. When the model asks *which* saved plan to use, each row offers **Abrir**, which leaves the conversation, and a primary button labelled **Reoptimizar** — which does the right thing (`requestPlanSource` brings the plan's orders into the draft, `info-cards.tsx:177`) under a name that reads as "spend a run now". Neither button says "use this one". A plan with **0 stops** offers both actions although it cannot be routed, and one stuck `optimizing` has its action disabled with no reason given (see F7) |
 
 ## Release gate
 
