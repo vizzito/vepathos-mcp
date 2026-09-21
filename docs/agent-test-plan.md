@@ -24,6 +24,32 @@ says; only this proves the pieces fit and the model understands them.
 | Dashboard chat `/ai` | `npm run prompts` in vepathos-router-client | **OpenAI, per token** |
 | Production | `scripts/smoke-prod.sh`, then S7 below with a reviewer account | **real stops** |
 
+**The scripted battery** (`devtools/agent_eval.py`) covers Levels 1–5 and 9 without a person in the loop.
+A case is a conversation: several turns to the same session, so "dale" can be said and what follows a yes
+is scored. It runs on the developer's Claude subscription (`claude -p`): no per-token bill, only plan usage.
+
+```bash
+.venv/bin/python -m devtools.agent_eval --list                               # cases by level, and what each spends
+.venv/bin/python -m devtools.agent_eval --label <text-variant> --level 1     # one level
+.venv/bin/python -m devtools.agent_eval --label <text-variant> --model sonnet --runs 3
+.venv/bin/python -m devtools.agent_eval --compare                            # every label, side by side
+```
+
+| Level | Scripted cases | By hand |
+|---|---|---|
+| 0 | — (`scripts/smoke-local.sh`, `doctor`) | |
+| 1 | `cuenta`, `capacidades`, `flota` | L1.5, L1.6 |
+| 2 | `direcciones` | L2.2–L2.6 |
+| 3 | `importar`, `inyeccion` | the rest of L3 (files a script cannot hand over) |
+| 4 | `25_vehiculos`, `volumen`, `duracion`, `correr_y_reintentar` (3 turns) | L4.6–L4.11 |
+| 5 | `sprinter`, `sprinter_guardada` (3 turns), `tres_sprinter` | L5.6 (depot by address) |
+| 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
+| 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
+
+Five runs give a coarse rate: 2/5 against 5/5 is a signal, 3/5 against 4/5 is noise. Checks that read which
+tools were called are reliable; the language and "proposes with numbers" checks are regular expressions.
+To compare two texts, run one label, change the code, **restart the MCP**, run another label.
+
 Rules: never point a writing test at production (`agent_eval` and the integration tests refuse a
 `vepathos.com` host). A developer credential must be created for **MCP** (`vpt_mcp_…`, scope
 `mcp:optimize`): a routes API key is refused by the channel. What the agent SAYS it did is not evidence;
@@ -119,9 +145,9 @@ Behind `MCP_CATALOG_WRITE_TOOLS_ENABLED`. The line under test: **master data is 
 
 | ID | Prompt | Tools | Pass when | Status |
 |---|---|---|---|---|
-| L5.1 | "agregame una Sprinter de 1.500 kg y 14 m³" | `manage_vehicle(create)` after a yes | saved; does NOT optimize | ✅ integration 09-21; ◻ by an agent |
+| L5.1 | "agregame una Sprinter de 1.500 kg y 14 m³" | `manage_vehicle(create)` after a yes | saved; does NOT optimize | ✅ integration 09-21; ✅ by an agent 09-21 |
 | L5.2 | "agregame 3 Sprinter de 1.500 kg" | ONE `manage_vehicle` | a vehicle is a type; the 3 is `count` on each plan | ◻ |
-| L5.3 | L5.1 again | `manage_vehicle` | `already_existed`, no duplicate in the dashboard | ✅ integration 09-21 |
+| L5.3 | L5.1 again | `manage_vehicle` | `already_existed`, no duplicate in the dashboard | ✅ integration 09-21; ✅ by an agent 09-21 |
 | L5.4 | same name, other capacity | `manage_vehicle` | `NAME_TAKEN`: asks update it, or another name | ✅ integration 09-21 |
 | L5.5 | "la camioneta 4 ahora soporta 12 m³" | `list_fleet → manage_vehicle(update)` | only the volume changes | ✅ integration 09-21 |
 | L5.6 | "guardá un depósito en Av. San Martín 700" | `geocode_addresses → get_geocode_result → manage_depot(create)` | says the matched address and waits for the yes; never invents coordinates | ◻ by an agent |
