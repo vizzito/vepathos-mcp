@@ -47,6 +47,11 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 | 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
 | 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
 
+**Measured 2026-09-21, same texts, same battery.** Sonnet: 12 of 12 conversations clean, every check
+3/3. Haiku: 9 of 40 clean — it reaches for Bash or a sub-agent when the MCP tools arrive deferred, wastes
+turns, and in one run did nothing at all. The outcomes Haiku did reach were right (no run without a yes,
+25/25). Read a Haiku column as the floor of a host that defers tools, not as the product.
+
 Five runs give a coarse rate: 2/5 against 5/5 is a signal, 3/5 against 4/5 is noise. Checks that read which
 tools were called are reliable; the language and "proposes with numbers" checks are regular expressions.
 To compare two texts, run one label, change the code, **restart the MCP**, run another label.

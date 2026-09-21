@@ -573,7 +573,8 @@ def compare() -> None:
         print("no hay resultados todavía en", OUT_DIR)
         return
     columns = [f"{r['label']}/{r['model']}" for r in reports]
-    print(f"{'':58}" + "".join(f"{c:>22}" for c in columns))
+    width = max(24, max(len(c) for c in columns) + 2)
+    print(f"{'':58}" + "".join(f"{c:>{width}}" for c in columns))
     for case in CASES:
         if not any(case in report["cases"] for report in reports):
             continue
@@ -587,7 +588,7 @@ def compare() -> None:
                     cells.append("-")  # not measured by this label: never a zero
                 else:
                     cells.append(f"{data['passed'][name]}/{report['runs']}")
-            print(f"  {name:56}" + "".join(f"{cell:>22}" for cell in cells))
+            print(f"  {name:56}" + "".join(f"{cell:>{width}}" for cell in cells))
 
 
 def main() -> None:
