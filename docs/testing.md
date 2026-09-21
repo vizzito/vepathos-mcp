@@ -48,6 +48,13 @@ Checklist (last run 2026-09-13):
 3. Accounts: one Free ("Duck") account and one Growth account, each with an MCP developer credential.
 4. Run:
 
+Put the two credentials in this repo's `.env` (gitignored; see `.env.example`) and every command
+below picks them up, or pass them on the command line:
+
+```bash
+set -a && . ./.env && set +a && VEPATHOS_INTEGRATION=1 .venv/bin/pytest -m integration tests/integration -v
+```
+
 ```bash
 VEPATHOS_INTEGRATION=1 \
 VEPATHOS_API_BASE_URL=http://localhost:3000 \

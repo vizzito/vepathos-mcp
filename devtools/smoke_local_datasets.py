@@ -81,10 +81,29 @@ async def stops_remaining(client: Client) -> int | None:
     return (account.get("usage") or {}).get("stops_remaining")
 
 
+def _from_env_file(name: str) -> str:
+    """Read one variable from the repo's .env, without overriding the environment."""
+
+    import pathlib
+    import re
+
+    try:
+        text = (pathlib.Path(__file__).resolve().parents[1] / ".env").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(rf"^\s*{name}\s*=\s*(.*)$", text, re.M)
+    return match.group(1).strip().strip("\"'") if match else ""
+
+
 async def main() -> int:
-    bearer = os.environ.get("VEPATHOS_MCP_BEARER", "")
+    # The credential may live in this repo's .env, where the integration tests and agent_eval read
+    # theirs: a smoke that needs its key exported by hand is a smoke that gets skipped.
+    bearer = os.environ.get("VEPATHOS_MCP_BEARER") or _from_env_file("VEPATHOS_GROWTH_CREDENTIAL")
     if ":" not in bearer:
-        print("Set VEPATHOS_MCP_BEARER to a local developer credential (client_id:client_secret).")
+        print(
+            "No developer credential: export VEPATHOS_MCP_BEARER, or set VEPATHOS_GROWTH_CREDENTIAL "
+            "in this repo's .env (client_id:client_secret, created in the dashboard with purpose MCP)."
+        )
         return 2
     if not bearer.startswith("vpt_mcp_"):
         # Core only issues AI-agent credentials (scope mcp:optimize) with this prefix.
