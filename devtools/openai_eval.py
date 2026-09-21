@@ -362,15 +362,29 @@ def dry_run(only: list[str], levels: list[int]) -> None:
         for name, case in CASES.items()
         if not ((only and name not in only) or (levels and case.level not in levels))
     }
+    url = os.environ.get("VEPATHOS_MCP_URL") or os.environ.get("MCP_PUBLIC_URL", "https://<host>") + "/mcp"
+    instructions = "<las instrucciones que publica el servidor>"
+    # Reading the server is free (no OpenAI call), so the preview shows the real tool list whenever the
+    # credential is at hand: a sample list here would hide exactly what require_approval is computed from.
+    allowed = ["<las tools que publica el servidor>"]
+    bearer = os.environ.get("VEPATHOS_MCP_BEARER", "").strip()
+    if bearer:
+        try:
+            instructions, allowed = asyncio.run(read_server(url, bearer))
+            instructions = f"<{len(instructions):,} caracteres leídos del servidor>"
+        # A preview must never fail on an unreachable server: it falls back to showing a placeholder.
+        except Exception as error:
+            print(f"(no se pudo leer el servidor: {error}; se muestra un ejemplo)\n", file=sys.stderr)
+
     body = request_body(
         model=os.environ.get("OPENAI_AI_MODEL", "").strip() or DEFAULT_MODEL,
         effort=os.environ.get("OPENAI_AI_REASONING_EFFORT", "").strip() or DEFAULT_EFFORT,
-        instructions="<las instrucciones que publica el servidor>",
+        instructions=instructions,
         items=[{"role": "user", "content": "<el turno>"}],
         previous_response_id=None,
-        url=os.environ.get("VEPATHOS_MCP_URL") or os.environ.get("MCP_PUBLIC_URL", "https://<host>") + "/mcp",
+        url=url,
         bearer="<VEPATHOS_MCP_BEARER>",
-        allowed=["get_account", "list_fleet", "optimize_plan"],
+        allowed=allowed,
     )
     print(json.dumps(body, ensure_ascii=False, indent=2))
     print(f"\n{len(chosen)} casos, {sum(len(c.turns) for c in chosen.values())} turnos por corrida:")
