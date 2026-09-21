@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -51,7 +52,21 @@ TOOL_NAMES = (
 )  # fmt: skip
 _SPANISH = re.compile(r"\b(el|la|los|las|que|de|para|con|una?|tu|tus|cuál|qué|tenés|tienes|está)\b", re.I)
 _ENGLISH = re.compile(r"\b(the|let me|i'll|i will|now|your|which|with|this|these|calling)\b", re.I)
+# Accents decide nothing about behaviour: "automáticas" must match a rule written "automati". Measured
+# 2026-09-21, luna listed automations correctly and the check said no, purely over one á.
+_MARKS = re.compile(r"[\u0300-\u036f]")
+# An agent invites an answer with a question OR with an offer ("decime…", "por ejemplo: …"). Demanding a
+# question mark scored a perfectly good answer as a failure.
+_INVITES = re.compile(
+    r"\?|deci(me|nos)|conta(me|nos)|eleg[ií]|indica(me|nos)|prefer[ií]s|avisame|por ejemplo", re.I
+)
 _LOGIN = re.compile(r"iniciar sesión|inicies sesión|log ?in|sign ?in|autoriz|permiso|permission", re.I)
+
+
+def plain(text: str) -> str:
+    """Lowercase and without accents, for matching what was said rather than how it was typed."""
+
+    return _MARKS.sub("", unicodedata.normalize("NFD", text)).lower()
 
 
 @dataclass
@@ -139,24 +154,25 @@ def imports_through_the_server(run: Run) -> bool:
 def proposes_with_numbers_and_asks_the_fleet(run: Run) -> bool:
     return (
         bool(re.search(r"\d", run.text))
-        and bool(re.search(r"flota|veh[ií]culo", run.text, re.I))
-        and "?" in run.text
+        and bool(re.search(r"flota|vehiculo", plain(run.text)))
+        and bool(_INVITES.search(run.text))
     )
 
 
 def presents_what_it_can_do(run: Run) -> bool:
     """The lead asks for the account's figures AND the work on offer, in plain words."""
 
+    text = plain(run.text)
     offered = sum(
-        bool(re.search(pattern, run.text, re.I))
+        bool(re.search(pattern, text))
         for pattern in (
             r"import|cargar|subir|planilla|archivo",
             r"optimi|rute|ruta",
             r"plan(es)? guardad|reutiliz|volver a correr",
-            r"automati",
+            r"automat",
         )
     )
-    return offered >= 3 and "?" in run.text
+    return offered >= 3 and bool(_INVITES.search(run.text))
 
 
 def reads_the_account(run: Run) -> bool:

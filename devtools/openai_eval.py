@@ -50,7 +50,7 @@ from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 
-from devtools.agent_eval import CASES, COMMON, Case, Run
+from devtools.agent_eval import CASES, COMMON, Case, Run, compare
 
 REPO = Path(__file__).resolve().parents[1]
 # Where each project keeps the keys its own scripts already read.
@@ -407,8 +407,9 @@ def main() -> None:
     if args.dry_run:
         return dry_run(args.case, args.level)
     path = asyncio.run(evaluate(args.label, args.runs, args.case, args.level, args.timeout))
-    print(f"\nguardado en {path}")
-    print("comparalo con las corridas de Claude:  .venv/bin/python -m devtools.agent_eval --compare")
+    print(f"\nguardado en {path}\n")
+    # One table for every host: compare() reads this runner's results too.
+    compare()
 
 
 if __name__ == "__main__":
