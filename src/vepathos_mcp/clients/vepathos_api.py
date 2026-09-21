@@ -16,7 +16,7 @@ import random
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 from urllib.parse import quote
 
@@ -74,7 +74,9 @@ Observer = Callable[[str, float, int | None], None]
 class CallContext:
     """Per-call data forwarded to Core. `authorization` is the caller's own credential."""
 
-    authorization: str
+    # Never in a repr: a traceback, a log line or a CI report prints the dataclass, credential included
+    # (seen in a failing integration test, 2026-09-20).
+    authorization: str = field(repr=False)
     client_label: str | None = None
     traceparent: str | None = None
     request_id: str | None = None

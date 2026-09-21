@@ -170,3 +170,10 @@ def test_circuit_breaker() -> None:
     assert not breaker.is_open  # half-open
     breaker.record_success()
     assert not breaker.is_open
+
+
+def test_a_call_context_never_prints_the_credential() -> None:
+    from vepathos_mcp.clients.vepathos_api import CallContext
+
+    shown = repr(CallContext(authorization="Bearer vpt_secret:vpt_sk_test_secret", client_label="claude"))
+    assert "secret" not in shown and "claude" in shown
