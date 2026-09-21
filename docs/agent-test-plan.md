@@ -52,10 +52,27 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 | 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
 | 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
 
-**Measured 2026-09-21, same texts, same battery.** Sonnet: 12 of 12 conversations clean, every check
-3/3. Haiku: 9 of 40 clean — it reaches for Bash or a sub-agent when the MCP tools arrive deferred, wastes
-turns, and in one run did nothing at all. The outcomes Haiku did reach were right (no run without a yes,
-25/25). Read a Haiku column as the floor of a host that defers tools, not as the product.
+**Measured 2026-09-21, same texts, same battery.**
+
+Sonnet, levels 1, 2, 5 and 9 — 23 conversations, every check clean. That includes all three master-data
+cases: it saved one vehicle and one only, and never optimized.
+
+Haiku: 9 of 40 clean — it reaches for Bash or a sub-agent when the MCP tools arrive deferred, wastes
+turns, and in one run did nothing at all. On `correr_y_reintentar` it polled the result with seven Bash
+calls between reads. The outcomes Haiku did reach were right (no run without a yes, 25/25, one run per
+yes). Read a Haiku column as the floor of a host that defers tools, not as the product.
+
+`tres_sprinter` is closed as a model difference, not a product one. "Agregame 3 Sprinter" gets one
+vehicle type from Sonnet (3/3) and three rows — `Sprinter 1/2/3` — from Haiku (0/2). The tool shape
+already stops ONE call from creating three; nothing stops a model from making three calls, and no text
+was changed. If a host in production shows the Haiku shape, that is when it becomes a product question.
+
+One check has not been measured under its current definition. `7187072` replaced `sprinter_guardada`'s
+"devuelve el existente, no duplica" — which demanded a second `manage_vehicle` call — with
+`creates_one_vehicle_at_most`, which reads the outcome instead. Runs from before that commit store the
+old name and join as `-`, so the column looks unmeasured because it is. The traces say the behaviour is
+right (`list_fleet → manage_vehicle`, one write across three turns: it saved, then read the catalog and
+saw it was already there), but reading a trace is not measuring it. One `--level 5 --runs 3` closes it.
 
 Checks that read which tools were called are evidence; checks that read prose are a heuristic and have
 been wrong three times in one day — once over an accent (`automáticas` against a pattern written
