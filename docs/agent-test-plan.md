@@ -57,6 +57,11 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 turns, and in one run did nothing at all. The outcomes Haiku did reach were right (no run without a yes,
 25/25). Read a Haiku column as the floor of a host that defers tools, not as the product.
 
+Checks that read which tools were called are evidence; checks that read prose are a heuristic and have
+been wrong three times in one day — once over an accent (`automáticas` against a pattern written
+`automati`), twice over demanding one wording of an offer. When a prose check fails, read the transcript
+before believing it, and widen the check rather than the product.
+
 Five runs give a coarse rate: 2/5 against 5/5 is a signal, 3/5 against 4/5 is noise. Checks that read which
 tools were called are reliable; the language and "proposes with numbers" checks are regular expressions.
 To compare two texts, run one label, change the code, **restart the MCP**, run another label.

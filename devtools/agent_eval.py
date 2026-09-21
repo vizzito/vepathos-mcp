@@ -55,10 +55,14 @@ _ENGLISH = re.compile(r"\b(the|let me|i'll|i will|now|your|which|with|this|these
 # Accents decide nothing about behaviour: "automáticas" must match a rule written "automati". Measured
 # 2026-09-21, luna listed automations correctly and the check said no, purely over one á.
 _MARKS = re.compile(r"[\u0300-\u036f]")
-# An agent invites an answer with a question OR with an offer ("decime…", "por ejemplo: …"). Demanding a
-# question mark scored a perfectly good answer as a failure.
-_INVITES = re.compile(
-    r"\?|deci(me|nos)|conta(me|nos)|eleg[ií]|indica(me|nos)|prefer[ií]s|avisame|por ejemplo", re.I
+# An agent offers a next step with a question, with a second-person modal ("podés subir un archivo"), or
+# with an invitation. Narrow patterns failed twice on answers that were perfectly good: once over a
+# missing "?", once because the text said "decirme" and the pattern only knew "decime". Written wide on
+# purpose — this check must never be the reason a good answer scores as a failure.
+_OFFERS_A_STEP = re.compile(
+    r"\?|pod[eé]s|puedes|quer[eé]s|quieres|si quer|dec[ií](me|rme|nos|rnos)|cont[aá](me|rme|nos)|"
+    r"eleg[ií]|indica(me|rme|nos)|prefer[ií]s|avisa(me|rme)|empez[aá]|arranc[aá]|mand[aá]|por ejemplo",
+    re.I,
 )
 _LOGIN = re.compile(r"iniciar sesión|inicies sesión|log ?in|sign ?in|autoriz|permiso|permission", re.I)
 
@@ -155,12 +159,13 @@ def proposes_with_numbers_and_asks_the_fleet(run: Run) -> bool:
     return (
         bool(re.search(r"\d", run.text))
         and bool(re.search(r"flota|vehiculo", plain(run.text)))
-        and bool(_INVITES.search(run.text))
+        and bool(_OFFERS_A_STEP.search(run.text))
     )
 
 
-def presents_what_it_can_do(run: Run) -> bool:
-    """The lead asks for the account's figures AND the work on offer, in plain words."""
+def covers_what_it_can_do(run: Run) -> bool:
+    """Three of the four families of work, however they are worded. Topic coverage is the reliable half
+    of this case; how the offer is phrased is checked apart, because a regex over prose is not."""
 
     text = plain(run.text)
     offered = sum(
@@ -172,7 +177,11 @@ def presents_what_it_can_do(run: Run) -> bool:
             r"automat",
         )
     )
-    return offered >= 3 and bool(_INVITES.search(run.text))
+    return offered >= 3
+
+
+def offers_a_next_step(run: Run) -> bool:
+    return bool(_OFFERS_A_STEP.search(run.text))
 
 
 def reads_the_account(run: Run) -> bool:
@@ -286,7 +295,8 @@ CASES: dict[str, Case] = {
         ("vepathos, ¿qué podés hacer por mí?",),
         {
             "inspecciona antes de responder": inspects_first,
-            "presenta lo que puede hacer y ofrece un paso": presents_what_it_can_do,
+            "presenta lo que puede hacer": covers_what_it_can_do,
+            "ofrece un paso": offers_a_next_step,
             "no optimiza": never_optimizes,
         },
     ),
