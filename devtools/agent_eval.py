@@ -64,13 +64,18 @@ _OFFERS_A_STEP = re.compile(
     r"eleg[ií]|indica(me|rme|nos)|prefer[ií]s|avisa(me|rme)|empez[aá]|arranc[aá]|mand[aá]|por ejemplo",
     re.I,
 )
-# "Iniciá sesión" or "dame permisos" is the failure this catches: the account is already connected.
-# Reporting that an approval was REFUSED is the opposite — the host's ticket working — and a bare
-# `autoriz|permiso` failed luna 2 of 3 times for saying so ("la operación fue bloqueada por la
-# autorización del sistema"). Only an ask counts, so the report passes and the demand still fails.
+# "Iniciá sesión" or "autorizá el acceso" is the failure this catches: the account is already
+# connected and the credential is the connection. What separates it from the sentence that must PASS
+# is the OBJECT, not the word. Asking to be let into the account fails ("¿Autorizás que acceda?",
+# "Autorizar la conexión", "requiere permisos de lectura"); reporting that a WRITE was refused is the
+# host's ticket working and must not ("la operación fue bloqueada por la autorización del sistema").
+# A bare `autoriz|permiso` failed luna for the second kind; keying it on who is asking then let all
+# three of the first kind through, which is the worse trade — a false pass is invisible in the table.
+_ACCESS = r"acced|acces|conect|conex|ver tu cuenta|ver la cuenta|leer|lectura|vincul|entrar"
 _LOGIN = re.compile(
-    r"iniciar sesión|inicies sesión|log ?in|sign ?in|permission"
-    r"|(necesito|dame|dame el|otorg|conced|habilit|ped[ií]|falta)[^.]{0,40}(permiso|autoriz)",
+    rf"iniciar sesión|inicies sesión|log ?in|sign ?in|permission"
+    rf"|(permiso|autoriz)\w*[^.]{{0,60}}({_ACCESS})"
+    rf"|({_ACCESS})\w*[^.]{{0,60}}(permiso|autoriz)",
     re.I,
 )
 

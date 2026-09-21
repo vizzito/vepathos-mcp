@@ -86,7 +86,13 @@ Two things that battery taught about itself, both mine and both now fixed:
 
 - A run that REPORTS a refused approval ("la operación fue bloqueada por la autorización del sistema")
   was failing `no pide login ni permisos`, because the pattern held a bare `autoriz|permiso`. That is
-  the ticket working, not an agent asking the user to sign in. Only an ask counts now.
+  the ticket working, not an agent asking the user to sign in. The first fix keyed on WHO was asking,
+  and let three genuine failures through — "¿Autorizás que acceda?", "Autorizar la conexión con tu
+  cuenta", "requiere permisos de lectura" — which is the worse trade, because a false pass is invisible
+  in the table while a false failure at least gets looked at. What separates the two is the OBJECT:
+  being let into the account fails, a blocked write does not. Validate a change to this check by running
+  it over every stored transcript and reading the ones whose verdict moves; on 166 transcripts the
+  current pattern moves exactly the two it should.
 - `YES` was anchored to the first word, so a yes that closes the message — "…y 14 m³. Sí, guardalo." —
   was never seen and the approval was never granted. `sprinter_guardada`'s second ask therefore scored
   3/3 on convergence **without a single second write to converge**. A vacuous pass reads exactly like a
