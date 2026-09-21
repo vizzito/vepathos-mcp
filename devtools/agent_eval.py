@@ -612,8 +612,9 @@ def list_battery() -> None:
 
 
 def compare() -> None:
-    # Both runners, one table: the same cases through Claude Code and through the Responses API.
-    directories = (OUT_DIR, OUT_DIR.parent / "openai_eval")
+    # Every runner, one table: Claude Code, the Responses API, and the web chat's own UI battery
+    # (vepathos-router-client writes here in this same shape, keyed by the same case names).
+    directories = (OUT_DIR, OUT_DIR.parent / "openai_eval", OUT_DIR.parent / "ui_eval")
     reports = [
         json.loads(path.read_text(encoding="utf-8"))
         for directory in directories
