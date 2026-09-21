@@ -41,7 +41,7 @@ EXPECTED_TOOL_NAMES = (
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
 # Changed on 0.8.0: catalog master data (manage_vehicle, manage_depot, depots in list_fleet).
-EXPECTED_DESC_HASH_GATE_OFF = "dd8d9b03b1280ea1592733fea10345c18dde3014e5c4a5624bdd5c6447e54d76"
+EXPECTED_DESC_HASH_GATE_OFF = "4d151c8e8b279bdd747f33e665c3462ab58337781489ab138f88f990b256c03a"
 
 
 CATALOG_WRITE_TOOLS = {"manage_vehicle", "manage_depot"}

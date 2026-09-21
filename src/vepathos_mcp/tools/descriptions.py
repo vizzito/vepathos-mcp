@@ -295,8 +295,9 @@ IMPORT_FILE_DESCRIPTION = (
     "a Google Drive, Sheets or Docs share link as copied. With neither, send the file's text to "
     "import_delivery_text. A path on the user's disk is not a url: this server cannot read it. When your "
     "host can read local files, send a CSV or JSON file's text to import_delivery_text; for a spreadsheet "
-    "(.xlsx) ask for a share link or a CSV export. Do not shell out (curl/gdown/pip), and never parse or "
-    "convert the file with a script. Returns import_id; the stops load into a "
+    "(.xlsx) ask for a share link or a CSV export, or let the user upload it in their Vepathos account, "
+    "where it becomes a saved plan (list_plans, then optimize_plan). Do not shell out (curl/gdown/pip), "
+    "and never parse or convert the file with a script. Returns import_id; the stops load into a "
     "new plan named after the file, or replace the stops of plan_id. Never paste thousands of stops into "
     "optimize_delivery_routes. Next: get_import_result until plan_id, then optimize_plan."
 )

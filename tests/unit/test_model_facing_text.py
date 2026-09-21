@@ -351,6 +351,8 @@ def test_a_host_with_a_shell_is_told_not_to_do_the_servers_work() -> None:
     imports = d.IMPORT_FILE_DESCRIPTION
     assert "A path on the user's disk is not a url" in imports
     assert "share link or a CSV export" in imports
+    # The account's own upload is the road every host has: no new surface, the file becomes a plan.
+    assert "upload it in their Vepathos account" in imports and "list_plans, then optimize_plan" in imports
     assert "never parse or convert the file with a script" in imports
     assert "never by converting the rows yourself" in d.UPDATE_MAPPING_DESCRIPTION
 
