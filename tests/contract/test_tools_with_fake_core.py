@@ -775,3 +775,14 @@ async def test_tools_that_overwrite_something_saved_say_so(mcp_client: Callable[
     for name in ("list_fleet", "get_account", "create_automation", "geocode_addresses"):
         annotations = tools[name].annotations
         assert annotations is not None and annotations.destructive_hint is False, name
+
+
+async def test_only_the_tool_that_fetches_a_callers_url_is_open_world(mcp_client: Callable[..., Any]) -> None:
+    async with await mcp_client(
+        MCP_IMPORT_TOOLS_ENABLED="true", MCP_MAP_SHARES_ENABLED="true", **CATALOG_WRITES
+    ) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+    open_world = {
+        name for name, tool in tools.items() if tool.annotations and tool.annotations.open_world_hint
+    }
+    assert open_world == {"import_delivery_file"}

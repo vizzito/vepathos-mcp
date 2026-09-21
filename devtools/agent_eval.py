@@ -207,6 +207,10 @@ def connector_config(connector: str) -> Path:
     match = re.search(rf"^{re.escape(connector)}: (\S+)", listed, re.M)
     if not match:
         raise SystemExit(f"no MCP connector named {connector!r}: add it with `claude mcp add`")
+    # The cases WRITE: every run of `importar` leaves an import (and a plan), `sprinter` saves a vehicle.
+    # That is the point against a development account, and never acceptable against a customer's.
+    if "mcp.vepathos.com" in match.group(1):
+        raise SystemExit("refusing to run against production: these cases write to the account")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUT_DIR / "_mcp.json"
     path.write_text(json.dumps({"mcpServers": {connector: {"type": "http", "url": match.group(1)}}}))

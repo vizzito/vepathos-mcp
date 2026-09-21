@@ -94,6 +94,7 @@ def _tool(
     confirm_before_optimize: bool | None = None,
     idempotent: bool = True,
     destructive: bool = False,
+    open_world: bool = False,
 ) -> Tool:
     tool = Tool.from_function(
         fn,
@@ -105,7 +106,7 @@ def _tool(
             read_only_hint=read_only,
             destructive_hint=destructive,
             idempotent_hint=idempotent,
-            open_world_hint=False,
+            open_world_hint=open_world,
         ),
         structured_output=True,
     )
@@ -277,6 +278,8 @@ def _import_tools(deps: ToolDeps) -> list[Tool]:
             description=descriptions.IMPORT_FILE_DESCRIPTION,
             schema_model=ImportFileInput,
             read_only=False,
+            # It downloads whatever public URL the caller names: the one tool that reaches outside Vepathos.
+            open_world=True,
             # Each call starts a new import (and a new plan): a client must not retry it on its own.
             idempotent=False,
         ),

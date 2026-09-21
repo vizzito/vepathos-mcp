@@ -261,7 +261,7 @@ Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or
 
 Import a delivery file (Excel, CSV, JSON, text). Pass file when your host hands attachments to tools (ChatGPT: _meta openai/fileParams); otherwise pass url: a public https link, or a Google Drive, Sheets or Docs share link as copied. With neither, send the file's text to import_delivery_text. A path on the user's disk is not a url: this server cannot read it. When your host can read local files, send a CSV or JSON file's text to import_delivery_text; for a spreadsheet (.xlsx) ask for a share link or a CSV export, or let the user upload it in their Vepathos account, where it becomes a saved plan (list_plans, then optimize_plan). Do not shell out (curl/gdown/pip), and never parse or convert the file with a script. Returns import_id; the stops load into a new plan named after the file, or replace the stops of plan_id. Never paste thousands of stops into optimize_delivery_routes. Next: get_import_result until plan_id, then optimize_plan.
 
-- Read only: no · Destructive: no · Idempotent: no · Open world: no
+- Read only: no · Destructive: no · Idempotent: no · Open world: yes
 - Published: `MCP_IMPORT_TOOLS_ENABLED`
 - Workflows: A file or pasted rows
 
