@@ -580,13 +580,16 @@ def list_battery() -> None:
 
 
 def compare() -> None:
+    # Both runners, one table: the same cases through Claude Code and through the Responses API.
+    directories = (OUT_DIR, OUT_DIR.parent / "openai_eval")
     reports = [
-        json.loads(p.read_text(encoding="utf-8"))
-        for p in sorted(OUT_DIR.glob("*.json"))
-        if not p.name.startswith("_")
+        json.loads(path.read_text(encoding="utf-8"))
+        for directory in directories
+        for path in sorted(directory.glob("*.json"))
+        if not path.name.startswith("_")
     ]
     if not reports:
-        print("no hay resultados todavía en", OUT_DIR)
+        print("no hay resultados todavía en", " ni ".join(str(d) for d in directories))
         return
     columns = [f"{r['label']}/{r['model']}" for r in reports]
     width = max(24, max(len(c) for c in columns) + 2)
