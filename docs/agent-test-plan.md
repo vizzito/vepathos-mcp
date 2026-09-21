@@ -67,12 +67,14 @@ vehicle type from Sonnet (3/3) and three rows — `Sprinter 1/2/3` — from Haik
 already stops ONE call from creating three; nothing stops a model from making three calls, and no text
 was changed. If a host in production shows the Haiku shape, that is when it becomes a product question.
 
-One check has not been measured under its current definition. `7187072` replaced `sprinter_guardada`'s
-"devuelve el existente, no duplica" — which demanded a second `manage_vehicle` call — with
-`creates_one_vehicle_at_most`, which reads the outcome instead. Runs from before that commit store the
-old name and join as `-`, so the column looks unmeasured because it is. The traces say the behaviour is
-right (`list_fleet → manage_vehicle`, one write across three turns: it saved, then read the catalog and
-saw it was already there), but reading a trace is not measuring it. One `--level 5 --runs 3` closes it.
+Converge-by-name (contract §4, D5) is measured end to end, and it is the reason the outcome check is
+the right one. Asked twice for the same vehicle, Sonnet took both legal paths in the same battery: one
+run read the catalog and did not call again, two runs called `manage_vehicle` a second time. All three
+left **one** row — the second call came back `already_existed` instead of creating one. 3/3.
+
+That is also why `7187072` replaced this check. The old one, "devuelve el existente, no duplica",
+demanded a second write; a run that avoided the write by reading the catalog scored zero for doing the
+better thing. Runs from before that commit store the old name and join as `-`.
 
 Checks that read which tools were called are evidence; checks that read prose are a heuristic and have
 been wrong three times in one day — once over an accent (`automáticas` against a pattern written
