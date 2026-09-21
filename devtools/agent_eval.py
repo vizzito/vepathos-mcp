@@ -640,20 +640,49 @@ def compare() -> None:
     columns = [f"{r['label']}/{r['model']}" for r in reports]
     width = max(24, max(len(c) for c in columns) + 2)
     print(f"{'':58}" + "".join(f"{c:>{width}}" for c in columns))
+
+    def row(case: str, name: str) -> None:
+        cells = []
+        for report in reports:
+            data = report["cases"].get(case)
+            if not data or name not in data["passed"]:
+                cells.append("-")  # not measured by this label: never a zero
+            else:
+                cells.append(f"{data['passed'][name]}/{report['runs']}")
+        print(f"  {name:56}" + "".join(f"{cell:>{width}}" for cell in cells))
+
+    def reported(case: str) -> list[str]:
+        """Check names some runner reported for this case, in a stable order."""
+
+        found: dict[str, None] = {}
+        for report in reports:
+            found.update(dict.fromkeys(report["cases"].get(case, {}).get("passed", {})))
+        return sorted(found)
+
     for case in CASES:
         if not any(case in report["cases"] for report in reports):
             continue
-        names = list({**CASES[case].checks, **COMMON})
+        known = list({**CASES[case].checks, **COMMON})
         print(f"\n[nivel {CASES[case].level} · {case}]")
-        for name in names:
-            cells = []
-            for report in reports:
-                data = report["cases"].get(case)
-                if not data or name not in data["passed"]:
-                    cells.append("-")  # not measured by this label: never a zero
-                else:
-                    cells.append(f"{data['passed'][name]}/{report['runs']}")
-            print(f"  {name:56}" + "".join(f"{cell:>{width}}" for cell in cells))
+        for name in known:
+            row(case, name)
+        # A runner may measure things this battery has no name for — the web asserts the roadmap's
+        # rules, which the MCP surface cannot express. Dropping them silently would hide a whole
+        # battery behind a table that looks complete, so they print under the case that produced them.
+        for name in reported(case):
+            if name not in known:
+                row(case, name)
+
+    extra = {
+        case: data.get("level", 0)
+        for report in reports
+        for case, data in report["cases"].items()
+        if case not in CASES
+    }
+    for case in sorted(extra, key=lambda c: (extra[c], c)):
+        print(f"\n[nivel {extra[case]} · {case}]  (no existe en la batería MCP)")
+        for name in reported(case):
+            row(case, name)
 
 
 def main() -> None:
