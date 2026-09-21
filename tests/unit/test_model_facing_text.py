@@ -111,10 +111,18 @@ def test_instructions_lead_fits_the_openai_window(gate: bool, imports: bool) -> 
     assert "FIRST:" in lead and "THEN:" in lead
     for tool in ("get_account", "list_fleet", "list_plans"):
         assert tool in lead, tool
-    assert "before you reply" in lead
+    assert "before replying" in lead
     assert "do not answer from the tool list" in lead.lower()
-    assert "never list tool names unless they ask for technical names" in lead.lower()
+    assert "never invent numbers or list tool names/parameters unless asked technically" in lead.lower()
     assert "plans or tasks" in lead.lower()
+    for capability in (
+        "import/geocode orders",
+        "plan, optimize and report routes",
+        "reuse plans",
+        "prepare automations",
+        "manage saved resources when enabled",
+    ):
+        assert capability in lead
     # Flags must not push the inspect rule out of the window.
     assert "import_delivery_file" not in lead
     assert "create_optimization_map" not in lead

@@ -25,12 +25,12 @@ the numbered loop below is the dispatcher that already worked there.
 
 # Must stay ≤512 characters and independent of confirm/import/map flags.
 _LEAD = (
-    "FIRST: if they mention Vepathos, or ask what they can do, which account is connected, or which "
-    "plans or tasks they have, call get_account, list_fleet and list_plans before you reply. Do not "
-    "answer from the tool list. THEN: "
-    "reply with that account's plan, remaining stops, vehicles and saved plan names, and offer the "
-    "next step (import orders, rerun a saved plan, geocode addresses, or show the last result). "
-    "Never invent those numbers. Never list tool names unless they ask for technical names.\n"
+    "FIRST: if they mention Vepathos or ask what it can do, which account, plans or tasks they have, "
+    "call get_account, list_fleet and list_plans before replying. Do not answer from the tool list. "
+    "THEN: give plan, stops left, vehicles and saved plans. For capabilities, offer available work: "
+    "import/geocode orders; plan, optimize and report routes; reuse plans; prepare automations; manage "
+    "saved resources when enabled. Offer a step. Never invent numbers or list tool names/parameters "
+    "unless asked technically.\n"
 )
 # --- What must survive a host that cuts the instructions -------------------------------------------
 # Claude Code keeps about 2,048 characters, ChatGPT/Codex treat the first 512 as self-contained. So
