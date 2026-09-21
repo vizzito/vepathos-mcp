@@ -21,11 +21,16 @@ says; only this proves the pieces fit and the model understands them.
 | Import → plan → billing | `VEPATHOS_MCP_BEARER=… python -m devtools.smoke_local_datasets` | dev quota only |
 | Agent behaviour, scored | `python -m devtools.agent_eval --label <x> --model haiku\|sonnet --runs 5` | Claude plan usage |
 | Agent behaviour, by hand | the prompts below, in Claude Code / Claude.ai | Claude usage |
+| Dashboard path, scored | `python -m devtools.openai_eval --label luna --runs 3` (`gpt-5.6-luna` + the MCP as a remote connector) | **OpenAI, per token** |
 | ChatGPT, by hand | [chatgpt-test-battery.md](chatgpt-test-battery.md) — the 512-char window, attachments, cached schemas | ChatGPT usage |
 | Dashboard chat `/ai` | `npm run prompts` in vepathos-router-client | **OpenAI, per token** |
 | Production | `scripts/smoke-prod.sh`, then S7 below with a reviewer account | **real stops** |
 
-**The scripted battery** (`devtools/agent_eval.py`) covers Levels 1–5 and 9 without a person in the loop.
+**The scripted battery** covers Levels 1–5 and 9 without a person in the loop, and the same cases run
+through two hosts: `devtools/agent_eval.py` drives Claude Code (`claude -p`, no per-token bill), and
+`devtools/openai_eval.py` drives the Responses API with `gpt-5.6-luna` — the dashboard's own path, so a
+failure there is the product. Only `openai_eval` costs money; it reads its keys from the projects' .env
+files and refuses to start against production. `--dry-run` prints the request it would send for free.
 A case is a conversation: several turns to the same session, so "dale" can be said and what follows a yes
 is scored. It runs on the developer's Claude subscription (`claude -p`): no per-token bill, only plan usage.
 
