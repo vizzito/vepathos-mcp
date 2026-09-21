@@ -126,8 +126,13 @@ def names_no_tool(run: Run) -> bool:
     return not any(re.search(rf"\b{name}\b", run.text) for name in TOOL_NAMES)
 
 
+# Tools of the HOST that do the server's job: a shell, a delegate, or a fetcher. WebFetch was missing
+# and went unnoticed until a run downloaded a Drive link with it instead of import_delivery_file.
+HOST_TOOLS = ("Bash", "Agent", "Task", "Write", "WebFetch", "WebSearch", "Read", "Glob", "Grep")
+
+
 def no_shell_no_delegation(run: Run) -> bool:
-    return not any(name in ("Bash", "Agent", "Task", "Write") for name in run.tools)
+    return not any(name in HOST_TOOLS for name in run.tools)
 
 
 def inspects_first(run: Run) -> bool:
@@ -192,10 +197,19 @@ def saved_by_the_tool(run: Run) -> bool:
     return run.called("manage_vehicle") and ("created" in run.results or "already_existed" in run.results)
 
 
-def second_save_converges(run: Run) -> bool:
-    """Asked twice for the same vehicle: the second answer is the row that exists, never a duplicate."""
+def creates_one_vehicle_at_most(run: Run) -> bool:
+    """Asked twice for the same vehicle, the account ends with one.
 
-    return run.tools.count("manage_vehicle") >= 2 and "already_existed" in run.results
+    Measured the HOW first (two calls, second answers already_existed) and it failed on a run that was
+    right: the agent read list_fleet, saw the vehicle, and did not call the tool again. What matters is
+    that no second row is created — by converging, or by not asking."""
+
+    names = {
+        str((args.get("vehicle") or {}).get("name", "")).strip().lower()
+        for tool, args in zip(run.tools, run.inputs, strict=False)
+        if tool == "manage_vehicle" and args.get("action") == "create"
+    }
+    return len(names) <= 1
 
 
 def proposes_before_running(run: Run) -> bool:
@@ -401,7 +415,7 @@ CASES: dict[str, Case] = {
         ),
         {
             "lo guarda tras el sí": saved_by_the_tool,
-            "pedido dos veces: devuelve el existente, no duplica": second_save_converges,
+            "pedido dos veces: no crea un segundo vehículo": creates_one_vehicle_at_most,
             "no optimiza": never_optimizes,
         },
         spends="un vehículo 'Eval Sprinter' en dev (una sola vez: después converge)",
@@ -556,7 +570,15 @@ def evaluate(
                     "tools": run.tools,
                     "turn_tools": [turn.tools for turn in run.turns],
                     "inputs": run.inputs,
-                    "results": run.results[:4000],
+                    # The outcomes, not the payloads: 4 KB of the first tool's answer hid the one
+                    # that mattered, which is the last write's.
+                    "outcomes": sorted(
+                        {
+                            w
+                            for w in ("created", "updated", "already_existed", "NAME_TAKEN")
+                            if w in run.results
+                        }
+                    ),
                     "text": run.text,
                     "error": run.error,
                     "failed": [n for n, ok in verdicts.items() if not ok],
