@@ -28,6 +28,7 @@ Results land in devtools/out/agent_eval/<label>.<model>.json (gitignored).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import re
 import subprocess
@@ -63,6 +64,9 @@ class Run:
     error: str | None = None
     # What the tools answered, as text: the only place an outcome like already_existed can be read.
     results: str = ""
+    # One entry per turn of the conversation, in order. A check about "after the yes" needs this:
+    # on a merged total, a run in turn 2 and a run in turn 3 are indistinguishable from two in turn 2.
+    turns: list[Run] = dataclasses.field(default_factory=list)
 
     def merged(self, other: Run) -> Run:
         return Run(
@@ -71,7 +75,11 @@ class Run:
             inputs=self.inputs + other.inputs,
             error=self.error or other.error,
             results=self.results + other.results,
+            turns=[*self.turns, other],
         )
+
+    def optimizations(self) -> int:
+        return len(self.calls("optimize_plan")) + len(self.calls("optimize_delivery_routes"))
 
     def calls(self, name: str) -> list[dict[str, Any]]:
         return [args for tool, args in zip(self.tools, self.inputs, strict=False) if tool == name]
@@ -165,8 +173,18 @@ def second_save_converges(run: Run) -> bool:
     return run.tools.count("manage_vehicle") >= 2 and "already_existed" in run.results
 
 
-def runs_once_after_the_yes(run: Run) -> bool:
-    return len(run.calls("optimize_plan")) + len(run.calls("optimize_delivery_routes")) == 1
+def proposes_before_running(run: Run) -> bool:
+    """Turn 1 asks for a proposal: nothing may run before the user has said yes."""
+
+    return bool(run.turns) and run.turns[0].optimizations() == 0
+
+
+def one_run_per_yes(run: Run) -> bool:
+    """Each later turn asks for one run. Two optimizations in one turn is one the user never asked for
+    (with the confirm gate off, every call runs and may charge)."""
+
+    later = run.turns[1:]
+    return bool(later) and all(turn.optimizations() <= 1 for turn in later)
 
 
 def count_is_a_plan_setting(run: Run) -> bool:
@@ -335,7 +353,8 @@ CASES: dict[str, Case] = {
             "ahora probá lo mismo con 3 vehículos. ¿Se cobra?",
         ),
         {
-            "corre UNA vez tras el sí (el reintento espera otro sí)": runs_once_after_the_yes,
+            "no corre antes del sí": proposes_before_running,
+            "una corrida por cada sí": one_run_per_yes,
             "informa rutas y km": reports_the_run,
             "dice que lo siguiente es otro intento": says_it_is_another_try,
         },
@@ -509,6 +528,9 @@ def evaluate(
             transcripts.append(
                 {
                     "tools": run.tools,
+                    "turn_tools": [turn.tools for turn in run.turns],
+                    "inputs": run.inputs,
+                    "results": run.results[:4000],
                     "text": run.text,
                     "error": run.error,
                     "failed": [n for n, ok in verdicts.items() if not ok],
@@ -561,7 +583,10 @@ def compare() -> None:
             cells = []
             for report in reports:
                 data = report["cases"].get(case)
-                cells.append(f"{data['passed'].get(name, 0)}/{report['runs']}" if data else "-")
+                if not data or name not in data["passed"]:
+                    cells.append("-")  # not measured by this label: never a zero
+                else:
+                    cells.append(f"{data['passed'][name]}/{report['runs']}")
             print(f"  {name:56}" + "".join(f"{cell:>22}" for cell in cells))
 
 
