@@ -203,10 +203,13 @@ async def main() -> int:
         check("optimization_id" in retry, "rerun accepted", retry.get("error") or "")
         check(retry.get("quota_charged") is False, "rerun did not charge", retry.get("quota_charged"))
         check(retry.get("free_retry") is True, "reported as the free retry", retry.get("free_retry"))
+        # One try spent, whatever the plan allows. Asserting a flat 0 only held on Free, and read as a
+        # product failure the first time this ran against an Enterprise account (5 tries, 4 left).
+        started_with = first.get("free_retries_remaining") or 0
         check(
-            retry.get("free_retries_remaining") == 0,
-            "no free retry left",
-            retry.get("free_retries_remaining"),
+            retry.get("free_retries_remaining") == started_with - 1,
+            "the rerun spent exactly one try",
+            f"{started_with} → {retry.get('free_retries_remaining')}",
         )
         if "optimization_id" in retry:
             print(f"    rerun: {await wait_done(client, retry['optimization_id'])}")
@@ -218,10 +221,13 @@ async def main() -> int:
         _, plan = await call(client, "list_plans", {"plan_id": plan_id})
         detail = plan.get("plan") or {}
         check(bool(detail.get("last_agent_run")), "last_agent_run recorded")
+        # What the next run costs has to match the tries left: charged only once the allowance is spent.
+        left = retry.get("free_retries_remaining")
+        charged_next = detail.get("next_optimize_charged")
         check(
-            detail.get("next_optimize_charged") is True,
-            "the next run is charged again",
-            detail.get("charged_because"),
+            charged_next is (left == 0),
+            "what the next run costs matches the tries left",
+            f"tries left {left}, next charged {charged_next} ({detail.get('charged_because')})",
         )
 
     print()
