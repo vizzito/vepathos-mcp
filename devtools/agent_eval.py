@@ -115,6 +115,21 @@ def proposes_with_numbers_and_asks_the_fleet(run: Run) -> bool:
     )
 
 
+def presents_what_it_can_do(run: Run) -> bool:
+    """The lead asks for the account's figures AND the work on offer, in plain words."""
+
+    offered = sum(
+        bool(re.search(pattern, run.text, re.I))
+        for pattern in (
+            r"import|cargar|subir|planilla|archivo",
+            r"optimi|rute|ruta",
+            r"plan(es)? guardad|reutiliz|volver a correr",
+            r"automati",
+        )
+    )
+    return offered >= 3 and "?" in run.text
+
+
 def reads_the_account(run: Run) -> bool:
     return run.called("get_account")
 
@@ -146,6 +161,14 @@ CASES: dict[str, tuple[str, dict[str, Check]]] = {
         "vepathos, agregame a mi cuenta una Sprinter de 1.500 kg y 14 m³",
         {
             "a lo sumo UN vehículo guardado": saves_at_most_one_vehicle,
+            "no optimiza": never_optimizes,
+        },
+    ),
+    "capacidades": (
+        "vepathos, ¿qué podés hacer por mí?",
+        {
+            "inspecciona antes de responder": inspects_first,
+            "presenta lo que puede hacer y ofrece un paso": presents_what_it_can_do,
             "no optimiza": never_optimizes,
         },
     ),
