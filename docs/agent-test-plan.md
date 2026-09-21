@@ -20,7 +20,8 @@ says; only this proves the pieces fit and the model understands them.
 | Core + RouteHub, no model | `VEPATHOS_INTEGRATION=1 … pytest -m integration tests/integration` | dev quota only |
 | Import → plan → billing | `VEPATHOS_MCP_BEARER=… python -m devtools.smoke_local_datasets` | dev quota only |
 | Agent behaviour, scored | `python -m devtools.agent_eval --label <x> --model haiku\|sonnet --runs 5` | Claude plan usage |
-| Agent behaviour, by hand | the prompts below, in Claude Code / Claude.ai / ChatGPT | Claude / ChatGPT usage |
+| Agent behaviour, by hand | the prompts below, in Claude Code / Claude.ai | Claude usage |
+| ChatGPT, by hand | [chatgpt-test-battery.md](chatgpt-test-battery.md) — the 512-char window, attachments, cached schemas | ChatGPT usage |
 | Dashboard chat `/ai` | `npm run prompts` in vepathos-router-client | **OpenAI, per token** |
 | Production | `scripts/smoke-prod.sh`, then S7 below with a reviewer account | **real stops** |
 
