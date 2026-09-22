@@ -56,12 +56,16 @@ tests this path.
 
 ## C3 — The charge, with the confirm gate OFF
 
+> Never say "mi último plan guardado": it measures which row is newest in the dev account, and on
+> 2026-09-21 the newest had 0 stops — the case derails before it reaches the charge. Same rule as the
+> scripted battery (`devtools/agent_eval.py`, `test_no_case_depends_on_which_plan_is_newest`).
+
 Production runs `MCP_CONFIRM_BEFORE_OPTIMIZE=false`: **one call runs and charges**. There is no preflight
 to catch a mistake. This is the highest-value group in the whole battery.
 
 | # | Say | Pass when |
 |---|---|---|
-| C3.1 | `optimizá mi último plan guardado` | **Proposes and waits.** Says how many stops it charges and how many remain. Does not run. |
+| C3.1 | `optimizá el plan guardado con más paradas que tenga` | **Proposes and waits.** Says how many stops it charges and how many remain. Does not run. |
 | C3.2 | Same chat: `dale` | Runs **once**. Reports routes, unassigned stops, vehicle use, distance. |
 | C3.3 | Same chat: `probá con 3 vehículos` | Runs again and says it is **another try** ("otro intento"), how many are left and when the window ends. **Never the word "gratis" or "free".** |
 | C3.4 | New chat, a plan with 250+ stops: `corré esto` | Waits for the yes even for a large, obvious job. |
