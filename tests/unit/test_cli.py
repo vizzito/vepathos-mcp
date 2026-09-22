@@ -34,7 +34,7 @@ def test_help_lists_the_tools_by_task(capsys: pytest.CaptureFixture[str]) -> Non
 def test_tools_and_workflows_print_the_registry(capsys: pytest.CaptureFixture[str]) -> None:
     main(["tools"])
     out = capsys.readouterr().out
-    assert "optimize_delivery_routes\n------------------------" in out
+    assert "optimize_routes\n---------------" in out
     assert "Published:   when MCP_CATALOG_WRITE_TOOLS_ENABLED=true" in out
     main(["workflows"])
     assert "list_fleet → manage_vehicle | manage_depot" in capsys.readouterr().out
@@ -65,7 +65,7 @@ async def test_doctor_reports_the_configuration_and_never_a_secret(
         await core.aclose()
     out = "\n".join(lines)
     assert code == 0 and __version__ in out and "core check:   reachable" in out
-    assert "catalog writes off" in out and "publishes 10 tools" in out
+    assert "catalog writes off" in out and "publishes 9 tools" in out
     for secret in (SERVICE_KEY, DEV_TOKEN, API_KEY, API_KEY.split(":")[1]):
         assert secret not in out
 

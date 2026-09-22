@@ -9,7 +9,7 @@ import pytest
 from devtools.fake_core.app import FakeCoreState, FakePlan
 from mcp.client import Client
 
-from tests.conftest import FakeClock, make_settings, sample_arguments
+from tests.conftest import FakeClock, make_settings, sample_arguments, tool_arguments
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
 
@@ -34,6 +34,8 @@ async def mcp_client(
 
 
 async def call(client: Client, tool: str, arguments: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    if tool == "optimize_routes":
+        arguments = tool_arguments(arguments)
     result = await client.call_tool(tool, arguments)
     assert isinstance(result.structured_content, dict)
     return result.is_error, result.structured_content
@@ -45,10 +47,9 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
     tools = {t.name: t for t in listed.tools}
     # Import/dataset tools stay unpublished unless MCP_IMPORT_TOOLS_ENABLED (tests/contract/test_import_tools.py).
     assert set(tools) == {
-        "optimize_delivery_routes",
+        "optimize_routes",
         "get_optimization_result",
         "list_plans",
-        "optimize_plan",
         "geocode_addresses",
         "get_geocode_result",
         "get_account",
@@ -64,7 +65,7 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
     assert account.input_schema["additionalProperties"] is False
     assert not account.input_schema.get("required")
 
-    optimize = tools["optimize_delivery_routes"]
+    optimize = tools["optimize_routes"]
     assert optimize.annotations is not None
     # A run can replace the oldest plan in a full library (plan_replaced), so it is not called harmless.
     assert optimize.annotations.read_only_hint is False and optimize.annotations.destructive_hint is True
@@ -81,7 +82,7 @@ async def test_tools_list_publishes_annotations_and_strict_schemas(mcp_client: C
 
 async def test_async_flow_queued_then_completed(mcp_client: Callable[..., Any], clock: FakeClock) -> None:
     async with await mcp_client() as client:
-        is_error, created = await call(client, "optimize_delivery_routes", sample_arguments(stops=12))
+        is_error, created = await call(client, "optimize_routes", sample_arguments(stops=12))
         assert not is_error, created
         assert created["status"] == "queued" and created["submitted_stops"] == 12
         assert created["poll_after_seconds"] == 10
@@ -107,7 +108,7 @@ async def test_async_flow_queued_then_completed(mcp_client: Callable[..., Any], 
 
 async def test_inline_wait_returns_result_for_fast_jobs(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client(MCP_OPTIMIZE_INLINE_WAIT_SECONDS=8) as client:
-        is_error, created = await call(client, "optimize_delivery_routes", sample_arguments(stops=6))
+        is_error, created = await call(client, "optimize_routes", sample_arguments(stops=6))
     assert not is_error
     assert created["status"] == "completed"
     assert created["result"]["summary"]["stops_assigned"] == 6
@@ -115,7 +116,7 @@ async def test_inline_wait_returns_result_for_fast_jobs(mcp_client: Callable[...
 
 async def test_long_poll_waits_for_completion(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client(MCP_RESULT_LONGPOLL_SECONDS=20) as client:
-        _, created = await call(client, "optimize_delivery_routes", sample_arguments(stops=4))
+        _, created = await call(client, "optimize_routes", sample_arguments(stops=4))
         is_error, result = await call(
             client, "get_optimization_result", {"optimization_id": created["optimization_id"]}
         )
@@ -126,8 +127,8 @@ async def test_identical_arguments_return_the_same_optimization(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client() as client:
-        _, first = await call(client, "optimize_delivery_routes", sample_arguments(stops=5))
-        _, second = await call(client, "optimize_delivery_routes", sample_arguments(stops=5))
+        _, first = await call(client, "optimize_routes", sample_arguments(stops=5))
+        _, second = await call(client, "optimize_routes", sample_arguments(stops=5))
     assert first["optimization_id"] == second["optimization_id"]
     assert second["idempotent_replay"] is True
     assert len(core_state.jobs) == 1
@@ -140,7 +141,7 @@ async def test_plan_upgrade_required_is_structured(
         "acct_" + __import__("hashlib").sha256(("vpt_" + "a" * 24).encode()).hexdigest()[:12]
     )
     async with await mcp_client() as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", sample_arguments(stops=400))
+        is_error, payload = await call(client, "optimize_routes", sample_arguments(stops=400))
     assert is_error
     error = payload["error"]
     assert error["code"] == "PLAN_UPGRADE_REQUIRED"
@@ -157,7 +158,7 @@ async def test_trial_applied_is_reported(mcp_client: Callable[..., Any]) -> None
     args["schedule"]["route_start_time"] = "08:00"
     args["stops"][0]["time_window"] = {"start": "09:00", "end": "11:00"}
     async with await mcp_client() as client:
-        is_error, created = await call(client, "optimize_delivery_routes", args)
+        is_error, created = await call(client, "optimize_routes", args)
     assert not is_error, created
     assert created["full_trial_applied"]["max_stops"] == 2000
     assert created["full_trial_applied"]["quota_charged"] is False
@@ -168,12 +169,12 @@ async def test_quota_and_concurrency_errors(
 ) -> None:
     core_state.plan = FakePlan(max_stops_per_request=None, monthly_stops=20, max_concurrent=1)
     async with await mcp_client() as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", sample_arguments(stops=30))
+        is_error, payload = await call(client, "optimize_routes", sample_arguments(stops=30))
         assert is_error and payload["error"]["code"] == "QUOTA_EXCEEDED"
 
-        _, first = await call(client, "optimize_delivery_routes", sample_arguments(stops=3))
+        _, first = await call(client, "optimize_routes", sample_arguments(stops=3))
         args = sample_arguments(stops=4)
-        is_error, payload = await call(client, "optimize_delivery_routes", args)
+        is_error, payload = await call(client, "optimize_routes", args)
     assert is_error and payload["error"]["code"] == "CONCURRENT_OPTIMIZATION_LIMIT"
     assert payload["error"]["retryable"] is True
     assert payload["error"]["details"]["active_optimization_ids"] == [first["optimization_id"]]
@@ -183,7 +184,7 @@ async def test_failed_optimization_and_unknown_id(mcp_client: Callable[..., Any]
     args = sample_arguments(stops=3)
     args["stops"][0]["stop_id"] = "FAIL-1"
     async with await mcp_client() as client:
-        _, created = await call(client, "optimize_delivery_routes", args)
+        _, created = await call(client, "optimize_routes", args)
         clock.now += 10
         is_error, payload = await call(
             client, "get_optimization_result", {"optimization_id": created["optimization_id"]}
@@ -224,7 +225,7 @@ async def test_geocode_addresses_returns_pins_from_smart_import_contract(
 async def test_validation_errors_are_structured(mcp_client: Callable[..., Any]) -> None:
     args = sample_arguments(stops=2, return_to_depot=True)
     async with await mcp_client() as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", args)
+        is_error, payload = await call(client, "optimize_routes", args)
     assert is_error
     assert payload["error"]["code"] == "INVALID_INPUT"
     assert payload["error"]["details"]["issues"][0]["path"] == "return_to_depot"
@@ -265,7 +266,7 @@ async def test_plan_error_names_the_connected_account(
         "acct_" + __import__("hashlib").sha256(("vpt_" + "a" * 24).encode()).hexdigest()[:12]
     )
     async with await mcp_client() as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", sample_arguments(stops=400))
+        is_error, payload = await call(client, "optimize_routes", sample_arguments(stops=400))
     assert is_error
     error = payload["error"]
     assert error["details"]["connected_account"] == "Stormtech SRL"
@@ -313,7 +314,7 @@ async def test_unconfirmed_optimize_returns_a_preflight_and_charges_nothing(
 ) -> None:
     args = sample_arguments(stops=12, confirmed=False)
     async with await mcp_client() as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", args)
+        is_error, payload = await call(client, "optimize_routes", args)
     assert not is_error
     # No job reached Core, so no stop was spent deciding whether to spend stops.
     assert not core_state.jobs
@@ -336,7 +337,7 @@ async def test_preflight_names_the_constraints_and_totals_it_would_enforce(
     args["stops"][0]["time_window"] = {"start": "09:00", "end": "12:00"}
     args["schedule"]["route_start_time"] = "08:00"
     async with await mcp_client() as client:
-        _, payload = await call(client, "optimize_delivery_routes", args)
+        _, payload = await call(client, "optimize_routes", args)
     preflight = payload["preflight"]
     assert preflight["constraints_enforced"] == ["weight_capacity", "time_windows"]
     assert preflight["total_weight_kg"] == 3.75
@@ -350,9 +351,7 @@ async def test_preflight_names_the_constraints_and_totals_it_would_enforce(
 
 async def test_preflight_flags_a_request_over_the_plan_maximum(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client() as client:
-        _, payload = await call(
-            client, "optimize_delivery_routes", sample_arguments(stops=400, confirmed=False)
-        )
+        _, payload = await call(client, "optimize_routes", sample_arguments(stops=400, confirmed=False))
     plan = payload["preflight"]["plan"]
     assert plan["fits"] is False and plan["max_stops_per_request"] == 150
 
@@ -362,8 +361,8 @@ async def test_variants_of_one_day_share_a_stops_identity(mcp_client: Callable[.
     second = sample_arguments(stops=5, confirmed=False)
     second["vehicles"] = [{"vehicle_id": "van", "count": 2, "max_stops": 3}]
     async with await mcp_client() as client:
-        _, a = await call(client, "optimize_delivery_routes", first)
-        _, b = await call(client, "optimize_delivery_routes", second)
+        _, a = await call(client, "optimize_routes", first)
+        _, b = await call(client, "optimize_routes", second)
     # Same delivery day, different routing: the pair Core would charge twice.
     assert a["preflight"]["stops_identity"] == b["preflight"]["stops_identity"]
     assert a["preflight"]["vehicle_units"] == 3 and b["preflight"]["vehicle_units"] == 2
@@ -375,7 +374,7 @@ async def test_the_gate_can_be_turned_off_for_unattended_callers(
     args = sample_arguments(stops=4)
     del args["confirmed"]
     async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", args)
+        is_error, payload = await call(client, "optimize_routes", args)
     assert not is_error and payload["optimization_id"].startswith("mcp_")
     assert len(core_state.jobs) == 1
 
@@ -387,7 +386,7 @@ async def test_a_client_with_a_cached_schema_still_optimizes_without_the_gate(
     # (2026-09-16). Rejecting the field would have broken optimization for every such client.
     args = sample_arguments(stops=4, confirmed=False)
     async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
-        is_error, payload = await call(client, "optimize_delivery_routes", args)
+        is_error, payload = await call(client, "optimize_routes", args)
     assert not is_error and payload["optimization_id"].startswith("mcp_")
     assert "preflight" not in payload
     assert len(core_state.jobs) == 1
@@ -395,9 +394,9 @@ async def test_a_client_with_a_cached_schema_still_optimizes_without_the_gate(
 
 async def test_the_published_contract_follows_the_gate(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client() as client:
-        gated = {t.name: t for t in (await client.list_tools()).tools}["optimize_delivery_routes"]
+        gated = {t.name: t for t in (await client.list_tools()).tools}["optimize_routes"]
     async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
-        direct = {t.name: t for t in (await client.list_tools()).tools}["optimize_delivery_routes"]
+        direct = {t.name: t for t in (await client.list_tools()).tools}["optimize_routes"]
 
     assert "confirmed" in gated.input_schema["properties"]
     assert "confirmed=true" in (gated.description or "")
@@ -427,7 +426,7 @@ async def test_an_inline_run_is_saved_as_a_plan_the_account_can_open(
 ) -> None:
     args = sample_arguments(stops=4, plan_name="Lunes zona 1", depot_name="Galpón")
     async with await mcp_client() as client:
-        is_error, created = await call(client, "optimize_delivery_routes", args)
+        is_error, created = await call(client, "optimize_routes", args)
         assert not is_error, created
         assert created["plan_id"].startswith("cmf") and created["plan_name"] == "Lunes zona 1"
         assert created["account_url"].endswith(f"plan={created['plan_id']}")
@@ -476,7 +475,7 @@ async def test_a_full_library_replaces_the_oldest_plan_and_says_which(
         created = []
         for index in range(4):
             args = sample_arguments(stops=2 + index, plan_name=f"Día {index + 1}")
-            is_error, run = await call(client, "optimize_delivery_routes", args)
+            is_error, run = await call(client, "optimize_routes", args)
             assert not is_error, run
             created.append(run)
             clock.now += 10
@@ -495,10 +494,10 @@ async def test_a_plan_is_temporary_when_every_library_slot_is_protected(
 ) -> None:
     core_state.plan.max_saved_plans = 1
     async with await mcp_client() as client:
-        _, kept = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        _, kept = await call(client, "optimize_routes", sample_arguments(stops=2))
         core_state.plans[kept["plan_id"]]["kept"] = True
         clock.now += 10
-        is_error, run = await call(client, "optimize_delivery_routes", sample_arguments(stops=3))
+        is_error, run = await call(client, "optimize_routes", sample_arguments(stops=3))
         assert not is_error, run
         assert run["plan_temporary"] is True and "plan_replaced" not in run
         _, listed = await call(client, "list_plans", {"query": "optimization"})
@@ -506,15 +505,15 @@ async def test_a_plan_is_temporary_when_every_library_slot_is_protected(
     assert temporary["temporary"] is True
 
 
-async def test_a_server_without_imports_reruns_a_plan_free_with_optimize_plan(
+async def test_a_server_without_imports_reruns_a_plan_as_another_try(
     mcp_client: Callable[..., Any], clock: FakeClock
 ) -> None:
-    # The free retry is only reachable through optimize_plan, so it is published on every server.
+    # The free retry is only reachable through optimize_routes, so it is published on every server.
     async with await mcp_client(MCP_CONFIRM_BEFORE_OPTIMIZE="false") as client:
         tools = {t.name for t in (await client.list_tools()).tools}
-        assert "optimize_plan" in tools and "import_delivery_file" not in tools
+        assert "optimize_routes" in tools and "import_deliveries" not in tools
 
-        is_error, first = await call(client, "optimize_delivery_routes", sample_arguments(stops=5))
+        is_error, first = await call(client, "optimize_routes", sample_arguments(stops=5))
         assert not is_error, first
         clock.now += 10
 
@@ -524,7 +523,7 @@ async def test_a_server_without_imports_reruns_a_plan_free_with_optimize_plan(
             "vehicles": [{"vehicle_id": "van", "count": 2}],
             "exclude_stop_ids": ["ORD-00004"],
         }
-        is_error, retry = await call(client, "optimize_plan", rerun)
+        is_error, retry = await call(client, "optimize_routes", rerun)
         assert not is_error, retry
         assert retry["free_retry"] is True and retry["quota_charged"] is False
         assert retry["submitted_stops"] == 4 and retry["plan_id"] == first["plan_id"]
@@ -549,7 +548,7 @@ async def test_automations_are_read_and_prepared_but_never_switched_on(
         assert empty["empty"] is True
         assert empty["stores"][0]["integration_account_id"] == "acc-1"
 
-        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        _, plan = await call(client, "optimize_routes", sample_arguments(stops=2))
         is_error, created = await call(
             client,
             "create_automation",
@@ -600,7 +599,7 @@ async def test_an_automation_needs_to_be_told_where_its_orders_come_from(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client() as client:
-        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        _, plan = await call(client, "optimize_routes", sample_arguments(stops=2))
         base = {"name": "Sin origen", "template_plan_id": plan["plan_id"], "operation_id": "chat-draft-0002"}
         is_error, refused = await call(client, "create_automation", base)
         assert is_error and refused["error"]["code"] == "INVALID_INPUT"
@@ -627,7 +626,7 @@ async def test_an_account_without_automations_is_told_so_before_anything_is_writ
 ) -> None:
     core_state.max_enabled_automations = 0
     async with await mcp_client() as client:
-        _, plan = await call(client, "optimize_delivery_routes", sample_arguments(stops=2))
+        _, plan = await call(client, "optimize_routes", sample_arguments(stops=2))
         is_error, refused = await call(
             client,
             "create_automation",
@@ -768,7 +767,7 @@ async def test_depots_are_read_on_every_server_but_written_only_behind_the_flag(
 async def test_tools_that_overwrite_something_saved_say_so(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    for name in ("optimize_delivery_routes", "optimize_plan", "manage_vehicle", "manage_depot"):
+    for name in ("optimize_routes", "optimize_routes", "manage_vehicle", "manage_depot"):
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.destructive_hint is True and annotations.read_only_hint is False, name
@@ -785,7 +784,7 @@ async def test_only_the_tool_that_fetches_a_callers_url_is_open_world(mcp_client
     open_world = {
         name for name, tool in tools.items() if tool.annotations and tool.annotations.open_world_hint
     }
-    assert open_world == {"import_delivery_file"}
+    assert open_world == {"import_deliveries"}
 
 
 async def test_the_route_duration_is_published_as_the_target_it_is(mcp_client: Callable[..., Any]) -> None:
@@ -793,10 +792,6 @@ async def test_the_route_duration_is_published_as_the_target_it_is(mcp_client: C
     # of 18 ran 67-70. Core sends it as rebalance_by_time: a soft target. The text must not promise more.
     async with await mcp_client() as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    inline = tools["optimize_delivery_routes"].input_schema["properties"]["schedule"]["properties"]
-    for text in (
-        inline["max_route_minutes"]["description"],
-        tools["optimize_plan"].input_schema["properties"]["max_route_minutes"]["description"],
-    ):
+    for text in (tools["optimize_routes"].input_schema["properties"]["max_route_minutes"]["description"],):
         assert "not a hard limit" in text.replace("not \n", "not ") and "target" in text
         assert "Maximum" not in text

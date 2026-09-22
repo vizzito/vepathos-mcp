@@ -20,7 +20,7 @@ Staging checklist:
 1. Connect ChatGPT Apps connector to staging MCP, with `MCP_IMPORT_TOOLS_ENABLED=true` for the import cases.
 2. Cases 1 and 5 below (small optimize + file import).
 3. Confirm preflight vs charged run matches `MCP_CONFIRM_BEFORE_OPTIMIZE`.
-4. Import path: the first `optimize_plan` is charged and the agent says so; a rerun of the same plan
+4. Import path: the first `optimize_routes` is charged and the agent says so; a rerun of the same plan
    within 24 h with the same stops or fewer (other vehicles or `exclude_stop_ids`) is the free retry and
    the agent says that too. When the library is full the agent names the replaced plan, and it offers
    the account link and the public map instead of creating the map unasked.
@@ -55,13 +55,13 @@ Staging checklist:
 
 1. **Basic fleet**
    > I have 120 deliveries and 5 vans. Optimize the deliveries minimizing total distance.
-   Dataset: 120 stops, 5 vans. Expect `optimize_delivery_routes` (or import path if file attached).
+   Dataset: 120 stops, 5 vans. Expect `optimize_routes` (or import path if file attached).
 
 2. **Weight capacity at scale**
    > Optimize these 2,500 deliveries across 30 vehicles while respecting weight limits.
    Dataset: 2,500 stops with `weight_kg`, 30 vehicles with `max_weight_kg`. Expect a plan decision
    (success on Growth, or `PLAN_UPGRADE_REQUIRED` on Free that the agent explains). Prefer
-   `import_delivery_file` → `optimize_plan` rather than pasting rows.
+   `import_deliveries` → `optimize_routes` rather than pasting rows.
 
 3. **Time windows and unassigned deliveries**
    > Each delivery has a time window. Find feasible routes and tell me which deliveries cannot be assigned.
@@ -69,18 +69,18 @@ Staging checklist:
 
 4. **Fleet sizing (8k — import path)**
    > I have 8,000 orders in this spreadsheet. How many vehicles did the optimizer actually need?
-   Expect `import_delivery_file` → `get_import_result` → `optimize_plan`, not inline `stops[]`.
+   Expect `import_deliveries` → `get_import_result` → `optimize_routes`, not inline `stops[]`.
    See `docs/large-payloads.md`. Report `vehicles_used` against `vehicles_available`.
 
 5. **Import attachment**
    > Attach a CSV of deliveries and plan routes from our depot at …
-   Expect fileParams → `import_delivery_file`, summary without all rows, then `optimize_plan`.
+   Expect fileParams → `import_deliveries`, summary without all rows, then `optimize_routes`.
 
 ## What to record per run
 
 | Criterion | Pass when |
 |---|---|
-| Tool selection | Large files use import/dataset tools; small plans may use `optimize_delivery_routes` |
+| Tool selection | Large files use import/dataset tools; small plans may use `optimize_routes` |
 | Argument quality | Valid on the first or second attempt; units respected (kg, m³, HH:MM) |
 | Async handling | Follows up with `get_import_result` / `get_optimization_result` |
 | Result use | Summarizes vehicles used, distance and duration; pages stops only when asked |

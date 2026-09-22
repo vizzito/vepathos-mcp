@@ -414,7 +414,7 @@ curl -sS -X POST https://mcp.vepathos.com/mcp \
 
 Expect SSE `event: message` and tools:
 
-`optimize_delivery_routes`, `get_optimization_result`, `geocode_addresses`, `get_geocode_result`,
+`optimize_routes`, `get_optimization_result`, `geocode_addresses`, `get_geocode_result`,
 `get_account`, `list_fleet`.
 
 Verified 2026-09-14 with a dashboard `vpt_…:vpt_sk_live_…` pair.
@@ -435,7 +435,7 @@ localhost. Only **Allow** if you started Inspector.
 ## 10. Next (not done in this run)
 
 1. `geocode_addresses` (few CABA streets) + `get_geocode_result`.
-2. `optimize_delivery_routes` with those coordinates + `get_optimization_result`.
+2. `optimize_routes` with those coordinates + `get_optimization_result`.
 3. Claude **custom** connector — not the directory.
 4. Keep `MCP_FULL_TRIAL_ENABLED=false` until you want the first-use trial.
 5. Registry / Claude directory / “Add to …” buttons: explicit OK only.
@@ -469,7 +469,7 @@ Diagnosis of client symptoms is in [runbook-incidents.md](runbook-incidents.md).
 |---|---|---|
 | Edited `.env`, nothing changed | `docker restart` keeps the old environment | Deploy command from § 4 with `--force-recreate --no-build` |
 | `up` did not recreate the container | `CADDY_VETH_IP` not exported in this shell; Compose aborts on `${CADDY_VETH_IP:?}` | Export it again (§ 4) and read the `up` output, not only `docker ps` |
-| `optimize_delivery_routes` answers with `preflight`, nothing runs | `MCP_CONFIRM_BEFORE_OPTIMIZE` defaults to `true` | Set `false` in the adapter `.env`, recreate |
+| `optimize_routes` answers with `preflight`, nothing runs | `MCP_CONFIRM_BEFORE_OPTIMIZE` defaults to `true` | Set `false` in the adapter `.env`, recreate |
 | `docker logs … \| grep` shows unrelated lines | Logs are on stderr | `docker logs … 2>&1 \| grep …` |
 | `jq: parse error` on `/.well-known/oauth-authorization-server` | Asked the MCP host; that document is on `api.vepathos.com` | `curl https://api.vepathos.com/.well-known/oauth-authorization-server` |
 

@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.conftest import API_KEY, DEV_TOKEN, make_settings, sample_arguments
+from tests.conftest import API_KEY, DEV_TOKEN, make_settings, sample_arguments, tool_arguments
 from vepathos_mcp.app import create_app
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 
@@ -121,7 +121,7 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
             headers={**headers, "MCP-Protocol-Version": "2025-06-18"},
         )
         tools = {t["name"]: t for t in parse_rpc(listed)["result"]["tools"]}
-        assert tools["optimize_delivery_routes"]["annotations"]["idempotentHint"] is True
+        assert tools["optimize_routes"]["annotations"]["idempotentHint"] is True
         assert tools["get_optimization_result"]["annotations"]["readOnlyHint"] is True
 
         called = await client.post(
@@ -130,7 +130,7 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "optimize_delivery_routes", "arguments": sample_arguments(stops=3)},
+                "params": {"name": "optimize_routes", "arguments": tool_arguments(sample_arguments(stops=3))},
             },
             headers={**headers, "MCP-Protocol-Version": "2025-06-18"},
         )

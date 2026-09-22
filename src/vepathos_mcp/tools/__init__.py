@@ -13,7 +13,7 @@ from vepathos_mcp.schemas.inputs import (
     GetGeocodeInput,
     GetResultInput,
     ListFleetInput,
-    OptimizeInput,
+    OptimizeRoutesInput,
 )
 from vepathos_mcp.schemas.jsonschema import inline_model_schema
 from vepathos_mcp.tools import descriptions
@@ -45,26 +45,20 @@ from vepathos_mcp.tools.geocode import (
 )
 from vepathos_mcp.tools.import_tools import (
     GET_IMPORT_TOOL,
-    IMPORT_FILE_TOOL,
-    IMPORT_TEXT_TOOL,
+    IMPORT_TOOL,
     LIST_DATASETS_TOOL,
-    OPTIMIZE_PLAN_TOOL,
     UPDATE_MAPPING_TOOL,
     GetImportInput,
-    ImportFileInput,
-    ImportTextInput,
+    ImportDeliveriesInput,
     ListDatasetsInput,
-    OptimizePlanInput,
     UpdateMappingInput,
     make_get_import_tool,
-    make_import_file_tool,
-    make_import_text_tool,
+    make_import_deliveries_tool,
     make_list_datasets_tool,
-    make_optimize_plan_tool,
     make_update_mapping_tool,
 )
 from vepathos_mcp.tools.optimize import TOOL_NAME as OPTIMIZE_TOOL
-from vepathos_mcp.tools.optimize import make_optimize_tool
+from vepathos_mcp.tools.optimize import make_optimize_routes_tool
 from vepathos_mcp.tools.plans import TOOL_NAME as LIST_PLANS_TOOL
 from vepathos_mcp.tools.plans import ListPlansInput, make_list_plans_tool
 from vepathos_mcp.tools.results import TOOL_NAME as GET_RESULT_TOOL
@@ -76,7 +70,7 @@ def optimize_schema(*, confirm_before_optimize: bool) -> dict[str, Any]:
     """The published optimize schema. Without the gate, `confirmed` changes nothing, so it is not
     advertised; the model still accepts it, because clients cache schemas and keep sending it."""
 
-    schema = inline_model_schema(OptimizeInput)
+    schema = inline_model_schema(OptimizeRoutesInput)
     if confirm_before_optimize:
         return schema
     properties = {name: spec for name, spec in schema["properties"].items() if name != "confirmed"}
@@ -112,14 +106,6 @@ def _tool(
     )
     if confirm_before_optimize is not None and name == OPTIMIZE_TOOL:
         tool.parameters = optimize_schema(confirm_before_optimize=confirm_before_optimize)
-    elif confirm_before_optimize is not None and name == OPTIMIZE_PLAN_TOOL:
-        schema = inline_model_schema(schema_model)
-        if not confirm_before_optimize:
-            schema = {
-                **schema,
-                "properties": {k: v for k, v in schema["properties"].items() if k != "confirmed"},
-            }
-        tool.parameters = schema
     else:
         tool.parameters = inline_model_schema(schema_model)
     return tool
@@ -130,11 +116,13 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
     imports = deps.settings.import_tools_enabled
     tools = [
         _tool(
-            make_optimize_tool(deps),
+            make_optimize_routes_tool(deps),
             name=OPTIMIZE_TOOL,
             title=descriptions.OPTIMIZE_TITLE,
-            description=descriptions.optimize_description(confirm_before_optimize=confirm),
-            schema_model=OptimizeInput,
+            description=descriptions.optimize_description(
+                confirm_before_optimize=confirm, import_tools=imports
+            ),
+            schema_model=OptimizeRoutesInput,
             read_only=False,
             # A run in a full plan library replaces the oldest plan (plan_replaced).
             destructive=True,
@@ -148,8 +136,7 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             schema_model=GetResultInput,
             read_only=True,
         ),
-        # Plans exist for every account, so reading and rerunning them is published whether or not the
-        # import tools are.
+        # Plans exist for every account, so reading them is published whether or not the import tools are.
         _tool(
             make_list_plans_tool(deps),
             name=LIST_PLANS_TOOL,
@@ -157,19 +144,6 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             description=descriptions.LIST_PLANS_DESCRIPTION,
             schema_model=ListPlansInput,
             read_only=True,
-        ),
-        _tool(
-            make_optimize_plan_tool(deps),
-            name=OPTIMIZE_PLAN_TOOL,
-            title=descriptions.OPTIMIZE_PLAN_TITLE,
-            description=descriptions.optimize_plan_description(
-                confirm_before_optimize=confirm, import_tools=imports
-            ),
-            schema_model=OptimizePlanInput,
-            read_only=False,
-            # A run in a full plan library replaces the oldest plan (plan_replaced).
-            destructive=True,
-            confirm_before_optimize=confirm,
         ),
     ]
     if imports:
@@ -179,7 +153,7 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             make_geocode_tool(deps),
             name=GEOCODE_TOOL,
             title=descriptions.GEOCODE_TITLE,
-            description=descriptions.GEOCODE_DESCRIPTION,
+            description=descriptions.geocode_description(import_tools=imports),
             schema_model=GeocodeInput,
             read_only=False,
         ),
@@ -272,24 +246,15 @@ def _import_tools(deps: ToolDeps) -> list[Tool]:
 
     return [
         _tool(
-            make_import_file_tool(deps),
-            name=IMPORT_FILE_TOOL,
-            title=descriptions.IMPORT_FILE_TITLE,
-            description=descriptions.IMPORT_FILE_DESCRIPTION,
-            schema_model=ImportFileInput,
+            make_import_deliveries_tool(deps),
+            name=IMPORT_TOOL,
+            title=descriptions.IMPORT_TITLE,
+            description=descriptions.IMPORT_DESCRIPTION,
+            schema_model=ImportDeliveriesInput,
             read_only=False,
             # It downloads whatever public URL the caller names: the one tool that reaches outside Vepathos.
             open_world=True,
             # Each call starts a new import (and a new plan): a client must not retry it on its own.
-            idempotent=False,
-        ),
-        _tool(
-            make_import_text_tool(deps),
-            name=IMPORT_TEXT_TOOL,
-            title=descriptions.IMPORT_TEXT_TITLE,
-            description=descriptions.IMPORT_TEXT_DESCRIPTION,
-            schema_model=ImportTextInput,
-            read_only=False,
             idempotent=False,
         ),
         _tool(

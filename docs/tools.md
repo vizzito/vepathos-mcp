@@ -12,6 +12,13 @@ new, and the server instructions only name the tools a server publishes: `MCP_IM
 (`manage_vehicle`, `manage_depot`). There is intentionally no cancel tool: a submitted optimization
 always runs to completion.
 
+**0.9.0 merged four tools into two.** `optimize_delivery_routes` and `optimize_plan` are now
+`optimize_routes`, and `import_delivery_file` and `import_delivery_text` are now `import_deliveries`. The
+source is an argument instead of a choice of tool: choosing the wrong tool used to change where a run was
+saved and what it charged, and two tools for one intention cost ~1,160 tokens of catalog per
+conversation. Core's contract did not change: `POST /optimization/jobs` already took exactly one of
+`stops`, `plan_id` or `dataset_id`.
+
 ## Server instructions
 
 `server_instructions()` in `src/vepathos_mcp/tools/descriptions.py` is the dispatcher prompt for **every
@@ -45,25 +52,25 @@ with `MCP_CONFIRM_BEFORE_OPTIMIZE`, `MCP_IMPORT_TOOLS_ENABLED` and `MCP_MAP_SHAR
 names tools the server publishes. `MCP_CATALOG_WRITE_TOOLS_ENABLED` adds the master-data line.
 
 Annotations per tool are in [tools-reference.md](tools-reference.md). Two choices worth explaining:
-`optimize_delivery_routes`, `optimize_plan`, `manage_vehicle` and `manage_depot` say
+`optimize_routes`, `manage_vehicle` and `manage_depot` say
 `destructiveHint: true` — a run in a full plan library replaces the oldest plan (`plan_replaced`), and
 an update overwrites what the account had saved — so a host that asks before destructive calls asks
 for these.
 
 The two import tools are the only ones that say `idempotentHint: false`: every call starts a new import
-(and a new plan), so a client must not retry them on its own. `optimize_delivery_routes` is idempotent because identical arguments (including the resolved delivery
+(and a new plan), so a client must not retry them on its own. `optimize_routes` is idempotent because identical arguments (including the resolved delivery
 date) map to the same optimization for the connected account. Retrying never creates a second job or a
 second charge.
 
-Large files (hundreds+ stops): use `import_delivery_file` → `get_import_result` → `optimize_plan`
+Large files (hundreds+ stops): use `import_deliveries` → `get_import_result` → `optimize_routes` with `plan_id`
 instead of pasting `stops[]`. See [large-payloads.md](large-payloads.md).
 
 ## Plans
 
 Every optimization lives in a plan: the same `OptimizationPlan` the dashboard lists under its plans
 ([architecture-mcp-plans.md](architecture-mcp-plans.md)). An import loads its stops into a plan; an
-inline `optimize_delivery_routes` call creates a new one (`plan_name`, default "Optimization
-YYYY-MM-DD"); `optimize_plan` runs an existing one. Runs, imports and results report `plan_id` and
+`optimize_routes` call with `stops` creates a new one (`plan_name`, default "Optimization
+YYYY-MM-DD"); `optimize_routes` with `plan_id` runs an existing one. Runs, imports and results report `plan_id` and
 `account_url` (the plan in the user's account, sign-in required).
 
 **One billing rule for dashboard and MCP.** A plan's charged run opens a 24 h window. Within it, one
@@ -74,7 +81,7 @@ quota only: plan limits still apply. The views say what the next run costs:
 and, when charged, `charged_because` (`no_billed_run`, `stops_changed`, `allowance_used`,
 `window_closed`, `no_allowance`). A run reports `quota_charged`, `free_retry: true` when it was the free
 retry, and `free_retries_remaining` (retries that stay free after it completes). Because an inline call
-always creates a new plan, the free retry is reachable only through `optimize_plan`, so `optimize_plan`
+always creates a new plan, another try is reachable only by running a `plan_id`, so `optimize_routes`
 and `list_plans` are published on every server and the instructions state the rule everywhere.
 
 **Library.** Free keeps 3 plans; kept + favorite plans are capped at library size − 1. When the library
@@ -98,40 +105,58 @@ fields and `last_agent_run` (depot, vehicles, schedule, constraints an agent las
 absent), so a new chat can repeat or vary the last run after confirming it. Never returns stops.
 `PLAN_NOT_FOUND` when the plan is gone (deleted, or replaced to make room).
 
-## `import_delivery_file` / `import_delivery_text`
+## `import_deliveries`
 
-Three ways in, so every host has one: `file` for hosts that hand attachments to tools (ChatGPT
-`fileParams`); `url` for the rest (Claude, Gemini, Cursor, a console): a public https link, or a Google
-Drive, Sheets or Docs share link as the user copied it; and `import_delivery_text` for rows the user
-pasted or the text of a CSV or JSON file when the host has neither (a few hundred rows). A link that
-answers with a web page instead of the file is reported as not shared publicly, and the download has a
-90 s total deadline. Returns `import_id` and
-`plan_id` (null until the stops load). Optional `plan_id` loads the stops into that plan, replacing its
-stops and keeping its depot, fleet and settings (`PLAN_NOT_FOUND` if it does not exist); without it a
-new plan is named after the file. Poll `get_import_result` for `plan_id`, `account_url`, `dataset_id`,
-`summary` (never all rows), `needs_confirmation`, the free-retry fields and `plan_replaced` /
-`plan_temporary`. `update_import_mapping` corrects columns without re-upload: `{column: field}`, `null` to ignore a
-column, or `{field, unit, format}` when the column is in another unit (lb, in, l) or date/number format;
-Smart Import converts it, and a unit or format it does not accept answers `INVALID_INPUT`. `list_datasets` lists
-imports with their `plan_id`, `plan_replaced` / `plan_temporary` (only when true) and `last_run`. A
-`dataset_id` expires after 24 h; its plan stays. `import_delivery_file` also returns `account_url` once
-the plan is known.
+One tool, three sources, exactly one per call, so every host has one: `file` for hosts that hand
+attachments to tools (ChatGPT `fileParams`; recovered from `_meta` when the model leaves it out); `url`
+for the rest (Claude, Gemini, Cursor, a console): a public https link, or a Google Drive, Sheets or Docs
+share link as the user copied it; and `text` for rows the user pasted or the text of a CSV or JSON file
+(a few hundred rows). Street addresses go this way too: Smart Import geocodes them, so a list of
+addresses becomes a plan the agent optimizes by id instead of coordinates it carries. Two sources answer
+`INVALID_INPUT`, and none answers `INVALID_INPUT` with the three ways in. A link that answers with a web
+page instead of the file is reported as not shared publicly, and the download has a 90 s total deadline.
 
-## `optimize_plan`
+Returns `import_id` and `plan_id` (null until the stops load). Optional `plan_id` loads the stops into
+that plan, replacing its stops and keeping its depot, fleet and settings (`PLAN_NOT_FOUND` if it does not
+exist); without it a new plan is named after the file (`filename`). Poll `get_import_result` for
+`plan_id`, `account_url`, `dataset_id`, `summary`, `needs_confirmation`, the free-retry fields and
+`plan_replaced` / `plan_temporary`.
 
-Published on every server. Runs stored stops: exactly one of `plan_id` (the plan's stops) or
-`dataset_id` (an import's copy, run in the plan it loaded; named in the description only when the
-import tools are published). Takes the same run parameters as before (`depot` with coordinates, or an address with optional `city` / `country`,
-`vehicles[]`, `exclude_stop_ids`, `use_weight` / `use_volume` / `use_time_windows`, `route_start_time`,
-`time_zone`, `service_time_minutes`, `max_route_minutes`, `date`, `confirmed`, `idempotency_key`) plus
-`depot_name`. A depot given as an address is geocoded and comes back as `depot_resolved`
+**The rows never reach the model.** Core's summary carries the first rows of the file (`sample_rows`:
+addresses, names, phones). The adapter drops them and adds `summary.column_kinds`, what each column
+holds (`date`, `time`, `time range`, `number`, `phone`, `email`, `text`, `empty`, or `mixed: …`),
+computed from those rows without a single value. That is enough to catch a mapping suggestion that does
+not fit (dates suggested as `phone`), which is what the sample rows were for.
+
+`update_import_mapping` corrects columns without re-upload: `{column: field}`, `null` to ignore a column,
+or `{field, unit, format}` when the column is in another unit (lb, in, l) or date/number format; Smart
+Import converts it, and a unit or format it does not accept answers `INVALID_INPUT`. `list_datasets`
+lists imports with their `plan_id`, `plan_replaced` / `plan_temporary` (only when true) and `last_run`. A
+`dataset_id` expires after 24 h; its plan stays.
+
+## `optimize_routes`
+
+Published on every server. Exactly one source of stops per call:
+
+| Source | What runs | Where the run is saved | Another try |
+|---|---|---|---|
+| `plan_id` | The plan's stops (a saved plan, an import's plan) | That plan | Yes, within 24 h of its charged run with the same stops or fewer |
+| `dataset_id` | An import's copy (named in the description only when the import tools are published) | The plan the import loaded into | Same as its plan |
+| `stops` | Stops with coordinates given in the call | A new plan on every call (`plan_name`) | No: varying a stops run means rerunning its `plan_id` |
+
+The depot is `depot.depot_id` (a saved depot from `list_fleet`: the adapter reads its coordinates and
+name from the catalog, so the model carries an id; an unknown id is `DEPOT_NOT_FOUND`),
+`depot.latitude` / `depot.longitude`, or `depot.address` with optional `city` / `country`. The schedule
+is flat: `date`, `route_start_time`, `time_zone`, `service_time_minutes`, `max_route_minutes`.
+`exclude_stop_ids` goes only with `plan_id` or `dataset_id`, and `plan_name` only with `stops`; the
+other combinations answer `INVALID_INPUT`. Under the hood the stops source runs the inline pipeline
+(its cross-field rules below) and the stored sources run the plan pipeline described here. A depot given as an address is geocoded and comes back as `depot_resolved`
 (`matched_address`, `latitude`, `longitude`) in the preflight and in the run, for the agent to tell the
 user. A match that is not in the `valid` band is refused with `INVALID_INPUT` and `depot_resolved` in its
 details, before anything is optimized or charged: after the user's yes the agent calls again with those
 coordinates. Logs record only the match band, never the address or coordinates. The run's depot, fleet
 and schedule are written to the plan. `exclude_stop_ids` applies to
-that run only: the plan keeps every stop (the launch freezes the stops that ran). Output is the same as
-`optimize_delivery_routes`, with `plan_id`, `plan_name`, `account_url` and the billing fields above.
+that run only: the plan keeps every stop (the launch freezes the stops that ran). The output carries `plan_id`, `plan_name`, `account_url` and the billing fields above.
 
 Idempotency: Core deduplicates the request as sent, before it expands the plan's stops. For `plan_id`
 the adapter reads `GET /plans/{plan_id}` and adds the plan's `revision` to the key (it bumps whenever the
@@ -158,7 +183,7 @@ increasing the vehicle count to cover the demand, not a "test" fleet.
 ## `list_fleet`
 
 What the account has saved: vehicles and fleets, with capacity in kg and m³, shaped to drop into
-`optimize_delivery_routes` as `vehicles[]`, and **depots** (`depot_id`, `name`, `latitude`,
+`optimize_routes` as `vehicles[]`, and **depots** (`depot_id`, `name`, `latitude`,
 `longitude`) to pass as `depot`. No arguments, read-only, charges no stops. `empty: true` means the
 account has no vehicles saved — then ask the user to describe them. Depots are RouteHub milestones
 tagged `DEPOT` (all of them when the account tagged none, as the dashboard does).
@@ -182,7 +207,7 @@ vehicles form a fleet is arranged in the dashboard.
 |---|---|---|
 | What | saved vehicles (a type and its capacity), saved depots | how many vehicles a run uses (`count`), stops per vehicle, a capacity or a depot for one day, a vehicle that is out tomorrow |
 | Lives | in the account, after the conversation | in one optimization |
-| Tool | `manage_vehicle`, `manage_depot` | `vehicles[]` / `depot` of `optimize_delivery_routes` or `optimize_plan` |
+| Tool | `manage_vehicle`, `manage_depot` | `vehicles[]` / `depot` of `optimize_routes` |
 
 | The user says | What happens |
 |---|---|
@@ -241,7 +266,7 @@ instructions.
 The rule keeps **a plan of its own**, copied from `template_plan_id`: the person is never asked to
 pick a container for their deliveries, and editing or deleting the plan they copied does not change
 the rule. That plan's id is deliberately absent from the answer — an id in an agent's hands is an id
-it could pass to `optimize_plan`, spending the rule's stops by hand and moving the revision its next
+it could pass to `optimize_routes`, spending the rule's stops by hand and moving the revision its next
 batch checks against.
 
 `operation_id` is the caller's own id for the attempt: the same one twice returns the rule already
@@ -256,42 +281,42 @@ not-found error and the user is pointed at the dashboard.
 Turns street addresses into coordinates via Vepathos Smart Import. Requires `depot` or `city`.
 Unresolved rows return `band=needs_geocoding` and null coordinates (`unresolved_stop_ids`).
 Pins with `band=review` or confidence below 0.8 are listed in `review_stop_ids`.
-If `needs_confirmation` is true, the assistant must ask before calling `optimize_delivery_routes`.
+If `needs_confirmation` is true, the assistant must ask before calling `optimize_routes`.
 Charges Smart Import quota.
 
-## `optimize_delivery_routes`
+### The `stops` source
 
 Assigns stops to vehicles and sequences each route from one depot (vehicle routing problem).
 
-### Input
-
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `depot.latitude`, `depot.longitude` | number | yes | Decimal degrees (WGS84). |
+| `plan_id` / `dataset_id` / `stops[]` | string / string / array | exactly one | See the table above. |
+| `depot` | object | yes | `depot_id`, or `latitude` + `longitude`, or `address` (+ `city`, `country`). |
 | `vehicles[]` | array (1–50) | yes | Vehicle types. |
-| `vehicles[].vehicle_id` | string | yes | `[A-Za-z0-9_.-]`, max 32, unique (case-insensitive). Echoed on routes. |
+| `vehicles[].vehicle_id` | string | yes | A saved vehicle's id from `list_fleet`, or a label for one the account has not saved: `[A-Za-z0-9_.-]`, max 32, unique (case-insensitive). Echoed on routes. |
 | `vehicles[].count` | integer 1–500 | no (1) | Identical units available. |
 | `vehicles[].min_stops` | integer | no (50% of `max_stops`) | Floor per route. The engine lowers it to floor(max×0.9) when higher, and lowers the fleet's minimums when they add up to more than 95% of the stops; the preflight warns (`stop_band_margin`, `fleet_min_above_stops`). |
 | `vehicles[].max_stops` | integer | no | Maximum stops per vehicle route. |
 | `vehicles[].max_weight_kg` | number > 0 | no | Setting it on any vehicle **enforces** weight capacity unless `use_weight=false`. Every vehicle and stop must then carry weight. |
-| `max_load_ratio` | number 0.5–1 | no (0.95) | Highest share of each vehicle's weight and volume capacity to fill. The 5% margin is the default in every channel; 1 fills vehicles completely. The preflight warns `load_above_margin` when the load only fits without the margin. |
-| `use_weight` / `use_volume` / `use_time_windows` | boolean | no (follow the data) | The flag decides what the engine applies. `false` keeps weights, volumes or windows for reference without optimizing by them; `true` needs the matching vehicle capacity. |
 | `vehicles[].max_volume_m3` | number > 0 | no | Same rule for volume. |
-| `stops[]` | array (≥ 1) | yes | Coordinates are required; addresses are not geocoded. |
+| `max_load_ratio` | number 0.5–1 | no (0.95) | Highest share of each vehicle's weight and volume capacity to fill. The 5% margin is the default in every channel; 1 fills vehicles completely. The preflight warns `load_above_margin` when the load only fits without the margin. |
+| `use_weight` / `use_volume` | boolean | no (follow the vehicles' capacities) | `false` keeps weights or volumes for reference without optimizing by them; `true` needs the matching vehicle capacity. |
+| `use_time_windows` | boolean | no (follow the data) | `false` keeps windows for reference. |
 | `stops[].stop_id` | string | yes | Max 64 chars, unique. Echoed in results. |
-| `stops[].latitude`, `stops[].longitude` | number | yes | Decimal degrees. |
+| `stops[].latitude`, `stops[].longitude` | number | yes | Decimal degrees. Addresses go through `import_deliveries` (or `geocode_addresses`) first. |
 | `stops[].weight_kg` | number ≥ 0 | conditional | Required when weight capacity is enforced. |
 | `stops[].volume_m3` | number ≥ 0 | conditional | Required when volume capacity is enforced. |
-| `stops[].time_window.start` / `.end` | `HH:MM` | no | Local time in `schedule.time_zone`; `start < end`. |
-| `schedule.date` | `YYYY-MM-DD` | no | Defaults to today in `schedule.time_zone`. |
-| `schedule.route_start_time` | `HH:MM` | conditional | Required when any stop has a time window. |
-| `schedule.time_zone` | IANA name | no (`UTC`) | e.g. `America/New_York`. |
-| `schedule.service_time_minutes` | number 0–240 | no | Minutes spent at each stop. |
-| `schedule.max_route_minutes` | number 30–1440 | no | Soft journey cap; turns on `rebalance_by_time` for this job only. |
+| `stops[].time_window.start` / `.end` | `HH:MM` | no | Local time in `time_zone`; `start < end`. |
+| `date` | `YYYY-MM-DD` | no | Defaults to today in `time_zone`. |
+| `route_start_time` | `HH:MM` | conditional | Required when any stop has a time window; needed for arrival times. |
+| `time_zone` | IANA name | no (`UTC`) | e.g. `America/New_York`. |
+| `service_time_minutes` | number 0–240 | no | Minutes spent at each stop. |
+| `max_route_minutes` | number 30–1440 | no | Soft journey target; turns on `rebalance_by_time` for this job only. |
+| `exclude_stop_ids` | array | no | With `plan_id` / `dataset_id` only: left out of this run, kept in the plan. |
 | `idempotency_key` | string 8–128 | no | Override the automatic deduplication key. |
-| `confirmed` | boolean | no (`false`) | `false` returns a preflight and charges nothing. `true` submits the job. |
-| `plan_name` | string 1–200 | no ("Optimization YYYY-MM-DD") | Name of the new plan the run is saved as. |
-| `depot_name` | string 1–120 | no ("Depot") | Depot name shown in the plan. |
+| `confirmed` | boolean | no (`false`) | With the gate on, `false` returns a preflight and charges nothing; `true` submits the job. |
+| `plan_name` | string 1–200 | no ("Optimization YYYY-MM-DD") | With `stops` only: name of the new plan. |
+| `depot_name` | string 1–120 | no (the saved depot's name, or "Depot") | Depot name shown in the plan. |
 
 Unknown fields are rejected with `INVALID_INPUT`, so an unsupported constraint is never silently
 ignored.
@@ -338,14 +363,25 @@ constraints the request needs that the plan lacks.
 
 ```json
 {
-  "depot": { "latitude": 40.7128, "longitude": -74.0060 },
-  "vehicles": [ { "vehicle_id": "van", "count": 35, "max_weight_kg": 900 } ],
+  "plan_id": "cmf8x2k7q0001mcp9a1b2c3d4",
+  "depot": { "depot_id": "7" },
+  "vehicles": [ { "vehicle_id": "94", "count": 25, "max_stops": 50 } ],
+  "date": "2026-09-23", "route_start_time": "07:30", "time_zone": "America/Argentina/Buenos_Aires",
+  "service_time_minutes": 4
+}
+```
+
+With stops given in the conversation instead:
+
+```json
+{
   "stops": [
     { "stop_id": "ORD-10045", "latitude": 40.7306, "longitude": -73.9352, "weight_kg": 18.5,
       "time_window": { "start": "09:00", "end": "12:00" } }
   ],
-  "schedule": { "date": "2026-09-14", "route_start_time": "07:30", "time_zone": "America/New_York",
-                "service_time_minutes": 4 }
+  "depot": { "latitude": 40.7128, "longitude": -74.0060 },
+  "vehicles": [ { "vehicle_id": "van", "count": 35, "max_weight_kg": 900 } ],
+  "date": "2026-09-14", "route_start_time": "07:30", "time_zone": "America/New_York"
 }
 ```
 
@@ -385,7 +421,7 @@ If the account's one-time full-feature trial was used, `full_trial_applied` repo
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `optimization_id` | string | yes | From `optimize_delivery_routes`. |
+| `optimization_id` | string | yes | From `optimize_routes`. |
 | `detail` | `summary` \| `stops` \| `unassigned` | no (`summary`) | Result view. |
 | `route_id` | string | no | `detail=stops` only: one route's sequence. |
 | `offset` | integer ≥ 0 | no (0) | Pagination. |

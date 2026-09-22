@@ -1,6 +1,6 @@
 """Vepathos MCP — large-scale delivery and fleet route optimization for AI agents."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 SERVER_NAME = "vepathos"
 SERVER_TITLE = "Vepathos"

@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     )
 
     map_shares_enabled: bool = Field(False, validation_alias=_env("MCP_MAP_SHARES_ENABLED"))
-    # Import tools (import_delivery_file … list_datasets). Off until the ChatGPT staging smoke
+    # Import tools (import_deliveries … list_datasets). Off until the ChatGPT staging smoke
     # passes: deploying the code must not publish new tools. The instructions follow it.
     import_tools_enabled: bool = Field(False, validation_alias=_env("MCP_IMPORT_TOOLS_ENABLED"))
     # Catalog write tools (manage_vehicle, manage_depot). Off until the staging smoke passes

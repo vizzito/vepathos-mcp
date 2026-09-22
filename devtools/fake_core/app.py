@@ -920,7 +920,21 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                     "rows_to_review": [],
                     "suggested_mapping": {},
                     "unmapped_columns": [],
-                    "sample_rows": [],
+                    # What Core sends: the first rows of the user's file, as written. The MCP keeps them.
+                    "sample_rows": [
+                        {
+                            "id": "1",
+                            "direccion": "Calle Falsa 123",
+                            "entrega": "21/09/2026",
+                            "tel": "+54 11 4567-8901",
+                        },
+                        {
+                            "id": "2",
+                            "direccion": "Av. Siempreviva 742",
+                            "entrega": "22/09/2026",
+                            "tel": "11 4567 8902",
+                        },
+                    ],
                     "units": {"weight": "kg", "volume": "m3"},
                     "total_weight_kg": None,
                     "total_volume_m3": None,

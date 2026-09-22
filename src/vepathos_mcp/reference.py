@@ -37,12 +37,11 @@ FLAGS: tuple[tuple[str, str], ...] = (
 
 GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Account", ("get_account",)),
-    ("Plan and run", ("optimize_delivery_routes", "optimize_plan", "list_plans", "get_optimization_result")),
+    ("Plan and run", ("optimize_routes", "list_plans", "get_optimization_result")),
     (
         "Imports",
         (
-            "import_delivery_file",
-            "import_delivery_text",
+            "import_deliveries",
             "get_import_result",
             "update_import_mapping",
             "list_datasets",
@@ -75,25 +74,23 @@ WORKFLOWS: tuple[Workflow, ...] = (
     Workflow(
         "stops_in_chat",
         "Stops given in the conversation",
-        "The user pastes or dictates addresses or coordinates.",
+        "The user dictates stops with their coordinates.",
         (
             Step(("get_account",)),
             Step(("list_fleet",)),
-            Step(("geocode_addresses",), "street addresses only"),
-            Step(("get_geocode_result",)),
-            Step(("optimize_delivery_routes",)),
+            Step(("optimize_routes",), "stops"),
             Step(("get_optimization_result",)),
         ),
     ),
     Workflow(
         "import_file",
         "A file or pasted rows",
-        "The orders are in a spreadsheet, a link or pasted text.",
+        "The orders are in a spreadsheet, a link or pasted text, addresses included.",
         (
-            Step(("import_delivery_file", "import_delivery_text")),
+            Step(("import_deliveries",), "file, url or text"),
             Step(("get_import_result",)),
             Step(("update_import_mapping",), "only when a column was read wrong"),
-            Step(("optimize_plan",)),
+            Step(("optimize_routes",), "plan_id"),
             Step(("get_optimization_result",)),
         ),
     ),
@@ -103,9 +100,15 @@ WORKFLOWS: tuple[Workflow, ...] = (
         "The stops are already saved in Vepathos.",
         (
             Step(("list_plans", "list_datasets")),
-            Step(("optimize_plan",)),
+            Step(("optimize_routes",)),
             Step(("get_optimization_result",)),
         ),
+    ),
+    Workflow(
+        "check_addresses",
+        "Check addresses or place a depot",
+        "A few addresses to verify, or a depot given as an address.",
+        (Step(("geocode_addresses",)), Step(("get_geocode_result",))),
     ),
     Workflow(
         "share_result",

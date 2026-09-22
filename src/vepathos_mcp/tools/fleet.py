@@ -1,9 +1,9 @@
-"""list_fleet — the account's own vehicles and depots, ready to pass to optimize_delivery_routes.
+"""list_fleet — the account's own vehicles and depots, ready to pass to optimize_routes.
 
 Without it an assistant invents a fleet, and the plan it produces is geometric only: it cannot
 respect what a vehicle actually carries, and the route ids mean nothing to whoever drives them.
 
-Catalog ids are free-form in Core but `optimize_delivery_routes` accepts a narrower vehicle_id, so
+Catalog ids are free-form in Core but `optimize_routes` accepts a narrower vehicle_id, so
 ids are normalized here — the tool's output is meant to be copied straight into an optimization.
 """
 

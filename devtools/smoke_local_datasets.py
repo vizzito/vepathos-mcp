@@ -115,7 +115,7 @@ async def main() -> int:
     async with Client(streamable_http_client(URL, http_client=http)) as client:
         print("1. Tools published")
         names = {t.name for t in (await client.list_tools()).tools}
-        check("optimize_plan" in names, "import tools published (MCP_IMPORT_TOOLS_ENABLED=true)")
+        check("import_deliveries" in names, "import tools published (MCP_IMPORT_TOOLS_ENABLED=true)")
         check("list_plans" in names, "list_plans published")
 
         is_error, account = await call(client, "get_account", {})
@@ -134,7 +134,7 @@ async def main() -> int:
         before = await stops_remaining(client)
         inline = await optimize(
             client,
-            "optimize_delivery_routes",
+            "optimize_routes",
             {
                 "depot": DEPOT,
                 "vehicles": [{"vehicle_id": "van", "count": 1}],
@@ -159,7 +159,7 @@ async def main() -> int:
             check(before - after == 2, "inline run charged its 2 stops", f"{before} → {after}")
 
         print("3. Import a file")
-        is_error, created = await call(client, "import_delivery_text", {"text": CSV, "filename": "smoke.csv"})
+        is_error, created = await call(client, "import_deliveries", {"text": CSV, "filename": "smoke.csv"})
         check(not is_error and bool(created.get("dataset_id")), "import accepted", created.get("error") or "")
         if is_error:
             return 1
@@ -182,7 +182,7 @@ async def main() -> int:
 
         print("4. First optimize of the plan is charged")
         before = await stops_remaining(client)
-        first = await optimize(client, "optimize_plan", base)
+        first = await optimize(client, "optimize_routes", base)
         check("optimization_id" in first, "first run accepted", first.get("error") or "")
         check(first.get("quota_charged") is True, "first run charged the quota", first.get("quota_charged"))
         # Free retries depend on the subscription: Free and Starter 1, Growth 2, Scale 3, Enterprise 5.
@@ -199,7 +199,7 @@ async def main() -> int:
 
         print("5. A rerun with fewer stops is the free retry")
         before = await stops_remaining(client)
-        retry = await optimize(client, "optimize_plan", {**base, "exclude_stop_ids": ["SMK-4"]})
+        retry = await optimize(client, "optimize_routes", {**base, "exclude_stop_ids": ["SMK-4"]})
         check("optimization_id" in retry, "rerun accepted", retry.get("error") or "")
         check(retry.get("quota_charged") is False, "rerun did not charge", retry.get("quota_charged"))
         check(retry.get("free_retry") is True, "reported as the free retry", retry.get("free_retry"))

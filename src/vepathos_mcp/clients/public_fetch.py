@@ -1,6 +1,6 @@
 """Download a file from a URL the model supplied, without reaching the server's own network.
 
-`import_delivery_file` downloads `file.download_url`. ChatGPT fills it with its file host, but any
+`import_deliveries` downloads `file.download_url`. ChatGPT fills it with its file host, but any
 client can put any URL there, and this process runs inside the VM's Docker network, next to Core,
 Postgres and the cloud metadata endpoint. So the download:
 

@@ -140,9 +140,9 @@ def test_redaction() -> None:
         "nested": {"api_key": "[redacted]", "ok": 1},
     }
     record = logging.LogRecord("vepathos_mcp", logging.INFO, __file__, 1, "tool_call", None, None)
-    record.fields = {"token": "secret", "response_tokens": 42, "tool": "optimize_delivery_routes"}  # type: ignore[attr-defined]
+    record.fields = {"token": "secret", "response_tokens": 42, "tool": "optimize_routes"}  # type: ignore[attr-defined]
     line = json.loads(JsonFormatter().format(record))
-    assert line["token"] == "[redacted]" and line["tool"] == "optimize_delivery_routes"
+    assert line["token"] == "[redacted]" and line["tool"] == "optimize_routes"
     assert line["response_tokens"] == 42
 
 

@@ -3,7 +3,7 @@
 Share pages (`/file/d/…/view`) always 302/303. Our public fetch refuses redirects
 (SSRF). `drive.usercontent.google.com/download?id=…&export=download` returns the
 bytes for publicly shared files without a hop — so the model can pass a normal
-share link to `import_delivery_file` instead of shelling out to gdown/curl.
+share link to `import_deliveries` instead of shelling out to gdown/curl.
 """
 
 from __future__ import annotations

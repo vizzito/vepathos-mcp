@@ -1,9 +1,14 @@
-"""Import tools: file-by-reference → Smart Import → the stops load into a plan → optimize by id."""
+"""Import tools: a file, a link or text → Smart Import → the stops load into a plan → optimize by id.
+
+The rows never pass through the model: an import returns ids and counts, and optimize_routes runs the
+plan or dataset by its id. The summary a model reads says what each column holds, not what it says.
+"""
 
 from __future__ import annotations
 
 import base64
 import logging
+import re
 from typing import Annotated, Any
 
 from mcp.server.mcpserver.context import Context
@@ -37,12 +42,10 @@ from vepathos_mcp.tools.rendering import success_result
 from vepathos_mcp.tools.results import POLL_AFTER_SECONDS
 from vepathos_mcp.tools.runtime import RequestIdentity, ToolDeps, instrumented
 
-IMPORT_FILE_TOOL = "import_delivery_file"
-IMPORT_TEXT_TOOL = "import_delivery_text"
+IMPORT_TOOL = "import_deliveries"
 GET_IMPORT_TOOL = "get_import_result"
 UPDATE_MAPPING_TOOL = "update_import_mapping"
 LIST_DATASETS_TOOL = "list_datasets"
-OPTIMIZE_PLAN_TOOL = "optimize_plan"
 
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 
@@ -89,29 +92,35 @@ class FileParam(StrictModel):
     file_name: str | None = Field(None, max_length=200)
 
 
-class ImportFileInput(StrictModel):
+class ImportDeliveriesInput(StrictModel):
     file: FileParam | None = Field(
         None,
         description="The attachment, filled in by hosts that hand files to tools (ChatGPT file params); "
-        "never build it by hand. Other hosts pass url.",
+        "never build it by hand.",
     )
     url: str | None = Field(
         None,
         max_length=2048,
-        description="Public https URL of the file, or a Google Drive, Sheets or Docs share link. For "
-        "hosts without attachment parameters (Claude, Gemini, Cursor, a console).",
+        description="Public https URL of the file, or a Google Drive, Sheets or Docs share link as copied.",
     )
-    filename: str | None = Field(None, max_length=200)
+    text: str | None = Field(
+        None,
+        min_length=1,
+        max_length=2_000_000,
+        description="Deliveries as text: rows the user pasted, or a CSV or JSON file's text.",
+    )
+    filename: str | None = Field(None, max_length=200, description="Names the new plan; default: the file's.")
     timezone: str | None = Field(None, max_length=64)
     depot_country: str | None = Field(None, max_length=64)
     plan_id: str | None = Field(None, pattern=PLAN_ID_PATTERN, description=IMPORT_PLAN_ID_DESCRIPTION)
 
-
-class ImportTextInput(StrictModel):
-    text: str = Field(min_length=1, max_length=2_000_000, description="Pasted delivery list.")
-    filename: str | None = Field(None, max_length=200)
-    timezone: str | None = Field(None, max_length=64)
-    plan_id: str | None = Field(None, pattern=PLAN_ID_PATTERN, description=IMPORT_PLAN_ID_DESCRIPTION)
+    @model_validator(mode="after")
+    def _one_source(self) -> ImportDeliveriesInput:
+        # None is allowed here: a ChatGPT attachment can arrive in _meta instead of `file`.
+        given = [name for name in ("file", "url", "text") if getattr(self, name) is not None]
+        if len(given) > 1:
+            raise ValueError(f"send one of file, url or text, not {' and '.join(given)}")
+        return self
 
 
 class GetImportInput(StrictModel):
@@ -312,7 +321,7 @@ def _file_from_meta(arguments: dict[str, Any]) -> FileParam | None:
 _DOWNLOAD_FAILURES: dict[str, tuple[str, str]] = {
     "invalid_url": (
         "The attached file's download URL is not a public https URL.",
-        "Attach the file again and call import_delivery_file.",
+        "Attach the file again and call import_deliveries.",
     ),
     "blocked_host": (
         "The attached file's download URL points to a private or internal address.",
@@ -333,7 +342,7 @@ _DOWNLOAD_FAILURES: dict[str, tuple[str, str]] = {
     ),
     "network": (
         "Could not download the attached file.",
-        "Attach the file again and call import_delivery_file.",
+        "Attach the file again and call import_deliveries.",
     ),
 }
 
@@ -376,6 +385,73 @@ def import_created(created: dict[str, Any]) -> ImportCreated:
     )
 
 
+_TIME_RANGE = re.compile(
+    r"^\s*\d{1,2}([:.]\d{2})?\s*(h|hs|am|pm)?\s*(-|\u2013|\u2014|a|to|al|até)\s*\d{1,2}([:.]\d{2})?\s*(h|hs|am|pm)?\s*$",
+    re.IGNORECASE,
+)
+_TIME = re.compile(r"^\s*\d{1,2}[:.]\d{2}([:.]\d{2})?\s*(am|pm)?\s*$", re.IGNORECASE)
+_DATE = re.compile(r"^\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})([ T].*)?$")
+_NUMBER = re.compile(r"^\s*-?\d{1,3}([.,]?\d{3})*([.,]\d+)?\s*$")
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE = re.compile(r"^\s*\+?[\d\s().-]{7,}$")
+
+
+def _value_kind(value: str) -> str:
+    if _TIME_RANGE.match(value):
+        return "time range"
+    if _TIME.match(value):
+        return "time"
+    if _DATE.match(value):
+        return "date"
+    if _EMAIL.match(value):
+        return "email"
+    digits = sum(ch.isdigit() for ch in value)
+    if _PHONE.match(value) and digits >= 7 and not _NUMBER.match(value):
+        return "phone"
+    if _NUMBER.match(value):
+        return "number"
+    return "text"
+
+
+def column_kinds(rows: list[Any]) -> dict[str, str]:
+    """What each column holds, from the sample rows, without a single value: enough to catch a
+    suggestion that does not fit (dates suggested as phone) while the rows stay out of the chat."""
+
+    kinds: dict[str, list[str]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for column, value in row.items():
+            seen = kinds.setdefault(str(column), [])
+            text = "" if value is None else str(value).strip()
+            if text:
+                seen.append(_value_kind(text))
+    result: dict[str, str] = {}
+    for column, seen in kinds.items():
+        distinct = sorted(set(seen), key=seen.index)
+        result[column] = (
+            "empty"
+            if not distinct
+            else distinct[0]
+            if len(distinct) == 1
+            else "mixed: " + ", ".join(distinct)
+        )
+    return result
+
+
+def model_summary(summary: Any) -> Any:
+    """Core's import summary as the model may read it: sample rows are the user's data (addresses,
+    names, phones) and never leave the server; column_kinds takes their place."""
+
+    if not isinstance(summary, dict):
+        return summary
+    rows = summary.get("sample_rows")
+    shown = {key: value for key, value in summary.items() if key != "sample_rows"}
+    if isinstance(rows, list) and rows:
+        shown["column_kinds"] = column_kinds(rows)
+    return shown
+
+
 def import_view(result: dict[str, Any], import_id: str, *, poll: bool) -> ImportResultView:
     """An import as the model sees it: the plan its stops loaded into and what optimizing it costs."""
 
@@ -383,7 +459,7 @@ def import_view(result: dict[str, Any], import_id: str, *, poll: bool) -> Import
         import_id=result.get("import_id") or import_id,
         dataset_id=result.get("dataset_id"),
         status=result.get("status"),
-        summary=result.get("summary"),
+        summary=model_summary(result.get("summary")),
         expires_at=result.get("expires_at"),
         poll_after_seconds=POLL_AFTER_SECONDS if poll else None,
         progress=result.get("progress"),
@@ -392,74 +468,57 @@ def import_view(result: dict[str, Any], import_id: str, *, poll: bool) -> Import
     )
 
 
-def make_import_file_tool(deps: ToolDeps) -> Any:
-    async def import_delivery_file(ctx: Context) -> Annotated[CallToolResult, ImportCreated]:
+def make_import_deliveries_tool(deps: ToolDeps) -> Any:
+    async def import_deliveries(ctx: Context) -> Annotated[CallToolResult, ImportCreated]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
             try:
-                inp = ImportFileInput.model_validate(coerce_json_fields(arguments or {}, "file"))
+                inp = ImportDeliveriesInput.model_validate(coerce_json_fields(arguments or {}, "file"))
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
 
-            file_ref = inp.file or _file_from_meta(arguments)
             body: dict[str, Any] = {}
             if inp.timezone:
                 body["timezone"] = inp.timezone
-            if inp.depot_country:
-                body["depot_country"] = inp.depot_country
             if inp.plan_id:
                 body["plan_id"] = inp.plan_id
 
-            if file_ref and file_ref.download_url:
-                data = await _download_bytes(deps, file_ref.download_url, max_bytes=MAX_IMPORT_BYTES)
-                body["content_base64"] = base64.b64encode(data).decode("ascii")
-                body["filename"] = smart_import_filename(
-                    inp.filename or file_ref.file_name, file_ref.mime_type
-                )
-                if file_ref.mime_type:
-                    body["mime_type"] = file_ref.mime_type
-            elif inp.url:
-                # Core applies the same Drive rewrite; normalize here so logs/errors match.
-                body["url"] = normalize_public_download_url(inp.url)
-                body["filename"] = smart_import_filename(inp.filename)
+            if inp.text is not None:
+                body["text"] = inp.text
+                if inp.filename:
+                    body["filename"] = inp.filename
             else:
-                raise DomainError(
-                    ErrorCode.INVALID_INPUT,
-                    "No delivery file arrived with this call.",
-                    suggestion="If the host passes attachments to tools (ChatGPT), attach the file again: "
-                    "about 1 in 10 calls arrive without it. Otherwise pass url (a public https or Google "
-                    "Drive link), or send the file's text to import_delivery_text.",
-                )
+                # ChatGPT sometimes leaves the attachment in _meta instead of the `file` argument.
+                file_ref = inp.file or (None if inp.url else _file_from_meta(arguments))
+                if inp.depot_country:
+                    body["depot_country"] = inp.depot_country
+                if file_ref and file_ref.download_url:
+                    data = await _download_bytes(deps, file_ref.download_url, max_bytes=MAX_IMPORT_BYTES)
+                    body["content_base64"] = base64.b64encode(data).decode("ascii")
+                    body["filename"] = smart_import_filename(
+                        inp.filename or file_ref.file_name, file_ref.mime_type
+                    )
+                    if file_ref.mime_type:
+                        body["mime_type"] = file_ref.mime_type
+                elif inp.url:
+                    # Core applies the same Drive rewrite; normalize here so logs/errors match.
+                    body["url"] = normalize_public_download_url(inp.url)
+                    body["filename"] = smart_import_filename(inp.filename)
+                else:
+                    raise DomainError(
+                        ErrorCode.INVALID_INPUT,
+                        "No deliveries arrived with this call.",
+                        suggestion="If the host passes attachments to tools (ChatGPT), attach the file "
+                        "again: about 1 in 10 calls arrive without it. Otherwise pass url (a public https "
+                        "or Google Drive link), or the rows or the file's text as text.",
+                    )
 
             deps.rate_limiter.check(identity.subject, "calls")
             created = await deps.core.create_import(identity.call, body)
             return success_result(import_created(created))
 
-        return await instrumented(IMPORT_FILE_TOOL, ctx, deps, handle)
+        return await instrumented(IMPORT_TOOL, ctx, deps, handle)
 
-    return import_delivery_file
-
-
-def make_import_text_tool(deps: ToolDeps) -> Any:
-    async def import_delivery_text(ctx: Context) -> Annotated[CallToolResult, ImportCreated]:
-        async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
-            try:
-                inp = ImportTextInput.model_validate(arguments or {})
-            except ValidationError as exc:
-                raise validation_error_to_domain(exc) from None
-            deps.rate_limiter.check(identity.subject, "calls")
-            body: dict[str, Any] = {"text": inp.text}
-            if inp.filename:
-                body["filename"] = inp.filename
-            if inp.timezone:
-                body["timezone"] = inp.timezone
-            if inp.plan_id:
-                body["plan_id"] = inp.plan_id
-            created = await deps.core.create_import(identity.call, body)
-            return success_result(import_created(created))
-
-        return await instrumented(IMPORT_TEXT_TOOL, ctx, deps, handle)
-
-    return import_delivery_text
+    return import_deliveries
 
 
 def make_get_import_tool(deps: ToolDeps) -> Any:
@@ -687,7 +746,7 @@ async def dataset_preflight(
     )
 
 
-def depot_region(depot: DatasetDepot) -> dict[str, str]:
+def depot_region(depot: Any) -> dict[str, str]:
     """The region hint Smart Import searches in. Without an explicit city, "street, city, country" reads
     its city from the segment before the last one: the last one is usually the country."""
 
@@ -704,24 +763,22 @@ def depot_region(depot: DatasetDepot) -> dict[str, str]:
 
 
 async def resolve_depot_address(
-    deps: ToolDeps, identity: RequestIdentity, inp: OptimizePlanInput
+    deps: ToolDeps, identity: RequestIdentity, depot: Any, label: str
 ) -> DepotResolved:
     """Geocodes the depot through the geocode path. Every route starts there, so a match the geocoder is
     not sure of is handed back for the user to confirm instead of being optimized (and charged) on."""
 
     import anyio
 
-    address = inp.depot.address
+    address = depot.address
     if not address:
         raise DomainError(
             ErrorCode.INVALID_INPUT,
             "Depot needs latitude/longitude or an address.",
             suggestion="Pass depot coordinates, or an address to geocode.",
         )
-    geo_body = {"stops": [{"id": "depot", "address": address}], **depot_region(inp.depot)}
-    geo_job = await deps.core.create_geocode(
-        identity.call, geo_body, f"depot-{(inp.plan_id or inp.dataset_id or '')[:24]}"
-    )
+    geo_body = {"stops": [{"id": "depot", "address": address}], **depot_region(depot)}
+    geo_job = await deps.core.create_geocode(identity.call, geo_body, f"depot-{label[:24]}")
     geo = await deps.core.get_geocode(identity.call, geo_job.job_id)
     if not geo.is_terminal and deps.settings.optimize_inline_wait_seconds > 0:
         for _ in range(5):
@@ -751,102 +808,124 @@ async def resolve_depot_address(
     return resolved
 
 
-def make_optimize_plan_tool(deps: ToolDeps) -> Any:
+def stored_input(inp: Any, lat: float, lng: float, depot_name: str | None) -> OptimizePlanInput:
+    """optimize_routes arguments for a plan or dataset, as the stored-stops pipeline reads them."""
+
+    try:
+        return OptimizePlanInput.model_validate(
+            {
+                key: value
+                for key, value in {
+                    "plan_id": inp.plan_id,
+                    "dataset_id": inp.dataset_id,
+                    "depot": {"latitude": lat, "longitude": lng},
+                    "vehicles": [v.model_dump(exclude_none=True) for v in inp.vehicles],
+                    "exclude_stop_ids": inp.exclude_stop_ids,
+                    "use_weight": inp.use_weight,
+                    "use_volume": inp.use_volume,
+                    "max_load_ratio": inp.max_load_ratio,
+                    "use_time_windows": inp.use_time_windows,
+                    "route_start_time": inp.route_start_time,
+                    "time_zone": inp.time_zone,
+                    "service_time_minutes": inp.service_time_minutes,
+                    "max_route_minutes": inp.max_route_minutes,
+                    "date": inp.date,
+                    "confirmed": inp.confirmed,
+                    "idempotency_key": inp.idempotency_key,
+                    "depot_name": depot_name,
+                }.items()
+                if value is not None
+            }
+        )
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
+
+
+async def run_stored(
+    ctx: Context,
+    deps: ToolDeps,
+    identity: RequestIdentity,
+    inp: OptimizePlanInput,
+    depot_lat: float,
+    depot_lng: float,
+    depot_resolved: DepotResolved | None,
+) -> CallToolResult:
+    """A run of stops Vepathos already holds: Core expands the plan or dataset and saves the run there."""
+
     from vepathos_mcp.schemas.mapping import request_fingerprint
     from vepathos_mcp.tools.optimize import submit_optimization
 
-    async def optimize_plan(ctx: Context) -> Annotated[CallToolResult, OptimizeResult]:
-        async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
-            try:
-                inp = OptimizePlanInput.model_validate(
-                    coerce_json_fields(arguments or {}, "depot", "vehicles", "exclude_stop_ids")
-                )
-            except ValidationError as exc:
-                raise validation_error_to_domain(exc) from None
-            depot_resolved: DepotResolved | None = None
-            if inp.depot.latitude is None or inp.depot.longitude is None:
-                depot_resolved = await resolve_depot_address(deps, identity, inp)
-                depot_lat, depot_lng = depot_resolved.latitude, depot_resolved.longitude
-            else:
-                depot_lat, depot_lng = inp.depot.latitude, inp.depot.longitude
-
-            # Exactly one stop source; Core expands it and writes the run into that plan.
-            source = {"plan_id": inp.plan_id} if inp.plan_id else {"dataset_id": inp.dataset_id}
-            body: dict[str, Any] = {
-                **source,
-                **({"depot_name": inp.depot_name} if inp.depot_name else {}),
-                "depot": {"lat": depot_lat, "lng": depot_lng},
-                "vehicles": [
-                    {
-                        k: v
-                        for k, v in {
-                            "id": veh.vehicle_id,
-                            "count": veh.count,
-                            "min_stops": veh.min_stops,
-                            "max_stops": veh.max_stops,
-                            "max_weight_kg": veh.max_weight_kg,
-                            "max_volume_m3": veh.max_volume_m3,
-                        }.items()
-                        if v is not None
-                    }
-                    for veh in inp.vehicles
-                ],
-                "schedule": {
-                    k: v
-                    for k, v in {
-                        "date": inp.date,
-                        "route_start_time": inp.route_start_time,
-                        "time_zone": inp.time_zone,
-                        "service_time_minutes": inp.service_time_minutes,
-                        "max_route_minutes": inp.max_route_minutes,
-                    }.items()
-                    if v is not None
-                },
-            }
-            if inp.exclude_stop_ids:
-                body["exclude_stop_ids"] = inp.exclude_stop_ids
-            flags = {
+    # Exactly one stop source; Core expands it and writes the run into that plan.
+    source = {"plan_id": inp.plan_id} if inp.plan_id else {"dataset_id": inp.dataset_id}
+    body: dict[str, Any] = {
+        **source,
+        **({"depot_name": inp.depot_name} if inp.depot_name else {}),
+        "depot": {"lat": depot_lat, "lng": depot_lng},
+        "vehicles": [
+            {
                 k: v
                 for k, v in {
-                    "weight": inp.use_weight,
-                    "volume": inp.use_volume,
-                    "time_windows": inp.use_time_windows,
-                    "max_load_ratio": inp.max_load_ratio,
+                    "id": veh.vehicle_id,
+                    "count": veh.count,
+                    "min_stops": veh.min_stops,
+                    "max_stops": veh.max_stops,
+                    "max_weight_kg": veh.max_weight_kg,
+                    "max_volume_m3": veh.max_volume_m3,
                 }.items()
                 if v is not None
             }
-            if flags:
-                body["constraints"] = flags
+            for veh in inp.vehicles
+        ],
+        "schedule": {
+            k: v
+            for k, v in {
+                "date": inp.date,
+                "route_start_time": inp.route_start_time,
+                "time_zone": inp.time_zone,
+                "service_time_minutes": inp.service_time_minutes,
+                "max_route_minutes": inp.max_route_minutes,
+            }.items()
+            if v is not None
+        },
+    }
+    if inp.exclude_stop_ids:
+        body["exclude_stop_ids"] = inp.exclude_stop_ids
+    flags = {
+        k: v
+        for k, v in {
+            "weight": inp.use_weight,
+            "volume": inp.use_volume,
+            "time_windows": inp.use_time_windows,
+            "max_load_ratio": inp.max_load_ratio,
+        }.items()
+        if v is not None
+    }
+    if flags:
+        body["constraints"] = flags
 
-            # The preflight reads the plan's or dataset's counts from Core instead of expanding stops here.
-            if deps.settings.confirm_before_optimize and not inp.confirmed:
-                deps.rate_limiter.check(identity.subject, "calls")
-                preflight = await dataset_preflight(deps, identity, inp, depot_lat, depot_lng)
-                preflight.depot_resolved = depot_resolved
-                return success_result(OptimizeResult(preflight=preflight))
+    # The preflight reads the plan's or dataset's counts from Core instead of expanding stops here.
+    if deps.settings.confirm_before_optimize and not inp.confirmed:
+        deps.rate_limiter.check(identity.subject, "calls")
+        preflight = await dataset_preflight(deps, identity, inp, depot_lat, depot_lng)
+        preflight.depot_resolved = depot_resolved
+        return success_result(OptimizeResult(preflight=preflight))
 
-            deps.rate_limiter.check(identity.subject, "optimize")
-            fingerprinted = dict(body)
-            if inp.plan_id is not None and inp.idempotency_key is None:
-                # Core keys idempotency on the request as sent, before it expands the plan's stops, so
-                # identical arguments after the plan changed would replay the old run. The plan's revision
-                # keeps a retry of this call deduplicated and a run of the changed plan a new run.
-                plan = await deps.core.get_plan(identity.call, inp.plan_id)
-                fingerprinted["plan_revision"] = (
-                    plan.revision if plan.revision is not None else plan.updated_at
-                )
-            idempotency_key = inp.idempotency_key or request_fingerprint(fingerprinted)
-            return await submit_optimization(
-                ctx,
-                deps,
-                identity,
-                body,
-                idempotency_key,
-                vehicles_available=sum(v.count for v in inp.vehicles),
-                schedule_date=inp.date,
-                depot_resolved=depot_resolved,
-            )
-
-        return await instrumented(OPTIMIZE_PLAN_TOOL, ctx, deps, handle)
-
-    return optimize_plan
+    deps.rate_limiter.check(identity.subject, "optimize")
+    fingerprinted = dict(body)
+    if inp.plan_id is not None and inp.idempotency_key is None:
+        # Core keys idempotency on the request as sent, before it expands the plan's stops, so
+        # identical arguments after the plan changed would replay the old run. The plan's revision
+        # keeps a retry of this call deduplicated and a run of the changed plan a new run.
+        plan = await deps.core.get_plan(identity.call, inp.plan_id)
+        fingerprinted["plan_revision"] = plan.revision if plan.revision is not None else plan.updated_at
+    idempotency_key = inp.idempotency_key or request_fingerprint(fingerprinted)
+    return await submit_optimization(
+        ctx,
+        deps,
+        identity,
+        body,
+        idempotency_key,
+        vehicles_available=sum(v.count for v in inp.vehicles),
+        schedule_date=inp.date,
+        depot_resolved=depot_resolved,
+    )

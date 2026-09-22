@@ -24,7 +24,7 @@ Useful queries:
 
 ```promql
 sum by (tool, outcome) (rate(mcp_tool_calls_total[5m]))
-sum by (client_type) (increase(mcp_tool_calls_total{tool="optimize_delivery_routes"}[1d]))
+sum by (client_type) (increase(mcp_tool_calls_total{tool="optimize_routes"}[1d]))
 histogram_quantile(0.95, sum by (le, operation) (rate(mcp_backend_request_duration_seconds_bucket[5m])))
 sum by (reason) (increase(mcp_plan_rejections_total{code="PLAN_UPGRADE_REQUIRED"}[7d]))
 ```

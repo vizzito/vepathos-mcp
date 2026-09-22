@@ -76,7 +76,7 @@ flowchart TB
 
 ## 2. Datasets (P1 — large payloads)
 
-**Status (2026-09-16): not deployed.** Production today only has inline `optimize_delivery_routes`.
+**Status (2026-09-16): not deployed.** Production today only has inline `optimize_routes`.
 
 | Side | Where | State |
 |---|---|---|
@@ -94,7 +94,7 @@ sequenceDiagram
   participant C as Core
   participant SI as SmartImport
   U->>M: Attach file
-  M->>A: import_delivery_file
+  M->>A: import_deliveries
   A->>C: POST /imports
   C->>SI: upload keep job
   C-->>A: import_id dataset_id
@@ -130,7 +130,7 @@ Shortcut (keep forever): single file, no edits → `import_*` → `optimize_data
 
 ## 3. Core prerequisites (P0 — before any orderset code)
 
-These change code that has not shipped yet. The inline `optimize_delivery_routes` path in production
+These change code that has not shipped yet. The inline `optimize_routes` path in production
 does not go through any of them (it only activates when the body carries `dataset_id`).
 
 | Item | Needed for | State (2026-09-16) |
@@ -240,7 +240,7 @@ flowchart LR
   edit --> confirm[confirm_order_set]
   confirm --> ds[dataset_id]
   ds --> opt[optimize_dataset]
-  small[Small_inline_stops] --> optDirect[optimize_delivery_routes]
+  small[Small_inline_stops] --> optDirect[optimize_routes]
 ```
 
 ---
@@ -544,9 +544,9 @@ Then existing: `optimize_dataset(dataset_id, …)`. No `clear` tool: start a new
 
 | Tool | Status after orderset ships |
 |---|---|
-| `optimize_delivery_routes` | Keep — small inline plans |
+| `optimize_routes` | Keep — small inline plans |
 | `get_optimization_result` | Keep |
-| `import_delivery_file` / `_text` | Keep — feed SI + orderset add |
+| `import_deliveries` / `_text` | Keep — feed SI + orderset add |
 | `get_import_result` / `update_import_mapping` | Keep |
 | `list_datasets` | Keep — frozen snapshots |
 | `optimize_dataset` | Keep — target after confirm or direct import |
@@ -579,7 +579,7 @@ Must pass before prod:
 9. **Retention:** after the cron runs, expired datasets hold no `stops` and expired orderset items are gone.
 10. **No row dump:** no orderset response returns more than 5 full items.
 11. **ChatGPT staging:** cases in [smoke-prompts.md](smoke-prompts.md) extended with multi-file + remove + confirm; recorded in compatibility matrix (T19).
-12. **Regression:** inline `optimize_delivery_routes` unchanged; import → `optimize_dataset` shortcut green in adapter contract tests.
+12. **Regression:** inline `optimize_routes` unchanged; import → `optimize_dataset` shortcut green in adapter contract tests.
 
 **Already automated for datasets (P0-1):** the dataset side of criteria 4 and 6 —
 `tests/contract/test_import_tools.py` (first run charged, variant free, free replan still rejected

@@ -17,15 +17,13 @@ from vepathos_mcp import __version__
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 from vepathos_mcp.server import build_server
 
-# Frozen on 0.8.0 (catalog master data: manage_vehicle and manage_depot, behind their flag).
+# Frozen on 0.9.0 (one optimize_routes and one import_deliveries: the source of stops is an argument).
 # Update deliberately with the version.
 EXPECTED_TOOL_NAMES = (
-    "optimize_delivery_routes",
+    "optimize_routes",
     "get_optimization_result",
     "list_plans",
-    "optimize_plan",
-    "import_delivery_file",
-    "import_delivery_text",
+    "import_deliveries",
     "get_import_result",
     "update_import_mapping",
     "list_datasets",
@@ -41,7 +39,7 @@ EXPECTED_TOOL_NAMES = (
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
 # Changed on 0.8.0: catalog master data (manage_vehicle, manage_depot, depots in list_fleet).
-EXPECTED_DESC_HASH_GATE_OFF = "acb7cfd57fb435af5917517af12661236a0d96e443732d44288d6111d3a93342"
+EXPECTED_DESC_HASH_GATE_OFF = "251b7f27a078bac449f0fc3a175b0d5b38aac9102f5e054916591f486f23c6ef"
 
 
 CATALOG_WRITE_TOOLS = {"manage_vehicle", "manage_depot"}
@@ -80,8 +78,7 @@ async def test_import_tools_stay_hidden_until_enabled(core_client_factory, clock
     tools, instructions = await _list_tools(core_client_factory, clock)
     names = {t.name for t in tools}
     hidden = {
-        "import_delivery_file",
-        "import_delivery_text",
+        "import_deliveries",
         "get_import_result",
         "update_import_mapping",
         "list_datasets",
@@ -107,17 +104,17 @@ async def test_catalog_write_tools_stay_hidden_until_enabled(core_client_factory
 
 async def test_plans_are_published_without_the_import_tools(core_client_factory, clock: FakeClock) -> None:
     # Plans exist for every account: a chat on a server without imports still finds and reruns its runs,
-    # and the free retry is reachable only through optimize_plan.
+    # and another try is reachable only by running a plan_id.
     tools, instructions = await _list_tools(core_client_factory, clock)
-    assert {"list_plans", "optimize_plan"} <= {t.name for t in tools}
-    assert "list_plans" in instructions and "optimize_plan" in instructions
+    assert {"list_plans", "optimize_routes"} <= {t.name for t in tools}
+    assert "list_plans" in instructions and "plan_id for a saved plan" in instructions
     assert "same stops or fewer" in instructions
 
 
 async def test_excluded_stops_are_described_as_this_run_only(listed_tools) -> None:
     # Core keeps every stop in the plan; exclude_stop_ids shapes one run (16/09).
-    optimize_plan = next(t for t in listed_tools if t.name == "optimize_plan")
-    exclude = optimize_plan.input_schema["properties"]["exclude_stop_ids"]["description"]
+    optimize = next(t for t in listed_tools if t.name == "optimize_routes")
+    exclude = optimize.input_schema["properties"]["exclude_stop_ids"]["description"]
     assert "this run only" in exclude and "plan keeps them" in exclude
 
 

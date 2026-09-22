@@ -1,4 +1,4 @@
-"""list_fleet: shaping the account catalog into something optimize_delivery_routes accepts."""
+"""list_fleet: shaping the account catalog into something optimize_routes accepts."""
 
 from __future__ import annotations
 

@@ -22,13 +22,11 @@ ask the assistant to optimize deliveries. No API keys for that flow.
 | Tool | What it does | Changes data | Available |
 |---|---|---|---|
 | `get_account` | Show which Vepathos account this connection uses and what its plan allows. | no | Always |
-| `optimize_delivery_routes` | Plan optimized delivery routes for stops given in this conversation (vehicle routing problem, VRP); stops already saved in Vepathos run through optimize_plan instead. | yes | Always |
-| `optimize_plan` | Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or an import (dataset_id), exactly one, saving the run in that plan. | yes | Always |
+| `optimize_routes` | Plan delivery routes (vehicle routing problem, VRP). | yes | Always |
 | `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | Always |
 | `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | Always |
-| `import_delivery_file` | Import a delivery file (Excel, CSV, JSON, text). | yes | Rolling out (imports) |
-| `import_delivery_text` | Import deliveries as text, through the same pipeline as a file, into a new plan or plan_id. | yes | Rolling out (imports) |
-| `get_import_result` | Status and summary of an import_delivery_file / import_delivery_text job. | no | Rolling out (imports) |
+| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat: a file, a link or pasted rows, street addresses included (the import geocodes them). | yes | Rolling out (imports) |
+| `get_import_result` | Status and summary of an import_deliveries job. | no | Rolling out (imports) |
 | `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | Rolling out (imports) |
 | `list_datasets` | List imports from this or earlier chats. | no | Rolling out (imports) |
 | `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | Always |
@@ -41,7 +39,7 @@ ask the assistant to optimize deliveries. No API keys for that flow.
 | `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | Rolling out (shareable maps) |
 <!-- END GENERATED: tools-table -->
 
-`optimize_delivery_routes` does not invent coordinates. If the geocoder leaves gaps, confirm
+`optimize_routes` does not invent coordinates. If the geocoder leaves gaps, confirm
 them before optimizing. There is no cancel tool: a submitted job runs to completion.
 
 ## Limits on Free (current public posture)

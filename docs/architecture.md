@@ -88,7 +88,7 @@ api.vepathos.com — MCP channel (gate → entitlements → job engine → ledge
 optimizer (workers, RabbitMQ, Redis)
 ```
 
-- **Tools:** `geocode_addresses`, `get_geocode_result`, `optimize_delivery_routes`, `get_optimization_result`,
+- **Tools:** `geocode_addresses`, `get_geocode_result`, `optimize_routes`, `get_optimization_result`,
   `get_account` (which account is connected, and what its plan allows), `list_fleet` (the
   account's own vehicles, so a plan uses the real fleet), and `list_automations` /
   `create_automation` (standing rules; created switched off — only the user turns one on).
@@ -148,7 +148,7 @@ time windows — no names, phones or emails). See `docs/security.md`.
 
 ## Async model
 
-- `optimize_delivery_routes` submits a job and returns an `optimization_id` immediately. It waits
+- `optimize_routes` submits a job and returns an `optimization_id` immediately. It waits
   up to a few seconds and includes the result when small jobs finish quickly.
 - `get_optimization_result` long-polls for a bounded time (≤ 20 s) and returns status, progress or a
   paginated result. This explicit-handle flow works in every client today.
@@ -211,4 +211,4 @@ in the engine; x402-style paid calls. None of these are part of v1.
 [architecture-mcp-orderset.md](architecture-mcp-orderset.md): mutable per-account draft that
 merges several imports, supports textual remove, then confirms into a `dataset_id` for
 `optimize_dataset`. Superseded before it was built: MCP runs are plans
-([architecture-mcp-plans.md](architecture-mcp-plans.md)); import → plan → `optimize_plan` is the large-file path.
+([architecture-mcp-plans.md](architecture-mcp-plans.md)); import → plan → `optimize_routes` is the large-file path.

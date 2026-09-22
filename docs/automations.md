@@ -34,7 +34,7 @@ So `create_automation` takes `template_plan_id` and **copies** it. A copy, once 
 Editing that plan afterwards does not change the rule; deleting it does not stop it.
 
 The plan the rule owns has no id on the wire. An id in an agent's hands is an id it can pass to
-`optimize_plan`, which would spend the rule's stops by hand and move the `workspaceRevision` its next
+`optimize_routes`, which would spend the rule's stops by hand and move the `workspaceRevision` its next
 batch checks against (a run aborts with `plan_edited` when that happens).
 
 ## Tools

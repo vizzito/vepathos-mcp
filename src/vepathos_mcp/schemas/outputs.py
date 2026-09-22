@@ -282,7 +282,7 @@ class Preflight(OutputModel):
 
 
 class OptimizeResult(OutputModel):
-    """Output of optimize_delivery_routes / optimize_plan."""
+    """Output of optimize_routes."""
 
     optimization_id: str | None = Field(None, description="Handle for get_optimization_result.")
     plan_id: str | None = Field(None, description=PLAN_ID_DESCRIPTION)
@@ -409,7 +409,7 @@ class AccountPlan(OutputModel):
     id: str | None = None
     name: str | None = Field(None, description="Plan name as Vepathos shows it, e.g. Free or Enterprise.")
     max_stops_per_request: int | None = Field(
-        None, description="Stops allowed in one optimize_delivery_routes call. Null when unlimited."
+        None, description="Stops allowed in one optimize_routes call. Null when unlimited."
     )
     max_fleet_units: int | None = Field(
         None, description="Vehicles allowed per optimization. Null when unlimited."
@@ -457,7 +457,7 @@ class AccountInfo(OutputModel):
 
 
 class FleetVehicle(OutputModel):
-    """A vehicle as the account has it, shaped to drop straight into optimize_delivery_routes."""
+    """A vehicle as the account has it, shaped to drop straight into optimize_routes."""
 
     vehicle_id: str = Field(description="Pass as vehicles[].vehicle_id so routes name the real vehicle.")
     name: str | None = Field(None, description="Label the account gave it, for talking to the user.")
@@ -476,10 +476,13 @@ class Fleet(OutputModel):
 class SavedDepot(OutputModel):
     """A depot saved in the account, shaped to drop straight into an optimization's depot."""
 
-    depot_id: str = Field(description="Pass as depot_id to manage_depot when the user wants it changed.")
+    depot_id: str = Field(
+        description="Pass as depot.depot_id to optimize_routes, or to manage_depot when the user wants it "
+        "changed."
+    )
     name: str | None = Field(None, description="Label the account gave it, for talking to the user.")
-    latitude: float = Field(description="Pass as depot to optimize_delivery_routes or optimize_plan.")
-    longitude: float = Field(description="Pass as depot to optimize_delivery_routes or optimize_plan.")
+    latitude: float = Field(description="Where it is. To route from it, pass depot_id to optimize_routes.")
+    longitude: float = Field(description="Where it is. To route from it, pass depot_id to optimize_routes.")
 
 
 class FleetCatalog(OutputModel):

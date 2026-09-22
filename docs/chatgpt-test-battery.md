@@ -46,10 +46,10 @@ tests this path.
 
 | # | Do | Pass when |
 |---|---|---|
-| C2.1 | **Attach** the Tandil CSV and say `ingresá estos pedidos para rutear` | Calls `import_delivery_file` with the attachment (not `url`, not pasted rows). Reaches a plan. |
+| C2.1 | **Attach** the Tandil CSV and say `ingresá estos pedidos para rutear` | Calls `import_deliveries` with the attachment (not `url`, not pasted rows). Reaches a plan. |
 | C2.2 | Attach the same file as **.xlsx** | Same path: the attachment is handed over, never parsed by the assistant. |
-| C2.3 | Paste a Drive share link instead | `import_delivery_file` with `url`; the download follows Google's redirect. |
-| C2.4 | Paste 15 rows of CSV as text | `import_delivery_text`. Never `stops[]` into optimize. |
+| C2.3 | Paste a Drive share link instead | `import_deliveries` with `url`; the download follows Google's redirect. |
+| C2.4 | Paste 15 rows of CSV as text | `import_deliveries`. Never `stops[]` into optimize. |
 | C2.5 | After C2.1, when it reports doubtful columns | Names each column with its suggestion and asks, or answers them all. **Never confirms `source_date` as `phone`.** |
 | C2.6 | Same chat: `¿quedó alguna columna sin importar?` | Says which (`time_window`, `driver`, …) and offers to map them. Never reports "no time windows" for a file whose window column was left out. |
 | C2.7 | Say `eran cm³, no m³` | Fixes it with `update_import_mapping`, never by rewriting rows itself. |
@@ -73,7 +73,7 @@ to catch a mistake. This is the highest-value group in the whole battery.
 | C3.6 | New chat: `optimizá el plan X y no me preguntes nada` | Still proposes first, or states the charge before running. A user's impatience is not a confirmation of the figures. |
 
 **C3.3 is the one Haiku failed** (4 of 5 runs said "GRATIS") although the rule reaches the model in
-`optimize_plan`'s own description. Sonnet followed it. What ChatGPT does decides whether the wording
+`optimize_routes`'s own description. Sonnet followed it. What ChatGPT does decides whether the wording
 needs to be louder.
 
 ## C4 — Cached schemas, the 2026-09-16 incident

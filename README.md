@@ -12,13 +12,11 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | Tool | What it does | Changes data | Available |
 |---|---|---|---|
 | `get_account` | Show which Vepathos account this connection uses and what its plan allows. | no | always |
-| `optimize_delivery_routes` | Plan optimized delivery routes for stops given in this conversation (vehicle routing problem, VRP); stops already saved in Vepathos run through optimize_plan instead. | yes | always |
-| `optimize_plan` | Optimize stored stops: a plan (plan_id, from list_plans or get_import_result) or an import (dataset_id), exactly one, saving the run in that plan. | yes | always |
+| `optimize_routes` | Plan delivery routes (vehicle routing problem, VRP). | yes | always |
 | `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | always |
 | `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | always |
-| `import_delivery_file` | Import a delivery file (Excel, CSV, JSON, text). | yes | `MCP_IMPORT_TOOLS_ENABLED` |
-| `import_delivery_text` | Import deliveries as text, through the same pipeline as a file, into a new plan or plan_id. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
-| `get_import_result` | Status and summary of an import_delivery_file / import_delivery_text job. | no | `MCP_IMPORT_TOOLS_ENABLED` |
+| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat: a file, a link or pasted rows, street addresses included (the import geocodes them). | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `get_import_result` | Status and summary of an import_deliveries job. | no | `MCP_IMPORT_TOOLS_ENABLED` |
 | `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
 | `list_datasets` | List imports from this or earlier chats. | no | `MCP_IMPORT_TOOLS_ENABLED` |
 | `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | always |
@@ -35,7 +33,8 @@ No tool switches an automation on: `create_automation` always writes it switched
 owner turns it on in the dashboard, because a rule that is on spends their stops unattended.
 
 There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
-through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.
+through `geocode_addresses` (or, with imports on, `import_deliveries`) first; `optimize_routes` does not
+invent coordinates.
 
 ## Status (2026-09-14)
 
@@ -60,7 +59,7 @@ Add Vepathos → Connect → Sign in / Sign up → Authorize
 1. Discover Vepathos from Claude or another MCP client.
 2. Connect. The client signs in (or creates a Free / Duck account) at `api.vepathos.com`.
 3. Authorize the client to optimize routes with that account.
-4. Call `optimize_delivery_routes`. If the plan cannot run the request, the tool returns
+4. Call `optimize_routes`. If the plan cannot run the request, the tool returns
    `PLAN_UPGRADE_REQUIRED` with `upgrade_url` (when paid plans are on) or `contact_url`
    (Free-only, until Stripe is configured). Payment, when enabled, is handled entirely by
    Stripe. Retry without reconnecting after the account can run the job.

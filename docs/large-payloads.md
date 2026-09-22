@@ -7,16 +7,16 @@ solver.**
 
 | Size | Path | Result |
 |---|---|---|
-| ~1,005 stops | `optimize_delivery_routes` with inline `stops[]` | Worked (within model output budget). |
+| ~1,005 stops | `optimize_routes` with inline `stops[]` | Worked (within model output budget). |
 | ~8,200 stops | inline `stops[]` | Did **not** fit: the model cannot emit that many tool arguments. |
 
 **Decision:** import by reference, then optimize by id. The stops land in a plan
 ([architecture-mcp-plans.md](architecture-mcp-plans.md)), so they outlive the 24 h dataset.
 
-1. `import_delivery_file` (ChatGPT attachment / URL) or `import_delivery_text` (short paste), optionally
+1. `import_deliveries` (ChatGPT attachment / URL) or `import_deliveries` (short paste), optionally
    into an existing `plan_id`.
 2. Poll `get_import_result` until `status=completed` and `plan_id` is set.
-3. Call `optimize_plan(plan_id, …)` (or `dataset_id` within 24 h) — Core expands the stored stops; the
+3. Call `optimize_routes(plan_id, …)` (or `dataset_id` within 24 h) — Core expands the stored stops; the
    model never pastes rows.
 4. Within 24 h of the plan's charged run, one rerun with the same stops or fewer is free (the rule the
    dashboard shares). `next_optimize_charged` and the preflight say whether the next run is charged.
@@ -37,9 +37,9 @@ solver.**
 
 ## Guidance for agents
 
-- Hundreds+ stops: **always** import → `optimize_plan`. Never paste rows into `optimize_delivery_routes`.
+- Hundreds+ stops: **always** `import_deliveries` → `optimize_routes` with `plan_id`. Never paste rows as `stops`.
 - Rerun or vary a large day by `plan_id` (`list_plans` shows `last_agent_run`), never by pasting it again.
-- Small plans only: inline `stops[]` on `optimize_delivery_routes` is fine.
+- Small plans only: inline `stops[]` on `optimize_routes` is fine.
 - Send only the fields needed on small plans (id, coordinates, weight/volume/window when relevant).
 - Read results with `detail=summary` first; page through `detail=stops` only when needed.
 

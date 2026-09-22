@@ -23,7 +23,7 @@ npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --
   --header "Authorization: Bearer dev-bearer-token-change-me" --method tools/list --strict --format json
 npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --transport http \
   --header "Authorization: Bearer dev-bearer-token-change-me" --method tools/call \
-  --tool-name optimize_delivery_routes \
+  --tool-name optimize_routes \
   --tool-args-json '{"depot":{"latitude":-34.6037,"longitude":-58.3816},"vehicles":[{"vehicle_id":"van","count":2}],"stops":[{"stop_id":"A1","latitude":-34.61,"longitude":-58.39},{"stop_id":"A2","latitude":-34.62,"longitude":-58.40}]}' \
   --format json
 ```
@@ -31,7 +31,7 @@ npx -y @modelcontextprotocol/inspector@latest --cli http://127.0.0.1:8080/mcp --
 Checklist (last run 2026-09-13):
 
 - [x] `tools/list` returns the tools with titles, annotations, input and output schemas; `--strict` reports no portability problems (Inspector 2.6.0, fake Core).
-- [x] `tools/call optimize_delivery_routes` completes (inline wait) with summary and routes (fake Core).
+- [x] `tools/call optimize_routes` completes (inline wait) with summary and routes (fake Core).
 - [x] `tools/call get_optimization_result` with `detail=stops` returns ordered stops with arrival times (fake Core).
 - [x] Unauthenticated request → `401` + `resource_metadata` (fake Core and real local stack).
 - [x] Real local stack discovery (`scripts/smoke-local.sh`, 2026-09-13): adapter `/health` + `/ready` (`core: ok`), Core `/api/mcp/v1/health`, PRM, AS (S256, CIMD, `none`, scope `optimize`), JWKS, DCR 201.

@@ -45,8 +45,8 @@ OUT_DIR = Path(__file__).resolve().parent / "out" / "agent_eval"
 ORDERS_LINK = "https://drive.google.com/file/d/1rYEezZpfEjQWMtzbs-cskmWjB7dxhU98/view?usp=sharing"
 
 TOOL_NAMES = (
-    "get_account", "list_fleet", "list_plans", "optimize_plan", "optimize_delivery_routes",
-    "get_optimization_result", "import_delivery_file", "import_delivery_text", "get_import_result",
+    "get_account", "list_fleet", "list_plans", "optimize_routes",
+    "get_optimization_result", "import_deliveries", "get_import_result",
     "update_import_mapping", "list_datasets", "geocode_addresses", "get_geocode_result",
     "manage_vehicle", "manage_depot", "list_automations", "create_automation", "create_optimization_map",
 )  # fmt: skip
@@ -111,7 +111,7 @@ class Run:
         )
 
     def optimizations(self) -> int:
-        return len(self.calls("optimize_plan")) + len(self.calls("optimize_delivery_routes"))
+        return len(self.calls("optimize_routes"))
 
     def calls(self, name: str) -> list[dict[str, Any]]:
         return [args for tool, args in zip(self.tools, self.inputs, strict=False) if tool == name]
@@ -140,7 +140,7 @@ def names_no_tool(run: Run) -> bool:
 
 
 # Tools of the HOST that do the server's job: a shell, a delegate, or a fetcher. WebFetch was missing
-# and went unnoticed until a run downloaded a Drive link with it instead of import_delivery_file.
+# and went unnoticed until a run downloaded a Drive link with it instead of importing it (import_deliveries).
 HOST_TOOLS = ("Bash", "Agent", "Task", "Write", "WebFetch", "WebSearch", "Read", "Glob", "Grep")
 
 
@@ -162,7 +162,7 @@ def never_saves_a_vehicle(run: Run) -> bool:
 
 
 def never_optimizes(run: Run) -> bool:
-    return not (run.called("optimize_plan") or run.called("optimize_delivery_routes"))
+    return not run.called("optimize_routes")
 
 
 def saves_at_most_one_vehicle(run: Run) -> bool:
@@ -170,7 +170,7 @@ def saves_at_most_one_vehicle(run: Run) -> bool:
 
 
 def imports_through_the_server(run: Run) -> bool:
-    return run.called("import_delivery_file") or run.called("import_delivery_text")
+    return run.called("import_deliveries")
 
 
 def proposes_with_numbers_and_asks_the_fleet(run: Run) -> bool:
@@ -595,7 +595,7 @@ def connector_config(connector: str) -> Path:
 
     The first measurement was worthless without this (2026-09-20): the developer's Claude Code also had
     an unauthenticated Google Drive connector, so given a Drive link the agent answered "the Drive
-    connector needs to sign in" and never reached import_delivery_file. A user's other connectors are
+    connector needs to sign in" and never reached the import tool. A user's other connectors are
     their environment, not this server's behaviour. The OAuth session is reused by connector name."""
 
     listed = subprocess.run(["claude", "mcp", "list"], capture_output=True, text=True, check=False).stdout  # noqa: S607

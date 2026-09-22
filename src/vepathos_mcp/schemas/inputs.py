@@ -49,8 +49,9 @@ class Vehicle(StrictModel):
 
     vehicle_id: str = Field(
         pattern=VEHICLE_ID_PATTERN,
-        description="Your id for this vehicle or vehicle type (letters, digits, '_', '-', '.'; max 32). "
-        "Echoed on every route it drives.",
+        description="Your id for this vehicle type: a saved vehicle's vehicle_id from list_fleet, or your "
+        "own label for one the account has not saved (letters, digits, '_', '-', '.'; max 32). Echoed on "
+        "its routes.",
         examples=["van-small"],
     )
     count: int = Field(
@@ -150,27 +151,33 @@ class Schedule(StrictModel):
     @field_validator("date")
     @classmethod
     def _valid_calendar_date(cls, value: str | None) -> str | None:
-        if value is not None:
-            try:
-                _date.fromisoformat(value)
-            except ValueError as exc:
-                raise PydanticCustomError("invalid_date", "date is not a valid calendar date") from exc
-        return value
+        return check_calendar_date(value)
 
     @field_validator("time_zone")
     @classmethod
     def _valid_time_zone(cls, value: str) -> str:
+        return check_time_zone(value)
+
+
+def check_calendar_date(value: str | None) -> str | None:
+    if value is not None:
         try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise PydanticCustomError(
-                "invalid_time_zone", "time_zone must be an IANA time zone name"
-            ) from exc
-        return value
+            _date.fromisoformat(value)
+        except ValueError as exc:
+            raise PydanticCustomError("invalid_date", "date is not a valid calendar date") from exc
+    return value
+
+
+def check_time_zone(value: str) -> str:
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise PydanticCustomError("invalid_time_zone", "time_zone must be an IANA time zone name") from exc
+    return value
 
 
 class OptimizeInput(StrictModel):
-    """Arguments of optimize_delivery_routes."""
+    """Stops given in the conversation, as the inline pipeline validates them (optimize_routes with stops)."""
 
     depot: Depot
     vehicles: list[Vehicle] = Field(
@@ -264,7 +271,7 @@ class OptimizeInput(StrictModel):
         if self.uses_time_windows and (self.schedule is None or self.schedule.route_start_time is None):
             raise PydanticCustomError(
                 "route_start_time_required",
-                "schedule.route_start_time is required when any stop has a time_window",
+                "route_start_time is required when any stop has a time_window",
             )
         for vehicle in self.vehicles:
             if (
@@ -333,7 +340,7 @@ class GetResultInput(StrictModel):
 
     optimization_id: str = Field(
         pattern=OPTIMIZATION_ID_PATTERN,
-        description="The optimization_id returned by optimize_delivery_routes.",
+        description="The optimization_id returned by optimize_routes.",
     )
     detail: Literal["summary", "stops", "unassigned"] = Field(
         "summary",
@@ -402,6 +409,184 @@ def validation_error_to_domain(exc: ValidationError) -> DomainError:
         suggestion=f"Fix these fields and try again — {lines}",
         details={"issues": issues, "issue_count": len(errors)},
     )
+
+
+MAX_ROUTE_MINUTES_DESCRIPTION = (
+    "Target journey length per route in minutes (travel + service). A balancing target, not a hard limit: "
+    "the engine evens routes out towards it and some may run longer. Tell the user it is a target, check "
+    "the durations in the result, and when routes exceed it offer more vehicles or fewer stops per vehicle."
+)
+CONFIRMED_DESCRIPTION = (
+    "Set true only after the user has seen what will be sent and how many stops it charges, and agreed. "
+    "While false the call optimizes nothing and charges nothing: it returns a preflight of this exact "
+    "request for you to show them."
+)
+
+
+class RouteDepot(StrictModel):
+    """Where every route starts: a saved depot, coordinates, or an address the server geocodes."""
+
+    depot_id: str | None = Field(
+        None, min_length=1, max_length=64, description="A saved depot's depot_id from list_fleet."
+    )
+    latitude: float | None = Field(None, ge=-90, le=90, description="Depot latitude (WGS84).")
+    longitude: float | None = Field(None, ge=-180, le=180, description="Depot longitude (WGS84).")
+    address: str | None = Field(
+        None,
+        min_length=1,
+        max_length=300,
+        description="Depot address: the server geocodes it and returns depot_resolved; an uncertain match "
+        "is refused until the user confirms its coordinates.",
+    )
+    city: str | None = Field(None, max_length=120, description="City of the address, when known.")
+    country: str | None = Field(None, max_length=64, description="Country or ISO code of the address.")
+
+    @model_validator(mode="after")
+    def _one_place(self) -> RouteDepot:
+        if (self.latitude is None) != (self.longitude is None):
+            raise PydanticCustomError("depot_coordinates", "depot needs both latitude and longitude")
+        if self.depot_id is None and self.latitude is None and self.address is None:
+            raise PydanticCustomError(
+                "depot_missing", "depot needs a depot_id, latitude and longitude, or an address"
+            )
+        return self
+
+    @property
+    def has_coordinates(self) -> bool:
+        return self.latitude is not None and self.longitude is not None
+
+
+class OptimizeRoutesInput(StrictModel):
+    """Arguments of optimize_routes: exactly one source of stops, and what the run needs."""
+
+    plan_id: str | None = Field(
+        None,
+        pattern=PLAN_ID_PATTERN,
+        description="A saved plan (list_plans, get_import_result). The run is saved in that plan.",
+    )
+    dataset_id: str | None = Field(
+        None,
+        min_length=8,
+        max_length=64,
+        description="An import's stops (get_import_result, list_datasets), run in the plan it loaded into.",
+    )
+    stops: list[Stop] | None = Field(
+        None,
+        min_length=1,
+        max_length=MAX_STOPS,
+        description="Stops whose coordinates are in this conversation. Every call saves a new plan.",
+    )
+    depot: RouteDepot
+    vehicles: list[Vehicle] = Field(
+        min_length=1, max_length=MAX_VEHICLE_TYPES, description="Fleet for this run (1-50 vehicle types)."
+    )
+    date: str | None = Field(
+        None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Delivery date YYYY-MM-DD in time_zone. Default: today.",
+    )
+    route_start_time: str | None = Field(
+        None,
+        pattern=HHMM_PATTERN,
+        description="Time routes leave the depot, local HH:MM. Needed for arrival times and time windows.",
+    )
+    time_zone: str = Field(
+        "UTC", max_length=64, description="IANA time zone for date and times, e.g. America/New_York."
+    )
+    service_time_minutes: float | None = Field(None, ge=0, le=240, description="Minutes spent at each stop.")
+    max_route_minutes: float | None = Field(
+        None, ge=30, le=24 * 60, description=MAX_ROUTE_MINUTES_DESCRIPTION
+    )
+    use_weight: bool | None = Field(
+        None,
+        description="Optimize by weight. Omit to follow the vehicles' max_weight_kg; false keeps weights "
+        "for reference.",
+    )
+    use_volume: bool | None = Field(
+        None,
+        description="Optimize by volume. Omit to follow the vehicles' max_volume_m3; false keeps volumes "
+        "for reference.",
+    )
+    use_time_windows: bool | None = Field(
+        None,
+        description="Respect the stops' time windows. Omit to follow the data; false keeps them for "
+        "reference.",
+    )
+    max_load_ratio: float | None = Field(
+        None,
+        ge=0.5,
+        le=1,
+        description="Highest share of each vehicle's weight/volume capacity to fill. Default 0.95 (5% "
+        "margin); 1 only when the user asks to fill vehicles completely.",
+    )
+    exclude_stop_ids: list[str] | None = Field(
+        None,
+        max_length=MAX_STOPS,
+        description="With plan_id or dataset_id: stops to leave out of this run only; the plan keeps them.",
+    )
+    plan_name: str | None = Field(
+        None,
+        min_length=1,
+        max_length=PLAN_NAME_MAX,
+        description="With stops: name of the new plan. Default: Optimization YYYY-MM-DD.",
+    )
+    depot_name: str | None = Field(
+        None, min_length=1, max_length=DEPOT_NAME_MAX, description="Depot name shown in the plan."
+    )
+    idempotency_key: str | None = Field(
+        None,
+        pattern=IDEMPOTENCY_KEY_PATTERN,
+        description="Optional key to deduplicate retries. By default identical arguments are deduplicated.",
+    )
+    confirmed: bool = Field(False, description=CONFIRMED_DESCRIPTION)
+
+    _date = field_validator("date")(classmethod(lambda cls, value: check_calendar_date(value)))
+    _zone = field_validator("time_zone")(classmethod(lambda cls, value: check_time_zone(value)))
+
+    @model_validator(mode="after")
+    def _one_source(self) -> OptimizeRoutesInput:
+        sources = [name for name in ("plan_id", "dataset_id", "stops") if getattr(self, name) is not None]
+        if len(sources) != 1:
+            raise PydanticCustomError(
+                "stop_source",
+                "send exactly one of plan_id, dataset_id or stops (got {got})",
+                {"got": ", ".join(sources) or "none"},
+            )
+        if self.stops is not None and self.exclude_stop_ids:
+            raise PydanticCustomError(
+                "exclude_with_stops",
+                "exclude_stop_ids goes with plan_id or dataset_id; send fewer stops instead",
+            )
+        if self.stops is None and self.plan_name is not None:
+            raise PydanticCustomError(
+                "plan_name_without_stops",
+                "plan_name names the new plan of a stops run; a saved plan keeps its name",
+            )
+        return self
+
+    @property
+    def schedule_given(self) -> bool:
+        return (
+            any(
+                value is not None
+                for value in (
+                    self.date,
+                    self.route_start_time,
+                    self.service_time_minutes,
+                    self.max_route_minutes,
+                )
+            )
+            or self.time_zone != "UTC"
+        )
+
+
+def parse_optimize_routes_input(arguments: dict[str, Any] | None) -> OptimizeRoutesInput:
+    try:
+        return OptimizeRoutesInput.model_validate(
+            coerce_json_fields(arguments or {}, "depot", "vehicles", "stops", "exclude_stop_ids")
+        )
+    except ValidationError as exc:
+        raise validation_error_to_domain(exc) from None
 
 
 def parse_optimize_input(arguments: dict[str, Any] | None) -> OptimizeInput:

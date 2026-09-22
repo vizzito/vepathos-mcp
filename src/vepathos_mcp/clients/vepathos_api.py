@@ -272,7 +272,7 @@ class VepathosApiClient:
                 "This Vepathos deployment does not expose the vehicle catalog yet.",
                 suggestion=(
                     "Skip list_fleet and ask the user to describe the fleet, then pass those vehicles "
-                    "to optimize_delivery_routes."
+                    "to optimize_routes."
                 ),
                 retryable=False,
             ),

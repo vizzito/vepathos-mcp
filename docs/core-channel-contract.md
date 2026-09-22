@@ -107,7 +107,7 @@ value whose unit it does not recognise: a wrong capacity plans a route that cann
 is worse than an unconstrained one. `vehicles[]` is the whole account catalog, `fleets[]` groups it
 as the user does; both are present because a vehicle can belong to no fleet.
 
-`vehicle_id` is the catalog id and may not fit `optimize_delivery_routes` (max 32 chars, letters,
+`vehicle_id` is the catalog id and may not fit `optimize_routes` (max 32 chars, letters,
 digits, `_`, `-`, `.`): `vepathos-mcp` reshapes it before publishing, keeping it unique per fleet.
 When neither resource answers, Core returns `503 BACKEND_UNAVAILABLE`; when only one fails, the
 other is still returned.
@@ -264,7 +264,7 @@ fields null; one that looks inside a window reports `window_from` / `window_to` 
 ```
 
 **No plan id.** A rule keeps a plan of its own and that id is deliberately not on the wire: an agent
-holding it could pass it to `optimize_plan`, spending the rule's stops by hand and moving the
+holding it could pass it to `optimize_routes`, spending the rule's stops by hand and moving the
 revision its next batch checks against. `plan_missing: true` means the plan a legacy rule hung off
 was deleted, so it cannot run until its owner fixes that.
 
@@ -300,7 +300,7 @@ other-account id → `404 PLAN_NOT_FOUND`.
 
 The adapter also reads this before submitting `plan_id` jobs: Core keys idempotency on the body as
 sent, before it expands the plan's stops, so the adapter adds the plan's `revision` to its fingerprint
-(see [tools.md](tools.md#optimize_plan)).
+(see [tools.md](tools.md#optimize_routes)).
 
 ## `POST /api/mcp/v1/optimization/jobs`
 
@@ -510,7 +510,7 @@ Body (one of):
 | Field | Description |
 |---|---|
 | `content_base64` + `filename` | File bytes from the adapter (ChatGPT `fileParams` downloaded server-side). |
-| `text` + optional `filename` | Pasted delivery list (`import_delivery_text`). |
+| `text` + optional `filename` | Pasted delivery list (`import_deliveries`). |
 | `url` + optional `filename` | Public `https` download; private/metadata hosts rejected (SSRF). |
 
 Optional: `timezone`, `depot_country`, `mime_type`, `plan_id` (unknown → `404 PLAN_NOT_FOUND`). Max size

@@ -72,5 +72,5 @@ def test_features_the_tools_cannot_request_are_not_advertised() -> None:
     )
     info = to_account_info(account)
     assert info.plan is not None
-    # Offering duration routing produces a promise optimize_delivery_routes cannot keep.
+    # Offering duration routing produces a promise optimize_routes cannot keep.
     assert info.plan.features == ["time_windows"]
