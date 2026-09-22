@@ -48,7 +48,7 @@ GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     ("Addresses", ("geocode_addresses", "get_geocode_result")),
-    ("Saved vehicles and depots", ("list_fleet", "manage_resources")),
+    ("Saved vehicles and depots", ("list_fleet", "manage_catalog")),
     ("Automations", ("list_automations", "create_automation")),
     ("Share", ("create_optimization_map",)),
 )
@@ -133,7 +133,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         (
             Step(("list_fleet",)),
             Step(
-                ("manage_resources",),
+                ("manage_catalog",),
                 "a depot given as an address goes through geocode_addresses first",
             ),
         ),

@@ -477,7 +477,7 @@ class SavedDepot(OutputModel):
     """A depot saved in the account, shaped to drop straight into an optimization's depot."""
 
     depot_id: str = Field(
-        description="Pass as depot.depot_id to optimize_routes, or to manage_resources when the user "
+        description="Pass as depot.depot_id to optimize_routes, or to manage_catalog when the user "
         "wants it changed."
     )
     name: str | None = Field(None, description="Label the account gave it, for talking to the user.")

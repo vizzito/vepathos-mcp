@@ -270,7 +270,7 @@ Ask for a run, approve, then ask to rerun with other vehicles.
 ### `sprinter` · L5 · may leave one vehicle — *a different mechanism here*
 Say: `agregame a mi cuenta una Sprinter de 1.500 kg y 14 m³`.
 
-On this surface the MCP's `manage_resources` is not offered. The model emits the page's `manage_resource`
+On this surface the MCP's `manage_catalog` is not offered. The model emits the page's `manage_resource`
 (`lib/ai/manage-resource-tool.ts`), the page opens a **pre-filled form**, and the person saves.
 
 - **E** `manage-resource` event → `ai-fleet-dialog` opens with `ai-fleet-dialog-name` pre-filled

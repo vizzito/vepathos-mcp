@@ -12,7 +12,7 @@ Rendered with every optional tool enabled and `MCP_CONFIRM_BEFORE_OPTIMIZE=false
 - **Plan and run**: `optimize_routes`, `list_plans`, `get_optimization_result`
 - **Imports**: `import_deliveries`, `get_import_result`, `update_import_mapping`, `list_datasets`
 - **Addresses**: `geocode_addresses`, `get_geocode_result`
-- **Saved vehicles and depots**: `list_fleet`, `manage_resources`
+- **Saved vehicles and depots**: `list_fleet`, `manage_catalog`
 - **Automations**: `list_automations`, `create_automation`
 - **Share**: `create_optimization_map`
 
@@ -44,7 +44,7 @@ Rendered with every optional tool enabled and `MCP_CONFIRM_BEFORE_OPTIMIZE=false
 
 **Save a vehicle or a depot.** The user asks to add, save or edit one in their account; never for one plan's settings.
 
-`list_fleet → manage_resources (a depot given as an address goes through geocode_addresses first)`
+`list_fleet → manage_catalog (a depot given as an address goes through geocode_addresses first)`
 
 ## `optimize_routes`
 
@@ -459,7 +459,7 @@ Takes no arguments.
 | `empty` | boolean | True when the account has no fleet loaded: ask the user to describe the vehicles. |
 | `error` | object |  |
 
-## `manage_resources`
+## `manage_catalog`
 
 **Manage saved vehicles and depots**
 

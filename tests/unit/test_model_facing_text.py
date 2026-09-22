@@ -313,22 +313,22 @@ def test_master_data_is_told_apart_from_plan_settings_wherever_it_can_be_read() 
     instructions = d.server_instructions(
         confirm_before_optimize=False, import_tools=False, catalog_writes=True
     )
-    for text in (d.MANAGE_RESOURCES_DESCRIPTION, instructions):
+    for text in (d.MANAGE_CATALOG_DESCRIPTION, instructions):
         assert "master data" in text and "plan setting" in text
         assert "save nothing" in text
     # One tool now carries both rules, so both have to survive in the same text.
-    assert "never 25 new vehicles" in d.MANAGE_RESOURCES_DESCRIPTION
-    assert "one vehicle per call" in d.MANAGE_RESOURCES_DESCRIPTION
-    assert "geocode_addresses" in d.MANAGE_RESOURCES_DESCRIPTION
-    assert "get a yes first" in d.MANAGE_RESOURCES_DESCRIPTION
-    assert "Does not consume plan stops" in d.MANAGE_RESOURCES_DESCRIPTION
+    assert "never 25 new vehicles" in d.MANAGE_CATALOG_DESCRIPTION
+    assert "one vehicle per call" in d.MANAGE_CATALOG_DESCRIPTION
+    assert "geocode_addresses" in d.MANAGE_CATALOG_DESCRIPTION
+    assert "get a yes first" in d.MANAGE_CATALOG_DESCRIPTION
+    assert "Does not consume plan stops" in d.MANAGE_CATALOG_DESCRIPTION
 
 
 @EACH_GATE_SETTING
 def test_the_master_data_line_follows_its_flag(gate: bool) -> None:
     for catalog in (True, False):
         text = d.server_instructions(confirm_before_optimize=gate, import_tools=True, catalog_writes=catalog)
-        assert ("manage_resources" in text) is catalog
+        assert ("manage_catalog" in text) is catalog
     # list_fleet is published on every server, so it never names a tool that may be missing.
     assert "manage_" not in d.LIST_FLEET_DESCRIPTION
     assert "depots" in d.LIST_FLEET_DESCRIPTION
@@ -337,7 +337,7 @@ def test_the_master_data_line_follows_its_flag(gate: bool) -> None:
 def test_the_new_texts_do_not_speak_of_drivers() -> None:
     # Drivers are not part of this surface (0.8.0): neither as a tool nor as a word in what is new.
     for text in (
-        d.MANAGE_RESOURCES_DESCRIPTION,
+        d.MANAGE_CATALOG_DESCRIPTION,
         d.LIST_FLEET_DESCRIPTION,
         d._CATALOG,
     ):

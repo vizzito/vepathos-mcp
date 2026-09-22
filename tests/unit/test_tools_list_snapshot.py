@@ -31,17 +31,17 @@ EXPECTED_TOOL_NAMES = (
     "get_geocode_result",
     "get_account",
     "list_fleet",
-    "manage_resources",
+    "manage_catalog",
     "list_automations",
     "create_automation",
 )
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
-# Changed on 0.9.0: manage_vehicle and manage_depot became one manage_resources.
-EXPECTED_DESC_HASH_GATE_OFF = "d2f33a44c9b92c7e68635fa28427c8e2a7ff5970968d0cc62d5005816379314e"
+# Changed on 0.9.0: manage_vehicle and manage_depot became one manage_catalog.
+EXPECTED_DESC_HASH_GATE_OFF = "212a4061858d98d9ef62b2c2031104ed219c379f548d70008730410ebf5d7f8a"
 
 
-CATALOG_WRITE_TOOLS = {"manage_resources"}
+CATALOG_WRITE_TOOLS = {"manage_catalog"}
 
 
 def _desc_hash(tools: list[Any]) -> str:
@@ -98,7 +98,7 @@ async def test_catalog_write_tools_stay_hidden_until_enabled(core_client_factory
         assert all(name not in (t.description or "") for t in tools)
 
     _, enabled = await _list_tools(core_client_factory, clock, MCP_CATALOG_WRITE_TOOLS_ENABLED="true")
-    assert "manage_resources" in enabled and "master data" in enabled
+    assert "manage_catalog" in enabled and "master data" in enabled
 
 
 async def test_plans_are_published_without_the_import_tools(core_client_factory, clock: FakeClock) -> None:

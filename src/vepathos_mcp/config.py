@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # Import tools (import_deliveries … list_datasets). Off until the ChatGPT staging smoke
     # passes: deploying the code must not publish new tools. The instructions follow it.
     import_tools_enabled: bool = Field(False, validation_alias=_env("MCP_IMPORT_TOOLS_ENABLED"))
-    # Catalog write tools (manage_resources). Off until the staging smoke passes
+    # Catalog write tools (manage_catalog). Off until the staging smoke passes
     # (docs/smoke-prompts.md T19): deploying the code must not publish new tools. The instructions follow it.
     catalog_write_tools_enabled: bool = Field(False, validation_alias=_env("MCP_CATALOG_WRITE_TOOLS_ENABLED"))
     # Optimizing spends the account's stops, so it is confirmed by default. Turning this off makes

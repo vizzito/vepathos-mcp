@@ -656,7 +656,7 @@ async def test_a_saved_vehicle_shows_in_the_fleet_and_asking_again_writes_nothin
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, created = await call(client, "manage_resources", SPRINTER)
+        is_error, created = await call(client, "manage_catalog", SPRINTER)
         assert not is_error, created
         assert created["outcome"] == "created" and created["vehicle"]["max_weight_kg"] == 1500
         assert created["account_url"].endswith("/vehicles")
@@ -666,7 +666,7 @@ async def test_a_saved_vehicle_shows_in_the_fleet_and_asking_again_writes_nothin
 
         # A retry, or a model asking twice with another spelling, converges on the same row.
         again = {**SPRINTER, "name": "sprinter"}
-        is_error, replay = await call(client, "manage_resources", again)
+        is_error, replay = await call(client, "manage_catalog", again)
         assert not is_error and replay["outcome"] == "already_existed"
         assert replay["vehicle"]["vehicle_id"] == created["vehicle"]["vehicle_id"]
     assert len(core_state.vehicles) == 1
@@ -676,9 +676,9 @@ async def test_a_name_in_use_with_other_values_is_the_users_call(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        await call(client, "manage_resources", SPRINTER)
+        await call(client, "manage_catalog", SPRINTER)
         other = {"resource": "vehicle", "action": "create", "name": "Sprinter", "max_weight_kg": 900}
-        is_error, payload = await call(client, "manage_resources", other)
+        is_error, payload = await call(client, "manage_catalog", other)
     assert is_error and payload["error"]["code"] == "NAME_TAKEN"
     assert payload["error"]["details"]["existing"]["max_weight_kg"] == 1500
     assert len(core_state.vehicles) == 1
@@ -688,16 +688,16 @@ async def test_a_saved_vehicle_is_updated_by_the_id_list_fleet_gave(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        _, created = await call(client, "manage_resources", SPRINTER)
+        _, created = await call(client, "manage_catalog", SPRINTER)
         vehicle_id = created["vehicle"]["vehicle_id"]
         update = {"resource": "vehicle", "action": "update", "resource_id": vehicle_id, "max_volume_m3": 12}
-        is_error, updated = await call(client, "manage_resources", update)
+        is_error, updated = await call(client, "manage_catalog", update)
         assert not is_error, updated
         assert updated["outcome"] == "updated" and updated["vehicle"]["max_volume_m3"] == 12
         assert updated["vehicle"]["max_weight_kg"] == 1500
 
         missing = {"resource": "vehicle", "action": "update", "resource_id": "999", "name": "x"}
-        is_error, payload = await call(client, "manage_resources", missing)
+        is_error, payload = await call(client, "manage_catalog", missing)
         assert is_error and payload["error"]["code"] == "VEHICLE_NOT_FOUND"
 
 
@@ -706,7 +706,7 @@ async def test_the_plans_catalog_cap_is_said_before_anything_is_written(
 ) -> None:
     core_state.max_vehicles = 0
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, payload = await call(client, "manage_resources", SPRINTER)
+        is_error, payload = await call(client, "manage_catalog", SPRINTER)
     assert is_error and payload["error"]["code"] == "PLAN_UPGRADE_REQUIRED"
     assert payload["error"]["details"]["reason"] == "CATALOG_VEHICLE_LIMIT"
     assert core_state.vehicles == []
@@ -720,7 +720,7 @@ async def test_use_25_vehicles_cannot_become_25_saved_vehicles(
             {**SPRINTER, "count": 25},
             {"resource": "vehicle", "action": "create", "name": "S", "available": False},
         ):
-            is_error, payload = await call(client, "manage_resources", arguments)
+            is_error, payload = await call(client, "manage_catalog", arguments)
             assert is_error and payload["error"]["code"] == "INVALID_INPUT"
     assert core_state.vehicles == []
 
@@ -736,7 +736,7 @@ async def test_a_saved_depot_is_read_back_with_coordinates_an_optimization_takes
         "longitude": -58.3816,
     }
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, created = await call(client, "manage_resources", barracas)
+        is_error, created = await call(client, "manage_catalog", barracas)
         assert not is_error, created
         assert created["outcome"] == "created" and created["account_url"].endswith("/milestones")
 
@@ -746,10 +746,10 @@ async def test_a_saved_depot_is_read_back_with_coordinates_an_optimization_takes
 
         # The same place under the same name is the same depot; another place is not.
         nearby = {**barracas, "latitude": -34.64412}
-        _, replay = await call(client, "manage_resources", nearby)
+        _, replay = await call(client, "manage_catalog", nearby)
         assert replay["outcome"] == "already_existed"
         elsewhere = {**barracas, "latitude": -34.9}
-        is_error, payload = await call(client, "manage_resources", elsewhere)
+        is_error, payload = await call(client, "manage_catalog", elsewhere)
         assert is_error and payload["error"]["code"] == "NAME_TAKEN"
 
         rename = {
@@ -758,7 +758,7 @@ async def test_a_saved_depot_is_read_back_with_coordinates_an_optimization_takes
             "resource_id": created["depot"]["depot_id"],
             "name": "Barracas Sur",
         }
-        _, renamed = await call(client, "manage_resources", rename)
+        _, renamed = await call(client, "manage_catalog", rename)
         assert renamed["outcome"] == "updated" and renamed["depot"]["name"] == "Barracas Sur"
     assert len(core_state.depots) == 1
 
@@ -770,14 +770,14 @@ async def test_depots_are_read_on_every_server_but_written_only_behind_the_flag(
     async with await mcp_client() as client:
         names = {t.name for t in (await client.list_tools()).tools}
         _, fleet = await call(client, "list_fleet", {})
-    assert "manage_resources" not in names
+    assert "manage_catalog" not in names
     assert fleet["depots"][0]["name"] == "Barracas"
 
 
 async def test_tools_that_overwrite_something_saved_say_so(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    for name in ("optimize_routes", "manage_resources"):
+    for name in ("optimize_routes", "manage_catalog"):
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.destructive_hint is True and annotations.read_only_hint is False, name

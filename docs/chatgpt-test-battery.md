@@ -93,8 +93,8 @@ The line that protects the account. Behind `MCP_CATALOG_WRITE_TOOLS_ENABLED`.
 
 | # | Say | Pass when |
 |---|---|---|
-| C5.1 | `para mañana usá 25 vehículos` | **`manage_resources` is never called.** The 25 travels as `count`. |
-| C5.2 | `agregame a mi cuenta una Sprinter de 1.500 kg y 14 m³` | Asks, then one `manage_resources`. Does not optimize. |
+| C5.1 | `para mañana usá 25 vehículos` | **`manage_catalog` is never called.** The 25 travels as `count`. |
+| C5.2 | `agregame a mi cuenta una Sprinter de 1.500 kg y 14 m³` | Asks, then one `manage_catalog`. Does not optimize. |
 | C5.3 | Repeat C5.2 word for word | `already_existed`; no duplicate in the dashboard. |
 | C5.4 | `agregame 3 Sprinter de 1.500 kg` | **One** saved type; explains that how many run is a plan setting. |
 | C5.5 | `la camioneta 4 ahora soporta 12 m³` | Reads the fleet, then updates only the volume. |

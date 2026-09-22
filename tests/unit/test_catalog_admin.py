@@ -1,4 +1,4 @@
-"""manage_resources: master data keeps its shape, and plan settings cannot get in."""
+"""manage_catalog: master data keeps its shape, and plan settings cannot get in."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from vepathos_mcp.clients.core_models import CoreDepotSaved, CoreVehicleSaved
 from vepathos_mcp.tools.catalog_admin import (
-    ManageResourcesInput,
+    ManageCatalogInput,
     core_body,
     depot_result,
     vehicle_result,
@@ -15,14 +15,14 @@ from vepathos_mcp.tools.catalog_admin import (
 
 
 def test_create_sends_the_vehicle_and_omits_what_the_user_did_not_say() -> None:
-    inp = ManageResourcesInput.model_validate(
+    inp = ManageCatalogInput.model_validate(
         {"resource": "vehicle", "action": "create", "name": " Sprinter ", "max_weight_kg": 1500}
     )
     assert core_body(inp) == {"name": "Sprinter", "max_weight_kg": 1500.0}
 
 
 def test_update_sends_only_the_changed_fields() -> None:
-    inp = ManageResourcesInput.model_validate(
+    inp = ManageCatalogInput.model_validate(
         {"resource": "vehicle", "action": "update", "resource_id": "12", "max_volume_m3": 12}
     )
     assert core_body(inp) == {"max_volume_m3": 12.0}
@@ -43,7 +43,7 @@ def test_update_sends_only_the_changed_fields() -> None:
 )
 def test_the_shape_must_follow_the_action(arguments: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        ManageResourcesInput.model_validate(arguments)
+        ManageCatalogInput.model_validate(arguments)
 
 
 @pytest.mark.parametrize(
@@ -57,7 +57,7 @@ def test_the_shape_must_follow_the_action(arguments: dict[str, object]) -> None:
 )
 def test_plan_settings_and_batches_have_no_way_in(arguments: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        ManageResourcesInput.model_validate(arguments)
+        ManageCatalogInput.model_validate(arguments)
 
 
 @pytest.mark.parametrize(
@@ -72,19 +72,19 @@ def test_plan_settings_and_batches_have_no_way_in(arguments: dict[str, object]) 
 )
 def test_each_field_belongs_to_one_resource(arguments: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="belong to a"):
-        ManageResourcesInput.model_validate(arguments)
+        ManageCatalogInput.model_validate(arguments)
 
 
 def test_a_depot_moves_with_both_coordinates_or_neither() -> None:
     with pytest.raises(ValidationError, match="travel together"):
-        ManageResourcesInput.model_validate(
+        ManageCatalogInput.model_validate(
             {"resource": "depot", "action": "update", "resource_id": "3", "latitude": -34.6}
         )
-    renamed = ManageResourcesInput.model_validate(
+    renamed = ManageCatalogInput.model_validate(
         {"resource": "depot", "action": "update", "resource_id": "3", "name": "Barracas Sur"}
     )
     assert core_body(renamed) == {"name": "Barracas Sur"}
-    created = ManageResourcesInput.model_validate(
+    created = ManageCatalogInput.model_validate(
         {"resource": "depot", "action": "create", "name": "Barracas", "latitude": -34.6441,
          "longitude": -58.3816}
     )
@@ -93,14 +93,14 @@ def test_a_depot_moves_with_both_coordinates_or_neither() -> None:
 
 def test_a_depot_takes_coordinates_not_an_address() -> None:
     with pytest.raises(ValidationError):
-        ManageResourcesInput.model_validate(
+        ManageCatalogInput.model_validate(
             {"resource": "depot", "action": "create", "name": "x", "address": "San Martín 700"}
         )
 
 
 def test_a_new_depot_cannot_be_saved_without_where_it_is() -> None:
     with pytest.raises(ValidationError, match="latitude and longitude"):
-        ManageResourcesInput.model_validate({"resource": "depot", "action": "create", "name": "Barracas"})
+        ManageCatalogInput.model_validate({"resource": "depot", "action": "create", "name": "Barracas"})
 
 
 def test_the_saved_vehicle_comes_back_ready_for_an_optimization() -> None:

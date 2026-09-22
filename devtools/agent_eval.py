@@ -48,7 +48,7 @@ TOOL_NAMES = (
     "get_account", "list_fleet", "list_plans", "optimize_routes",
     "get_optimization_result", "import_deliveries", "get_import_result",
     "update_import_mapping", "list_datasets", "geocode_addresses", "get_geocode_result",
-    "manage_resources", "list_automations", "create_automation", "create_optimization_map",
+    "manage_catalog", "list_automations", "create_automation", "create_optimization_map",
 )  # fmt: skip
 _SPANISH = re.compile(r"\b(el|la|los|las|que|de|para|con|una?|tu|tus|cuál|qué|tenés|tienes|está)\b", re.I)
 _ENGLISH = re.compile(r"\b(the|let me|i'll|i will|now|your|which|with|this|these|calling)\b", re.I)
@@ -158,7 +158,7 @@ def asks_no_login(run: Run) -> bool:
 
 
 def never_saves_a_vehicle(run: Run) -> bool:
-    return not run.called("manage_resources")
+    return not run.called("manage_catalog")
 
 
 def never_optimizes(run: Run) -> bool:
@@ -166,7 +166,7 @@ def never_optimizes(run: Run) -> bool:
 
 
 def saves_at_most_one_vehicle(run: Run) -> bool:
-    return run.tools.count("manage_resources") <= 1
+    return run.tools.count("manage_catalog") <= 1
 
 
 def imports_through_the_server(run: Run) -> bool:
@@ -207,7 +207,7 @@ def reads_the_account(run: Run) -> bool:
 
 
 def saved_by_the_tool(run: Run) -> bool:
-    return run.called("manage_resources") and ("created" in run.results or "already_existed" in run.results)
+    return run.called("manage_catalog") and ("created" in run.results or "already_existed" in run.results)
 
 
 def creates_one_vehicle_at_most(run: Run) -> bool:
@@ -220,7 +220,7 @@ def creates_one_vehicle_at_most(run: Run) -> bool:
     names = {
         str(args.get("name", "")).strip().lower()
         for tool, args in zip(run.tools, run.inputs, strict=False)
-        if tool == "manage_resources"
+        if tool == "manage_catalog"
         and args.get("resource") == "vehicle"
         and args.get("action") == "create"
     }
@@ -244,7 +244,7 @@ def one_run_per_yes(run: Run) -> bool:
 def count_is_a_plan_setting(run: Run) -> bool:
     """'3 Sprinters' is ONE saved type; the 3 belongs to a run. One save at most, none with a count."""
 
-    saves = run.calls("manage_resources")
+    saves = run.calls("manage_catalog")
     return len(saves) <= 1 and all("count" not in json.dumps(args) for args in saves)
 
 
@@ -284,7 +284,7 @@ def geocodes_instead_of_inventing(run: Run) -> bool:
 
 
 def never_saves_a_depot(run: Run) -> bool:
-    return not run.called("manage_resources")
+    return not run.called("manage_catalog")
 
 
 def reads_the_fleet(run: Run) -> bool:
@@ -292,14 +292,14 @@ def reads_the_fleet(run: Run) -> bool:
 
 
 def geocodes_before_saving_the_depot(run: Run) -> bool:
-    """A depot given as an address is geocoded first: manage_resources takes coordinates, and coordinates
+    """A depot given as an address is geocoded first: manage_catalog takes coordinates, and coordinates
     the agent made up would save a depot in the wrong place with nothing on screen to say so."""
 
     if not run.called("geocode_addresses"):
         return False
-    if not run.called("manage_resources"):
+    if not run.called("manage_catalog"):
         return True
-    return run.tools.index("geocode_addresses") < run.tools.index("manage_resources")
+    return run.tools.index("geocode_addresses") < run.tools.index("manage_catalog")
 
 
 def saves_the_depot_after_the_yes(run: Run) -> bool:
@@ -307,14 +307,14 @@ def saves_the_depot_after_the_yes(run: Run) -> bool:
     So the first turn writes nothing, and the yes in turn 2 is what saves it."""
 
     first = run.turns[0].tools if run.turns else run.tools
-    return "manage_resources" not in first and run.called("manage_resources")
+    return "manage_catalog" not in first and run.called("manage_catalog")
 
 
 def saves_at_most_one_depot(run: Run) -> bool:
     names = {
         str(args.get("name", "")).strip().lower()
         for tool, args in zip(run.tools, run.inputs, strict=False)
-        if tool == "manage_resources"
+        if tool == "manage_catalog"
         and args.get("resource") == "depot"
         and args.get("action") == "create"
     }
@@ -325,7 +325,7 @@ def updates_the_saved_one(run: Run) -> bool:
     """Asked to change a saved vehicle, the agent updates it. Creating another under a new name — or
     under the same name, where Core answers NAME_TAKEN — leaves the account with two of one type."""
 
-    return any(args.get("action") == "update" for args in run.calls("manage_resources"))
+    return any(args.get("action") == "update" for args in run.calls("manage_catalog"))
 
 
 COMMON: dict[str, Check] = {

@@ -30,19 +30,19 @@ Staging checklist:
 
 00. **Master data and help** (0.8.0) — staging with `MCP_CATALOG_WRITE_TOOLS_ENABLED=true`
    1. > Agregame una Sprinter de 1.500 kg y 14 m³.
-      Asks for the yes, calls `manage_resources` create, says it is saved. It does **not** optimize.
+      Asks for the yes, calls `manage_catalog` create, says it is saved. It does **not** optimize.
    2. > Agregame 3 Sprinter de 1.500 kg.
       ONE call (a vehicle is a type); says how many run is set on each plan.
    3. > Usá 25 vehículos para el reparto de mañana.
-      **No** `manage_resources` call: 25 travels as `count` on the run.
+      **No** `manage_catalog` call: 25 travels as `count` on the run.
    4. > La camioneta 4 ahora soporta 12 m³.
-      `list_fleet` → `manage_resources` update.
+      `list_fleet` → `manage_catalog` update.
    5. > Mañana la Sprinter no sale.
       A plan setting: left out of that run; nothing is saved.
    6. > Usá como depósito el de Barracas.
       `list_fleet` depots → its coordinates as `depot`; nothing is saved.
    7. > Guardá un depósito nuevo en Av. San Martín 700.
-      `geocode_addresses` → says the matched address → after the yes, `manage_resources` create.
+      `geocode_addresses` → says the matched address → after the yes, `manage_catalog` create.
    8. Repeat prompt 1: `already_existed`, and no duplicate in the dashboard.
    9. In Claude Code or Claude Desktop, pick the prompt `vepathos_help`: it inspects the account and
       explains by task, without tool names. Pick `vepathos_tools`: the list with technical names.

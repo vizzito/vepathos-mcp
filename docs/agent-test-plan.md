@@ -69,7 +69,7 @@ was changed. If a host in production shows the Haiku shape, that is when it beco
 
 Converge-by-name (contract §4, D5) is measured end to end, and it is the reason the outcome check is
 the right one. Asked twice for the same vehicle, Sonnet took both legal paths in the same battery: one
-run read the catalog and did not call again, two runs called `manage_resources` a second time. All three
+run read the catalog and did not call again, two runs called `manage_catalog` a second time. All three
 left **one** row — the second call came back `already_existed` instead of creating one. 3/3.
 
 That is also why `7187072` replaced this check. The old one, "devuelve el existente, no duplica",
@@ -113,7 +113,7 @@ by something any account with plans has ("el plan guardado con más paradas", "e
 paradas"), and `test_no_case_depends_on_which_plan_is_newest` keeps it that way. **Columns measured before
 this change used the old wording**; the comparison's header dates say which.
 
-Four cases added from the 0.8.0 smoke list, which the battery had never covered — `manage_resources` had no
+Four cases added from the 0.8.0 smoke list, which the battery had never covered — `manage_catalog` had no
 case at all: `sprinter_no_sale` (a vehicle out tomorrow is a plan setting, L4.6), `deposito_del_plan`
 (a saved depot used for one run, nothing saved, L4.8), `furgon_actualizar` (a change to a saved vehicle
 is an update, never a second row, L5.5) and `deposito_por_direccion` (an address is geocoded before a
@@ -213,7 +213,7 @@ Saves: the import becomes a **plan** named after the file. Cost: none until it i
 |---|---|---|---|---|---|
 | L4.1 | "depósito tandil, flota-20" → "dale" | `optimize_routes → get_optimization_result` | proposal with numbers, the charge said, waits for the yes, summary with routes / km / minutes / load / quota | plan's stops | ✅ 09-21 |
 | L4.2 | same plan, other vehicle count, within 24 h | `optimize_routes` | **another try**: no stops charged, one try consumed, tries left and window end said | 0 | ✅ 09-21 |
-| L4.3 | "usá 25 vehículos para mañana" | `optimize_*` with `count: 25` | **`manage_resources` is NEVER called** | — | ✅ 09-20 (5/5) |
+| L4.3 | "usá 25 vehículos para mañana" | `optimize_*` with `count: 25` | **`manage_catalog` is NEVER called** | — | ✅ 09-20 (5/5) |
 | L4.4 | "respetá el volumen" on a fleet with no capacity | asks kg and m³, then `optimize_routes(use_volume)` | asks before proposing; uses them for this run only; **saves nothing** | 0 (try) | ✅ 09-21 |
 | L4.5 | "que ninguna ruta pase de 60 minutos" | `optimize_routes(max_route_minutes)` | says it is a **target, not a hard limit**; checks durations in the result; offers more vehicles when exceeded | 0 (try) | ⚠ 09-21: 7/18 routes ran 67–70 min; text fixed, engine priority open |
 | L4.6 | "mañana la Sprinter no sale" | run without it | a plan setting: nothing saved | — | ◻ |
@@ -229,14 +229,14 @@ Behind `MCP_CATALOG_WRITE_TOOLS_ENABLED`. The line under test: **master data is 
 
 | ID | Prompt | Tools | Pass when | Status |
 |---|---|---|---|---|
-| L5.1 | "agregame una Sprinter de 1.500 kg y 14 m³" | `manage_resources(create)` after a yes | saved; does NOT optimize | ✅ integration 09-21; ✅ by an agent 09-21 |
-| L5.2 | "agregame 3 Sprinter de 1.500 kg" | ONE `manage_resources` | a vehicle is a type; the 3 is `count` on each plan | ◻ |
-| L5.3 | L5.1 again | `manage_resources` | `already_existed`, no duplicate in the dashboard | ✅ integration 09-21; ✅ by an agent 09-21 |
-| L5.4 | same name, other capacity | `manage_resources` | `NAME_TAKEN`: asks update it, or another name | ✅ integration 09-21 |
-| L5.5 | "la camioneta 4 ahora soporta 12 m³" | `list_fleet → manage_resources(update)` | only the volume changes | ✅ integration 09-21 |
-| L5.6 | "guardá un depósito en Av. San Martín 700" | `geocode_addresses → get_geocode_result → manage_resources(create)` | says the matched address and waits for the yes; never invents coordinates | ◻ by an agent |
-| L5.7 | account at its plan's cap (Free: 2 depots) | `manage_resources` | `PLAN_UPGRADE_REQUIRED`, nothing written, and "you can still route without saving it" | ✅ integration 09-21 |
-| L5.8 | Free account, vehicle with kg and m³ | `manage_resources` | **allowed**, as in the dashboard: capacities are data, the plan only gates their use in a run | ✅ by construction; ◻ run |
+| L5.1 | "agregame una Sprinter de 1.500 kg y 14 m³" | `manage_catalog(create)` after a yes | saved; does NOT optimize | ✅ integration 09-21; ✅ by an agent 09-21 |
+| L5.2 | "agregame 3 Sprinter de 1.500 kg" | ONE `manage_catalog` | a vehicle is a type; the 3 is `count` on each plan | ◻ |
+| L5.3 | L5.1 again | `manage_catalog` | `already_existed`, no duplicate in the dashboard | ✅ integration 09-21; ✅ by an agent 09-21 |
+| L5.4 | same name, other capacity | `manage_catalog` | `NAME_TAKEN`: asks update it, or another name | ✅ integration 09-21 |
+| L5.5 | "la camioneta 4 ahora soporta 12 m³" | `list_fleet → manage_catalog(update)` | only the volume changes | ✅ integration 09-21 |
+| L5.6 | "guardá un depósito en Av. San Martín 700" | `geocode_addresses → get_geocode_result → manage_catalog(create)` | says the matched address and waits for the yes; never invents coordinates | ◻ by an agent |
+| L5.7 | account at its plan's cap (Free: 2 depots) | `manage_catalog` | `PLAN_UPGRADE_REQUIRED`, nothing written, and "you can still route without saving it" | ✅ integration 09-21 |
+| L5.8 | Free account, vehicle with kg and m³ | `manage_catalog` | **allowed**, as in the dashboard: capacities are data, the plan only gates their use in a run | ✅ by construction; ◻ run |
 | L5.9 | flag off | — | the two tools are absent from `tools/list` and from the instructions | ✅ contract |
 
 ## Level 6 — A whole job in one conversation (the mix)

@@ -37,7 +37,7 @@ async def test_the_server_offers_its_prompts_and_its_reference(
         read = await client.read_resource("vepathos://docs/reference")
         text = read.contents[0].text
         assert read.contents[0].mime_type == "text/markdown"
-        assert "## `get_account`" in text and "manage_resources" not in text
+        assert "## `get_account`" in text and "manage_catalog" not in text
     await core.aclose()
 
 

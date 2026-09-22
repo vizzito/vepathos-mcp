@@ -9,7 +9,7 @@ server.
 Optional groups are published by a switch, off by default so that deploying the code publishes nothing
 new, and the server instructions only name the tools a server publishes: `MCP_IMPORT_TOOLS_ENABLED`
 (imports), `MCP_MAP_SHARES_ENABLED` (`create_optimization_map`) and `MCP_CATALOG_WRITE_TOOLS_ENABLED`
-(`manage_resources`). There is intentionally no cancel tool: a submitted optimization
+(`manage_catalog`). There is intentionally no cancel tool: a submitted optimization
 always runs to completion.
 
 **0.9.0 merged four tools into two.** `optimize_delivery_routes` and `optimize_plan` are now
@@ -52,7 +52,7 @@ with `MCP_CONFIRM_BEFORE_OPTIMIZE`, `MCP_IMPORT_TOOLS_ENABLED` and `MCP_MAP_SHAR
 names tools the server publishes. `MCP_CATALOG_WRITE_TOOLS_ENABLED` adds the master-data line.
 
 Annotations per tool are in [tools-reference.md](tools-reference.md). Two choices worth explaining:
-`optimize_routes` and `manage_resources` say
+`optimize_routes` and `manage_catalog` say
 `destructiveHint: true` — a run in a full plan library replaces the oldest plan (`plan_replaced`), and
 an update overwrites what the account had saved — so a host that asks before destructive calls asks
 for these.
@@ -195,13 +195,13 @@ unchanged. Requires `GET /api/mcp/v1/catalog` in Core; a Core from before depots
 Use it before planning a real delivery day: a fleet invented in conversation produces a geometric
 plan that ignores what each vehicle carries, and route ids nobody in the operation recognises.
 
-## `manage_resources`
+## `manage_catalog`
 
 Published with `MCP_CATALOG_WRITE_TOOLS_ENABLED=true`. One tool for the account's **master data**:
 `resource: "vehicle"` or `resource: "depot"`. It never touches a plan and never spends stops. There is
 no delete, and no tool for fleets or drivers: which vehicles form a fleet is arranged in the dashboard.
 
-The two were one tool from 0.9.0: the dashboard chat already exposed a single `manage_resources`, and
+The two were one tool from 0.9.0: the dashboard chat already exposed a single `manage_catalog`, and
 two catalogs naming the same work differently cost the small models a choice they kept getting wrong.
 
 ### Master data and plan settings
@@ -210,17 +210,17 @@ two catalogs naming the same work differently cost the small models a choice the
 |---|---|---|
 | What | saved vehicles (a type and its capacity), saved depots | how many vehicles a run uses (`count`), stops per vehicle, a capacity or a depot for one day, a vehicle that is out tomorrow |
 | Lives | in the account, after the conversation | in one optimization |
-| Tool | `manage_resources` | `vehicles[]` / `depot` of `optimize_routes` |
+| Tool | `manage_catalog` | `vehicles[]` / `depot` of `optimize_routes` |
 
 | The user says | What happens |
 |---|---|
-| "Add a 1,500 kg Sprinter." | `manage_resources` create (`resource: "vehicle"`), after a yes |
+| "Add a 1,500 kg Sprinter." | `manage_catalog` create (`resource: "vehicle"`), after a yes |
 | "Add 3 Sprinters of 1,500 kg." | **one** create: a vehicle is a type; the 3 is `count` on each plan |
 | "Use 25 vehicles tomorrow." | nothing is saved: `count: 25` on the run |
-| "Van 4 now carries 12 m³." | `list_fleet` → `manage_resources` update |
+| "Van 4 now carries 12 m³." | `list_fleet` → `manage_catalog` update |
 | "The Sprinter is out tomorrow." | nothing is saved: it is left out of that run |
 | "Use the Barracas depot." | `list_fleet` depots → its coordinates as `depot`; nothing is saved |
-| "Save a depot at San Martín 700." | `geocode_addresses` → the user confirms the match → `manage_resources` create (`resource: "depot"`) |
+| "Save a depot at San Martín 700." | `geocode_addresses` → the user confirms the match → `manage_catalog` create (`resource: "depot"`) |
 
 The shape defends the line: one row per call, and no `count`, `available` or list exists, so
 "use 25 vehicles" cannot become 25 saved vehicles — an unknown field is `INVALID_INPUT`. A depot takes

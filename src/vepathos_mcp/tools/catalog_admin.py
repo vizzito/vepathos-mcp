@@ -1,4 +1,4 @@
-"""manage_resources — the account's master data: its vehicles and its depots.
+"""manage_catalog — the account's master data: its vehicles and its depots.
 
 Two kinds of facts reach an agent, and only one belongs here. MASTER DATA is what the account keeps:
 the vehicles it owns with their capacity, the depots its routes start from. PLAN SETTINGS are what one
@@ -36,7 +36,7 @@ from vepathos_mcp.tools.fleet import vehicle_id_for_optimize
 from vepathos_mcp.tools.rendering import success_result
 from vepathos_mcp.tools.runtime import RequestIdentity, ToolDeps, instrumented
 
-MANAGE_RESOURCES_TOOL = "manage_resources"
+MANAGE_CATALOG_TOOL = "manage_catalog"
 VEHICLE_NAME_MAX = 120
 NAME_MAX = max(VEHICLE_NAME_MAX, DEPOT_NAME_MAX)
 CATALOG_ID_PATTERN = r"^[A-Za-z0-9_.-]{1,64}$"
@@ -50,7 +50,7 @@ VEHICLE_FIELDS = ("max_weight_kg", "max_volume_m3")
 DEPOT_FIELDS = ("latitude", "longitude")
 
 
-class ManageResourcesInput(StrictModel):
+class ManageCatalogInput(StrictModel):
     resource: Resource = Field(
         description="vehicle saves a vehicle the account owns; depot saves a place routes start from."
     )
@@ -100,7 +100,7 @@ class ManageResourcesInput(StrictModel):
         return [name for name in names if getattr(self, name) is not None]
 
     @model_validator(mode="after")
-    def _fields_follow_resource(self) -> ManageResourcesInput:
+    def _fields_follow_resource(self) -> ManageCatalogInput:
         stray = self._given(DEPOT_FIELDS if self.resource == "vehicle" else VEHICLE_FIELDS)
         if stray:
             other = "depot" if self.resource == "vehicle" else "vehicle"
@@ -110,7 +110,7 @@ class ManageResourcesInput(StrictModel):
         return self
 
     @model_validator(mode="after")
-    def _shape_follows_action(self) -> ManageResourcesInput:
+    def _shape_follows_action(self) -> ManageCatalogInput:
         if self.action == "create":
             if self.resource_id is not None:
                 raise ValueError("create takes no resource_id; it is for update.")
@@ -132,7 +132,7 @@ _OUTCOME = (
 )
 
 
-class ManagedResourcesResult(OutputModel):
+class ManagedCatalogResult(OutputModel):
     resource: Resource = Field(description="Which kind of row was written.")
     vehicle: FleetVehicle | None = Field(None, description="The saved vehicle, when resource=vehicle.")
     depot: SavedDepot | None = Field(None, description="The saved depot, when resource=depot.")
@@ -144,7 +144,7 @@ class ManagedResourcesResult(OutputModel):
     )
 
 
-def core_body(inp: ManageResourcesInput) -> dict[str, Any]:
+def core_body(inp: ManageCatalogInput) -> dict[str, Any]:
     """What Core receives: the row on create, only the changed fields on update. Same shape either
     way, because Core's create and update take the same field names."""
 
@@ -161,9 +161,9 @@ def _outcome(raw: str, action: str) -> Outcome:
     return "created" if action == "create" else "updated"
 
 
-def vehicle_result(saved: CoreVehicleSaved, action: str) -> ManagedResourcesResult:
+def vehicle_result(saved: CoreVehicleSaved, action: str) -> ManagedCatalogResult:
     row = saved.vehicle
-    return ManagedResourcesResult(
+    return ManagedCatalogResult(
         resource="vehicle",
         vehicle=FleetVehicle(
             # Same reshaping as list_fleet, so the id drops straight into an optimization.
@@ -178,8 +178,8 @@ def vehicle_result(saved: CoreVehicleSaved, action: str) -> ManagedResourcesResu
     )
 
 
-def depot_result(saved: CoreDepotSaved, action: str) -> ManagedResourcesResult:
-    return ManagedResourcesResult(
+def depot_result(saved: CoreDepotSaved, action: str) -> ManagedCatalogResult:
+    return ManagedCatalogResult(
         resource="depot",
         depot=SavedDepot(**saved.depot.model_dump()),
         outcome=_outcome(saved.outcome, action),
@@ -187,13 +187,13 @@ def depot_result(saved: CoreDepotSaved, action: str) -> ManagedResourcesResult:
     )
 
 
-def make_manage_resources_tool(deps: ToolDeps) -> Any:
-    async def manage_resources(ctx: Context) -> Annotated[CallToolResult, ManagedResourcesResult]:
+def make_manage_catalog_tool(deps: ToolDeps) -> Any:
+    async def manage_catalog(ctx: Context) -> Annotated[CallToolResult, ManagedCatalogResult]:
         async def handle(identity: RequestIdentity, arguments: dict[str, Any]) -> CallToolResult:
             from vepathos_mcp.schemas.mapping import request_fingerprint
 
             try:
-                inp = ManageResourcesInput.model_validate(arguments or {})
+                inp = ManageCatalogInput.model_validate(arguments or {})
             except ValidationError as exc:
                 raise validation_error_to_domain(exc) from None
             deps.rate_limiter.check(identity.subject, "catalog_writes")
@@ -216,6 +216,6 @@ def make_manage_resources_tool(deps: ToolDeps) -> Any:
                 saved_depot = await deps.core.update_depot(identity.call, inp.resource_id, body)
             return success_result(depot_result(saved_depot, inp.action))
 
-        return await instrumented(MANAGE_RESOURCES_TOOL, ctx, deps, handle)
+        return await instrumented(MANAGE_CATALOG_TOOL, ctx, deps, handle)
 
-    return manage_resources
+    return manage_catalog

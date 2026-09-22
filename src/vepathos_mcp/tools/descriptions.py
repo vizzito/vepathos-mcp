@@ -127,9 +127,9 @@ _AUTOMATIONS = (
     "one from a saved plan it copies). Always created switched off: only the user turns one on, in the "
     "dashboard. Never say one is running.\n"
 )
-# Only on a server that publishes manage_resources (MCP_CATALOG_WRITE_TOOLS_ENABLED).
+# Only on a server that publishes manage_catalog (MCP_CATALOG_WRITE_TOOLS_ENABLED).
 _CATALOG = (
-    "Saved vehicles and depots are the account's master data (manage_resources): change them only when "
+    "Saved vehicles and depots are the account's master data (manage_catalog): change them only when "
     "the user asks to add, save or edit one. How many vehicles a plan uses, stops per vehicle, "
     "a capacity or a depot for one run are plan settings: pass them to the optimize call and save "
     "nothing.\n"
@@ -239,8 +239,8 @@ LIST_FLEET_DESCRIPTION = (
     "means the account never set one, not that it carries nothing."
 )
 
-MANAGE_RESOURCES_TITLE = "Manage saved vehicles and depots"
-MANAGE_RESOURCES_DESCRIPTION = (
+MANAGE_CATALOG_TITLE = "Manage saved vehicles and depots"
+MANAGE_CATALOG_DESCRIPTION = (
     "Add or change one of the account's own things: a vehicle it owns, or a depot its routes start "
     "from: master data that stays after this conversation and shows in their dashboard. Call it only "
     "when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', 'van 4 now "
