@@ -41,7 +41,7 @@ Agents never see `:8100`. `SMART_IMPORT_URL` exists only on **api-doc**.
 
 | Item | Value |
 |---|---|
-| SSH | `deploy@` api-prod (`178.105.42.199`). User **`deploy` has no sudo** — never `/etc/…` |
+| SSH | the deploy user on api-prod, at the address `api.vepathos.com` resolves to. The user and its key live in the operator's notes, not in this repo. It has **no sudo** — never `/etc/…` |
 | DNS | GoDaddy, NS `ns53`/`ns54.domaincontrol.com` |
 | Docker network | **`vepathos-net`** (Caddy, api-doc, adapter). Not `vepathos-edge` |
 | Caddyfile on disk | `/home/deploy/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api/Caddyfile` |
@@ -64,7 +64,7 @@ docker inspect vepathos-caddy --format '{{range .Mounts}}{{println .Source}}{{en
 
 1. Pull/fix **api-doc** `develop` so `next build` typechecks. Deploy Core with **`MCP_CHANNEL_ENABLED=false`**.
 2. Confirm login on `https://api.vepathos.com`.
-3. DNS `mcp.vepathos.com` → `178.105.42.199`. Wait for `dig`.
+3. DNS `mcp.vepathos.com` → the same address as `api.vepathos.com`. Wait for `dig`.
 4. Adapter `.env` + compose on `vepathos-net`. **Do not** enable the channel yet.
 5. Caddy block + Let's Encrypt. `https://mcp.vepathos.com/health` → 200.
 6. Hairpin fix (`CADDY_VETH_IP`). JWKS 200 from inside the adapter container.
@@ -162,13 +162,14 @@ vepathos.com → DNS → Add:
 
 | Type | Name | Value | TTL |
 |---|---|---|---|
-| A | `mcp` | `178.105.42.199` | 600 |
+| A | `mcp` | same address as `api.vepathos.com` (`dig +short api.vepathos.com A`) | 600 |
 
 Same IP as `api.vepathos.com`. No CNAME to `api`. No HTTPS at GoDaddy.
 
 ```bash
 dig +short mcp.vepathos.com A
-# 178.105.42.199
+# must print what this prints:
+dig +short api.vepathos.com A
 ```
 
 Do not reload Caddy with the new host until this answers (Let's Encrypt HTTP-01).
@@ -292,7 +293,7 @@ curl -fsS https://mcp.vepathos.com/health
 ## 6. Hairpin (why `/ready` was 503)
 
 The adapter calls `https://api.vepathos.com` (JWKS + `/api/mcp/v1/health`). That name is this
-VM. From a container, `178.105.42.199:443` **times out**. `host-gateway:443` also times out
+VM. From a container, the VM's own public address on `:443` **times out**. `host-gateway:443` also times out
 (published-port DNAT does not apply between bridge peers).
 
 `/ready` returns **503** only if the service key is missing or **JWKS never loaded**. A Core

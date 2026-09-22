@@ -23,7 +23,7 @@ Internet ─► edge Caddy (TLS, :443) ─┬─► api.vepathos.com  (api-doc)
 
 | Item | Value |
 |---|---|
-| VM | `deploy@` api-prod (`178.105.42.199`) |
+| VM | api-prod, at the address `api.vepathos.com` resolves to. SSH user and key: the operator's notes, not this repo |
 | DNS | GoDaddy (`ns53`/`ns54.domaincontrol.com`) |
 | Edge | `vepathos-caddy` on Docker network **`vepathos-net`** |
 | Caddyfile | `~/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api/Caddyfile` |
@@ -40,7 +40,7 @@ the adapter container. Do not create a second network. Do not publish `:8080` on
 ## Order (do not skip)
 
 1. Core (`api-doc`) already on `develop`, MCP migrations applied, `MCP_CHANNEL_ENABLED=false`.
-2. DNS `A` for `mcp.vepathos.com` → `178.105.42.199`. Wait until `dig +short mcp.vepathos.com A`
+2. DNS `A` for `mcp.vepathos.com` → the same address as `api.vepathos.com`. Wait until `dig +short mcp.vepathos.com A`
    returns that address **before** reloading Caddy (Let's Encrypt).
 3. Adapter secrets + compose up (channel still false).
 4. `https://mcp.vepathos.com/health` → 200.
@@ -54,14 +54,15 @@ Domain **vepathos.com** → DNS → Add record:
 
 | Type | Name | Value | TTL |
 |---|---|---|---|
-| A | `mcp` | `178.105.42.199` | 600 s |
+| A | `mcp` | same address as `api.vepathos.com` (`dig +short api.vepathos.com A`) | 600 s |
 
 Same address as `api.vepathos.com`. No CNAME to `api`. No HTTPS at the registrar; Caddy terminates
 TLS. Apex / `www` stay unchanged.
 
 ```bash
 dig +short mcp.vepathos.com A
-# expect: 178.105.42.199
+# expect the same output as:
+dig +short api.vepathos.com A
 ```
 
 ## 2. Adapter secrets
