@@ -47,8 +47,8 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 | 1 | `cuenta`, `capacidades`, `flota` | L1.5, L1.6 |
 | 2 | `direcciones` | L2.2–L2.6 |
 | 3 | `importar`, `inyeccion` | the rest of L3 (files a script cannot hand over) |
-| 4 | `25_vehiculos`, `volumen`, `duracion`, `correr_y_reintentar` (3 turns) | L4.6–L4.11 |
-| 5 | `sprinter`, `sprinter_guardada` (3 turns), `tres_sprinter` | L5.6 (depot by address) |
+| 4 | `25_vehiculos`, `volumen`, `duracion`, `correr_y_reintentar` (3 turns), `sprinter_no_sale` (L4.6), `deposito_del_plan` (L4.8) | L4.7, L4.9–L4.11 |
+| 5 | `sprinter`, `sprinter_guardada` (3 turns), `tres_sprinter`, `furgon_actualizar` (L5.5, 3 turns), `deposito_por_direccion` (L5.6, 2 turns) | L5.7 (a depot at the plan's cap) |
 | 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
 | 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
 
@@ -104,6 +104,26 @@ The dev account carries leftovers from earlier runs — `Sprinter 1`, `Sprinter 
 Haiku battery, plus `Eval Sprinter`. The level 5 cases read the catalog, so those rows change what a run
 sees: "it already exists" can be yesterday's row rather than this run's. Clear them before reading a
 level 5 result as new.
+
+**Battery revision, 09-21 evening.** Four cases said "mi último plan guardado" or "el más chico" —
+`volumen`, `duracion`, `sin_si`, `correr_y_reintentar` — and so measured which row happened to be newest
+in the dev account. The newest had 0 stops: `volumen` never reached its question, and `sin_si` passed
+without the model ever being able to run, which makes the gate's own check vacuous. They now name the plan
+by something any account with plans has ("el plan guardado con más paradas", "el más chico que tenga
+paradas"), and `test_no_case_depends_on_which_plan_is_newest` keeps it that way. **Columns measured before
+this change used the old wording**; the comparison's header dates say which.
+
+Four cases added from the 0.8.0 smoke list, which the battery had never covered — `manage_depot` had no
+case at all: `sprinter_no_sale` (a vehicle out tomorrow is a plan setting, L4.6), `deposito_del_plan`
+(a saved depot used for one run, nothing saved, L4.8), `furgon_actualizar` (a change to a saved vehicle
+is an update, never a second row, L5.5) and `deposito_por_direccion` (an address is geocoded before a
+depot is saved, and only after the yes, L5.6). None has been run yet. The write cases are built to hold
+whatever earlier runs left behind: `deposito_por_direccion` converges by name, and `furgon_actualizar`
+keeps one row and uses update on both of its paths (created fresh, or met as `NAME_TAKEN`).
+
+The harness has its own tests now (`tests/unit/test_eval_harness.py`): each of the day's fixes — the
+closing yes, refused-approval vs asking to be let in, the rows `compare` used to drop, the dates — was
+checked against the version before it, and that version fails the test for its own bug.
 
 Checks that read which tools were called are evidence; checks that read prose are a heuristic and have
 been wrong three times in one day — once over an accent (`automáticas` against a pattern written
@@ -294,7 +314,7 @@ Same prompts (L1.2, L3.1, L4.1, L4.3, L5.1), different hosts. What differs is th
 | F5 | Smart Import | suggests `phone` for a column of dates; flagged as doubtful, but a poor suggestion |
 | F6 | MCP channel | no rebalancing by distance; `objective` is distance or duration only |
 | F7 | Audit 09-18 | single-stop run hangs; `contact_url` 404; `GEOCODE_EXPIRED` seconds after the first read; `arrival_time` without `route_start_time` |
-| F8 | Repo | production host and SSH user in public docs |
+| ~~F8~~ | Repo | ~~production host and SSH user in public docs~~ — **closed 09-21** (`980421b`): the docs say how to find the address instead of printing it, and `tests/unit/test_no_infrastructure_in_repo.py` fails on a public IPv4 or an SSH login in any tracked file. Git history still holds the old lines; rewriting it is a separate decision |
 | F10 | Web `/ai` + `ask_user` | **a question with a structured surface was asked in prose, and the surface left under it derails the answer.** Observed 09-21: the model had already chosen the plan and asked "¿cuántos vehículos querés usar y qué capacidad de peso (kg) y volumen (m³) tiene cada tipo?" as plain text. `ask_user` can ask exactly that — `kind: "fleet"` renders `FleetAsk`, which lists the account's fleets **and lets the user create one on the spot** (`events.ts:221`, `components/ai/asks/catalog-asks.tsx:96`). The user's own words were "con vehículos que no tengo guardados", so the model reasonably concluded a picker of saved fleets was useless: the tool description mentions the create path once, at the end of one line (`lib/ai/ask-user-tool.ts:40`). Two consequences, both live: the question has **no input affordance at all**, and the only interactive thing under it is the plans card left over from the earlier `list_plans`, whose primary action (`requestPlanSource`) **replaces the draft's orders** — clicking the one clickable thing destroys the context the question was asked in. No check looks at whether a pending question can be answered |
 | F9 | Web `/ai` | the plans card answers a question with navigation. When the model asks *which* saved plan to use, each row offers **Abrir**, which leaves the conversation, and a primary button labelled **Reoptimizar** — which does the right thing (`requestPlanSource` brings the plan's orders into the draft, `info-cards.tsx:177`) under a name that reads as "spend a run now". Neither button says "use this one". A plan with **0 stops** offers both actions although it cannot be routed, and one stuck `optimizing` has its action disabled with no reason given (see F7) |
 

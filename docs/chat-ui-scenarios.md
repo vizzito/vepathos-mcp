@@ -142,6 +142,16 @@ Write results to `vepathos-mcp/devtools/out/ui_eval/<label>.ui.json` in that run
 (`{label, model, runs, at, cases:{<key>:{level, turns, passed:{<check>:n}, transcripts}}}`); the directory
 is already read by `compare()`.
 
+> **Sync with `devtools/agent_eval.py`, 09-21 evening.** The web runner copies each case's turns
+> (`e2e-live/names.ts`), so it now differs from the MCP battery in two ways. Four turns were reworded to stop
+> depending on which plan is newest — `volumen`, `duracion`, `sin_si`, `correr_y_reintentar`: copy the new
+> text from `CASES`. And four keys are new — `sprinter_no_sale`, `deposito_del_plan`, `furgon_actualizar`,
+> `deposito_por_direccion`. The two write cases take different paths on the web, so assert the one the page
+> actually has: a vehicle goes through `manage_resource` and a pre-filled form, like `sprinter` (nothing is
+> written before `ai-fleet-dialog-submit`); a depot, per `e2e/ai-planner.spec.ts` `AI-resource-resume`, is
+> created by the page once it is located, with **no** form — so there the evidence is that the location
+> question is answered before the POST, not a submit click. Until the web copies them, those rows show `-`.
+
 Legend: **E** evidence (may fail), **S** smell (warn only).
 
 ---

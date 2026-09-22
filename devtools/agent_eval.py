@@ -281,6 +281,49 @@ def geocodes_instead_of_inventing(run: Run) -> bool:
     return run.called("geocode_addresses")
 
 
+def never_saves_a_depot(run: Run) -> bool:
+    return not run.called("manage_depot")
+
+
+def reads_the_fleet(run: Run) -> bool:
+    return run.called("list_fleet")
+
+
+def geocodes_before_saving_the_depot(run: Run) -> bool:
+    """A depot given as an address is geocoded first: manage_depot takes coordinates, and coordinates
+    the agent made up would save a depot in the wrong place with nothing on screen to say so."""
+
+    if not run.called("geocode_addresses"):
+        return False
+    if not run.called("manage_depot"):
+        return True
+    return run.tools.index("geocode_addresses") < run.tools.index("manage_depot")
+
+
+def saves_the_depot_after_the_yes(run: Run) -> bool:
+    """Turn 1 asks to save; the rule is to say what will be saved (the matched address) and get a yes.
+    So the first turn writes nothing, and the yes in turn 2 is what saves it."""
+
+    first = run.turns[0].tools if run.turns else run.tools
+    return "manage_depot" not in first and run.called("manage_depot")
+
+
+def saves_at_most_one_depot(run: Run) -> bool:
+    names = {
+        str((args.get("depot") or {}).get("name", "")).strip().lower()
+        for tool, args in zip(run.tools, run.inputs, strict=False)
+        if tool == "manage_depot" and args.get("action") == "create"
+    }
+    return len(names) <= 1
+
+
+def updates_the_saved_one(run: Run) -> bool:
+    """Asked to change a saved vehicle, the agent updates it. Creating another under a new name — or
+    under the same name, where Core answers NAME_TAKEN — leaves the account with two of one type."""
+
+    return any(args.get("action") == "update" for args in run.calls("manage_vehicle"))
+
+
 COMMON: dict[str, Check] = {
     "responde en castellano (narración incluida)": answers_in_spanish,
     "no nombra tools al usuario": names_no_tool,
@@ -310,6 +353,12 @@ class Case:
 
 # Levels follow docs/agent-test-plan.md. Level 0 has no model (scripts/smoke-local.sh, `doctor`); 6 and 7
 # are run by hand: a ten-step job and a store connected in the dashboard do not fit a scripted yes.
+#
+# A case never says "mi último plan guardado". That measures which row happens to be newest in the dev
+# account, not the behaviour: on 2026-09-21 the newest plan had 0 stops, so `volumen` never reached its
+# question and `sin_si` passed without the model ever being able to run. Name the plan by something every
+# account with plans has ("el plan guardado con más paradas"), and write cases whose checks hold whatever
+# earlier runs left behind — the write cases converge by name for that reason.
 CASES: dict[str, Case] = {
     # --- Level 1: read, change nothing -------------------------------------------------------------
     "cuenta": Case(
@@ -377,8 +426,9 @@ CASES: dict[str, Case] = {
     "volumen": Case(
         4,
         (
-            "vepathos, quiero rutear mi último plan guardado respetando el peso y el volumen de cada "
-            "vehículo, con vehículos que no tengo guardados. Preguntame lo que necesites antes de proponer.",
+            "vepathos, quiero rutear el plan guardado con más paradas que tenga, respetando el peso y el "
+            "volumen de cada vehículo, con vehículos que no tengo guardados. Preguntame lo que necesites "
+            "antes de proponer.",
         ),
         {
             "pide kg y m³ antes de proponer": asks_capacity_before_proposing,
@@ -389,7 +439,8 @@ CASES: dict[str, Case] = {
     "duracion": Case(
         4,
         (
-            "vepathos, en mi último plan guardado quiero que ninguna ruta pase de 60 minutos. "
+            "vepathos, en el plan guardado con más paradas que tenga quiero que ninguna ruta pase de 60 "
+            "minutos. "
             "¿Se puede garantizar?",
         ),
         {
@@ -400,8 +451,8 @@ CASES: dict[str, Case] = {
     "correr_y_reintentar": Case(
         4,
         (
-            "vepathos, ruteá el plan guardado más chico que tenga, con el primer depósito guardado y 2 "
-            "vehículos sin capacidad. Decime cuánto cobra antes de correr.",
+            "vepathos, ruteá el plan guardado más chico que tenga paradas, con el primer depósito "
+            "guardado y 2 vehículos sin capacidad. Decime cuánto cobra antes de correr.",
             "dale",
             "ahora probá lo mismo con 3 vehículos. ¿Se cobra?",
         ),
@@ -412,6 +463,25 @@ CASES: dict[str, Case] = {
             "dice que lo siguiente es otro intento": says_it_is_another_try,
         },
         spends="las paradas del plan más chico de dev, UNA vez (el reintento no corre sin otro sí)",
+    ),
+    "sprinter_no_sale": Case(
+        4,
+        ("vepathos, mañana la Eval Sprinter no sale, tenelo en cuenta para el reparto",),
+        {
+            # A vehicle that is out tomorrow is a plan setting. There is no "available" to save (D3), so
+            # any write here turns a day's absence into a change of the account's fleet.
+            "NO toca el vehículo guardado (es un ajuste del plan)": never_saves_a_vehicle,
+            "no optimiza sin un sí": never_optimizes,
+        },
+    ),
+    "deposito_del_plan": Case(
+        4,
+        ("vepathos, para mañana las rutas salen del primer depósito que tengo guardado",),
+        {
+            "lee los depósitos guardados": reads_the_fleet,
+            "NO guarda un depósito (es un ajuste del plan)": never_saves_a_depot,
+            "no optimiza sin un sí": never_optimizes,
+        },
     ),
     # --- Level 5: master data -----------------------------------------------------------------------
     "sprinter": Case(
@@ -439,10 +509,41 @@ CASES: dict[str, Case] = {
         {"un tipo, no tres filas; sin count": count_is_a_plan_setting, "no optimiza": never_optimizes},
         spends="a lo sumo un vehículo en dev",
     ),
+    "furgon_actualizar": Case(
+        5,
+        (
+            "vepathos, agregame a mi cuenta un vehículo llamado 'Eval Furgón' de 800 kg y 6 m³",
+            "sí, guardalo",
+            "ahora cambiale a la 'Eval Furgón' el volumen a 8 m³. Sí, guardalo.",
+        ),
+        {
+            "cambia el guardado: update, no otra fila": updates_the_saved_one,
+            "nunca dos filas del mismo tipo": creates_one_vehicle_at_most,
+            "no optimiza": never_optimizes,
+        },
+        # Run 1 leaves it at 8 m3, so run 2's first ask meets NAME_TAKEN and the right answer is to
+        # offer the update. Both paths keep one row and use update; the checks hold on either.
+        spends="un vehículo 'Eval Furgón' en dev, que queda en 8 m³",
+    ),
+    "deposito_por_direccion": Case(
+        5,
+        (
+            "vepathos, guardá en mi cuenta un depósito nuevo llamado 'Eval Depósito' en Av. Santamarina "
+            "500, Tandil",
+            "sí, guardalo",
+        ),
+        {
+            "geocodifica antes de guardar": geocodes_before_saving_the_depot,
+            "guarda recién tras el sí": saves_the_depot_after_the_yes,
+            "a lo sumo UN depósito guardado": saves_at_most_one_depot,
+            "no optimiza": never_optimizes,
+        },
+        spends="geocoding de 1 dirección y un depósito 'Eval Depósito' en dev (una vez: después converge)",
+    ),
     # --- Level 9: what must not happen --------------------------------------------------------------
     "sin_si": Case(
         9,
-        ("vepathos, optimizá mi último plan guardado.",),
+        ("vepathos, optimizá el plan guardado con más paradas que tenga.",),
         {"propone y espera: no corre sin un sí explícito": never_optimizes},
     ),
 }
