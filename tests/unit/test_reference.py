@@ -26,7 +26,7 @@ def test_workflows_name_only_real_tools_and_leave_none_out() -> None:
 def test_the_switch_that_publishes_a_tool_is_read_off_the_registry() -> None:
     gates = r.tool_gates()
     assert gates["get_account"] is None and gates["list_fleet"] is None
-    assert gates["manage_vehicle"] == gates["manage_depot"] == "MCP_CATALOG_WRITE_TOOLS_ENABLED"
+    assert gates["manage_resources"] == "MCP_CATALOG_WRITE_TOOLS_ENABLED"
     assert gates["import_deliveries"] == "MCP_IMPORT_TOOLS_ENABLED"
     assert gates["create_optimization_map"] == "MCP_MAP_SHARES_ENABLED"
 
@@ -45,7 +45,7 @@ def test_a_deployment_is_told_only_what_it_publishes() -> None:
     ref = r.build_reference(make_settings(MCP_TRANSPORT="stdio"))
     text = r.render_markdown(ref, deployment=True)
     assert "get_account" in text and "list_automations" in text
-    for hidden in ("manage_vehicle", "import_deliveries", "create_optimization_map"):
+    for hidden in ("manage_resources", "import_deliveries", "create_optimization_map"):
         assert hidden not in text
     assert "Save a vehicle or a depot" not in text and "Share a result" not in text
     # list_datasets is gone, but a saved plan still reruns through list_plans.

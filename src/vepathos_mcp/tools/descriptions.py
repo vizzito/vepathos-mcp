@@ -127,10 +127,10 @@ _AUTOMATIONS = (
     "one from a saved plan it copies). Always created switched off: only the user turns one on, in the "
     "dashboard. Never say one is running.\n"
 )
-# Only on a server that publishes manage_vehicle / manage_depot (MCP_CATALOG_WRITE_TOOLS_ENABLED).
+# Only on a server that publishes manage_resources (MCP_CATALOG_WRITE_TOOLS_ENABLED).
 _CATALOG = (
-    "Saved vehicles and depots are the account's master data (manage_vehicle, manage_depot): change them "
-    "only when the user asks to add, save or edit one. How many vehicles a plan uses, stops per vehicle, "
+    "Saved vehicles and depots are the account's master data (manage_resources): change them only when "
+    "the user asks to add, save or edit one. How many vehicles a plan uses, stops per vehicle, "
     "a capacity or a depot for one run are plan settings: pass them to the optimize call and save "
     "nothing.\n"
 )
@@ -239,33 +239,25 @@ LIST_FLEET_DESCRIPTION = (
     "means the account never set one, not that it carries nothing."
 )
 
-MANAGE_VEHICLE_TITLE = "Manage saved vehicles"
-MANAGE_VEHICLE_DESCRIPTION = (
-    "Add or change a vehicle saved in the user's Vepathos account: master data that stays after this "
-    "conversation and shows in their dashboard. Call it only when the user asks to add, save or edit a "
-    "vehicle ('add a 1,500 kg Sprinter', 'van 4 now carries 12 m3'). Not for one plan: how many vehicles "
-    "a run uses, stops per vehicle, a capacity for today only or a vehicle that is out tomorrow are plan "
-    "settings: pass them in vehicles[] to optimize_routes and save nothing. "
-    "'Use 25 vehicles' is a plan setting, never 25 new vehicles. One vehicle per call: it is a type with "
-    "its capacity, and how many units a plan uses is count on that plan. action=create takes vehicle "
-    "(name, max_weight_kg, max_volume_m3); a name the account already has returns that vehicle "
-    "(outcome=already_existed) when the capacities match and NAME_TAKEN when they differ: ask whether to "
-    "update it or use another name. action=update takes vehicle_id (list_fleet vehicles) and changes. "
+MANAGE_RESOURCES_TITLE = "Manage saved vehicles and depots"
+MANAGE_RESOURCES_DESCRIPTION = (
+    "Add or change one of the account's own things: a vehicle it owns, or a depot its routes start "
+    "from: master data that stays after this conversation and shows in their dashboard. Call it only "
+    "when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', 'van 4 now "
+    "carries 12 m3', 'save a depot in Barracas'). Not for one plan: how many vehicles a run uses, stops "
+    "per vehicle, a capacity for today only, a vehicle that is out tomorrow or a depot for one run are "
+    "plan settings: pass them to optimize_routes and save nothing. 'Use 25 vehicles' is a plan setting, "
+    "never 25 new vehicles. To use a saved depot ('use the Barracas depot'), pass its depot_id from "
+    "list_fleet to optimize_routes. "
+    "resource=vehicle takes name, max_weight_kg and max_volume_m3: one vehicle per call, because it is a "
+    "type with its capacity and how many units a plan uses is count on that plan. resource=depot takes "
+    "name, latitude and longitude: an address goes through geocode_addresses first; tell the user the "
+    "matched address before saving and do not invent coordinates. "
+    "action=create needs the name (and the coordinates for a depot); a name the account already has "
+    "returns that row (outcome=already_existed) when the values match and NAME_TAKEN when they differ: "
+    "ask whether to update it or use another name. action=update needs resource_id (a vehicle_id or "
+    "depot_id from list_fleet) and the fields to change; what is omitted stays as it is. "
     "Say what will be saved and get a yes first. Does not consume plan stops."
-)
-
-MANAGE_DEPOT_TITLE = "Manage saved depots"
-MANAGE_DEPOT_DESCRIPTION = (
-    "Add or change a depot saved in the user's Vepathos account, the place routes start from: master data "
-    "that stays after this conversation. Call it only when the user asks to add, save, rename or move a "
-    "depot. A depot for one run is a plan setting: pass it as depot to optimize_routes and save nothing. "
-    "To use a saved one ('use the Barracas depot'), pass its depot_id from list_fleet. Takes latitude and "
-    "longitude: an address "
-    "goes through geocode_addresses first; tell the user the matched address before saving and do not "
-    "invent coordinates. action=create takes depot (name, latitude, longitude); a name the account already "
-    "has returns that depot (outcome=already_existed) when it is the same place and NAME_TAKEN otherwise. "
-    "action=update takes depot_id (list_fleet depots) and changes. Say what will be saved and get a yes "
-    "first. Does not consume plan stops."
 )
 
 GET_ACCOUNT_TITLE = "Get connected account"

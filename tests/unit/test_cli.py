@@ -37,7 +37,7 @@ def test_tools_and_workflows_print_the_registry(capsys: pytest.CaptureFixture[st
     assert "optimize_routes\n---------------" in out
     assert "Published:   when MCP_CATALOG_WRITE_TOOLS_ENABLED=true" in out
     main(["workflows"])
-    assert "list_fleet → manage_vehicle | manage_depot" in capsys.readouterr().out
+    assert "list_fleet → manage_resources" in capsys.readouterr().out
     main(["tools", "--table"])
     assert "| `get_account` |" in capsys.readouterr().out
 

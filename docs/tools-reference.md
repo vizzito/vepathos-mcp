@@ -12,7 +12,7 @@ Rendered with every optional tool enabled and `MCP_CONFIRM_BEFORE_OPTIMIZE=false
 - **Plan and run**: `optimize_routes`, `list_plans`, `get_optimization_result`
 - **Imports**: `import_deliveries`, `get_import_result`, `update_import_mapping`, `list_datasets`
 - **Addresses**: `geocode_addresses`, `get_geocode_result`
-- **Saved vehicles and depots**: `list_fleet`, `manage_vehicle`, `manage_depot`
+- **Saved vehicles and depots**: `list_fleet`, `manage_resources`
 - **Automations**: `list_automations`, `create_automation`
 - **Share**: `create_optimization_map`
 
@@ -44,7 +44,7 @@ Rendered with every optional tool enabled and `MCP_CONFIRM_BEFORE_OPTIMIZE=false
 
 **Save a vehicle or a depot.** The user asks to add, save or edit one in their account; never for one plan's settings.
 
-`list_fleet → manage_vehicle | manage_depot (a depot given as an address goes through geocode_addresses first)`
+`list_fleet → manage_resources (a depot given as an address goes through geocode_addresses first)`
 
 ## `optimize_routes`
 
@@ -459,44 +459,11 @@ Takes no arguments.
 | `empty` | boolean | True when the account has no fleet loaded: ask the user to describe the vehicles. |
 | `error` | object |  |
 
-## `manage_vehicle`
+## `manage_resources`
 
-**Manage saved vehicles**
+**Manage saved vehicles and depots**
 
-Add or change a vehicle saved in the user's Vepathos account: master data that stays after this conversation and shows in their dashboard. Call it only when the user asks to add, save or edit a vehicle ('add a 1,500 kg Sprinter', 'van 4 now carries 12 m3'). Not for one plan: how many vehicles a run uses, stops per vehicle, a capacity for today only or a vehicle that is out tomorrow are plan settings: pass them in vehicles[] to optimize_routes and save nothing. 'Use 25 vehicles' is a plan setting, never 25 new vehicles. One vehicle per call: it is a type with its capacity, and how many units a plan uses is count on that plan. action=create takes vehicle (name, max_weight_kg, max_volume_m3); a name the account already has returns that vehicle (outcome=already_existed) when the capacities match and NAME_TAKEN when they differ: ask whether to update it or use another name. action=update takes vehicle_id (list_fleet vehicles) and changes. Say what will be saved and get a yes first. Does not consume plan stops.
-
-- Read only: no · Destructive: yes · Idempotent: yes · Open world: no
-- Published: `MCP_CATALOG_WRITE_TOOLS_ENABLED`
-- Workflows: Save a vehicle or a depot
-
-### Input
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `action` | create \| update | yes | create saves a new vehicle; update changes one the account already has. |
-| `vehicle` | object | no | For create: the vehicle to save. |
-| `vehicle.name` | string | yes | What the user calls it, e.g. 'Sprinter'. |
-| `vehicle.max_weight_kg` | number | no | Payload capacity in kilograms. Omit when the user did not give one: never invent a capacity. |
-| `vehicle.max_volume_m3` | number | no | Cargo volume in cubic meters. Omit when the user did not give one. |
-| `vehicle_id` | string | no | For update: a vehicle_id from list_fleet's top-level vehicles. |
-| `changes` | object | no | For update: the fields to change. |
-| `changes.name` | string | no | New name. |
-| `changes.max_weight_kg` | number | no | New payload capacity, kg. |
-| `changes.max_volume_m3` | number | no | New cargo volume, m3. |
-
-### Output
-
-| Field | Type | Description |
-|---|---|---|
-| `vehicle` | any |  |
-| `outcome` | created \| updated \| already_existed | created, updated, or already_existed: the account had this exact one, so nothing was written. Say which to the user. |
-| `account_url` | string | Opens the account's saved vehicles in the Vepathos dashboard. Requires signing in. |
-
-## `manage_depot`
-
-**Manage saved depots**
-
-Add or change a depot saved in the user's Vepathos account, the place routes start from: master data that stays after this conversation. Call it only when the user asks to add, save, rename or move a depot. A depot for one run is a plan setting: pass it as depot to optimize_routes and save nothing. To use a saved one ('use the Barracas depot'), pass its depot_id from list_fleet. Takes latitude and longitude: an address goes through geocode_addresses first; tell the user the matched address before saving and do not invent coordinates. action=create takes depot (name, latitude, longitude); a name the account already has returns that depot (outcome=already_existed) when it is the same place and NAME_TAKEN otherwise. action=update takes depot_id (list_fleet depots) and changes. Say what will be saved and get a yes first. Does not consume plan stops.
+Add or change one of the account's own things: a vehicle it owns, or a depot its routes start from: master data that stays after this conversation and shows in their dashboard. Call it only when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', 'van 4 now carries 12 m3', 'save a depot in Barracas'). Not for one plan: how many vehicles a run uses, stops per vehicle, a capacity for today only, a vehicle that is out tomorrow or a depot for one run are plan settings: pass them to optimize_routes and save nothing. 'Use 25 vehicles' is a plan setting, never 25 new vehicles. To use a saved depot ('use the Barracas depot'), pass its depot_id from list_fleet to optimize_routes. resource=vehicle takes name, max_weight_kg and max_volume_m3: one vehicle per call, because it is a type with its capacity and how many units a plan uses is count on that plan. resource=depot takes name, latitude and longitude: an address goes through geocode_addresses first; tell the user the matched address before saving and do not invent coordinates. action=create needs the name (and the coordinates for a depot); a name the account already has returns that row (outcome=already_existed) when the values match and NAME_TAKEN when they differ: ask whether to update it or use another name. action=update needs resource_id (a vehicle_id or depot_id from list_fleet) and the fields to change; what is omitted stays as it is. Say what will be saved and get a yes first. Does not consume plan stops.
 
 - Read only: no · Destructive: yes · Idempotent: yes · Open world: no
 - Published: `MCP_CATALOG_WRITE_TOOLS_ENABLED`
@@ -506,24 +473,24 @@ Add or change a depot saved in the user's Vepathos account, the place routes sta
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `action` | create \| update | yes | create saves a new depot; update renames or moves one the account already has. |
-| `depot` | object | no | For create: the depot to save. |
-| `depot.name` | string | yes | What the user calls it, e.g. 'Barracas'. |
-| `depot.latitude` | number | yes | Decimal degrees (WGS84). From geocode_addresses when given an address. |
-| `depot.longitude` | number | yes | Decimal degrees (WGS84). |
-| `depot_id` | string | no | For update: a depot_id from list_fleet's depots. |
-| `changes` | object | no | For update: the fields to change. |
-| `changes.name` | string | no | New name. |
-| `changes.latitude` | number | no | New latitude; send longitude too. |
-| `changes.longitude` | number | no | New longitude; send latitude too. |
+| `resource` | vehicle \| depot | yes | vehicle saves a vehicle the account owns; depot saves a place routes start from. |
+| `action` | create \| update | yes | create saves a new one; update changes one the account already has. |
+| `resource_id` | string | no | For update: a vehicle_id or depot_id from list_fleet. |
+| `name` | string | no | What the user calls it, e.g. 'Sprinter' or 'Barracas'. Required to create. |
+| `max_weight_kg` | number | no | Vehicle only. Payload capacity in kilograms. Omit when the user did not give one: never invent a capacity. |
+| `max_volume_m3` | number | no | Vehicle only. Cargo volume in cubic meters. Omit when the user did not give one. |
+| `latitude` | number | no | Depot only. Decimal degrees (WGS84). From geocode_addresses when given an address. Required to create a depot. |
+| `longitude` | number | no | Depot only. Decimal degrees (WGS84). Send it with latitude. |
 
 ### Output
 
 | Field | Type | Description |
 |---|---|---|
-| `depot` | any |  |
+| `resource` | vehicle \| depot | Which kind of row was written. |
+| `vehicle` | any | The saved vehicle, when resource=vehicle. |
+| `depot` | any | The saved depot, when resource=depot. |
 | `outcome` | created \| updated \| already_existed | created, updated, or already_existed: the account had this exact one, so nothing was written. Say which to the user. |
-| `account_url` | string | Opens the account's saved depots in the Vepathos dashboard. Requires signing in. |
+| `account_url` | string | Opens the account's saved vehicles and depots in the Vepathos dashboard. Requires signing in. |
 
 ## `list_automations`
 

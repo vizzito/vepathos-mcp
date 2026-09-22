@@ -28,12 +28,9 @@ from vepathos_mcp.tools.automations import (
     make_list_automations_tool,
 )
 from vepathos_mcp.tools.catalog_admin import (
-    MANAGE_DEPOT_TOOL,
-    MANAGE_VEHICLE_TOOL,
-    ManageDepotInput,
-    ManageVehicleInput,
-    make_manage_depot_tool,
-    make_manage_vehicle_tool,
+    MANAGE_RESOURCES_TOOL,
+    ManageResourcesInput,
+    make_manage_resources_tool,
 )
 from vepathos_mcp.tools.fleet import TOOL_NAME as LIST_FLEET_TOOL
 from vepathos_mcp.tools.fleet import make_list_fleet_tool
@@ -186,22 +183,13 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
         # Master data, behind its own flag: deploying the code publishes nothing new.
         tools += [
             _tool(
-                make_manage_vehicle_tool(deps),
-                name=MANAGE_VEHICLE_TOOL,
-                title=descriptions.MANAGE_VEHICLE_TITLE,
-                description=descriptions.MANAGE_VEHICLE_DESCRIPTION,
-                schema_model=ManageVehicleInput,
+                make_manage_resources_tool(deps),
+                name=MANAGE_RESOURCES_TOOL,
+                title=descriptions.MANAGE_RESOURCES_TITLE,
+                description=descriptions.MANAGE_RESOURCES_DESCRIPTION,
+                schema_model=ManageResourcesInput,
                 read_only=False,
                 # An update overwrites what the account had saved.
-                destructive=True,
-            ),
-            _tool(
-                make_manage_depot_tool(deps),
-                name=MANAGE_DEPOT_TOOL,
-                title=descriptions.MANAGE_DEPOT_TITLE,
-                description=descriptions.MANAGE_DEPOT_DESCRIPTION,
-                schema_model=ManageDepotInput,
-                read_only=False,
                 destructive=True,
             ),
         ]

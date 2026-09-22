@@ -105,7 +105,7 @@ def test_every_case_is_well_formed() -> None:
 
 
 def test_master_data_is_covered_for_depots_too() -> None:
-    # manage_depot had no case at all until 0.8.0's battery was reread against the smoke list.
+    # manage_resources had no case at all until 0.8.0's battery was reread against the smoke list.
     assert any(
         check is agent_eval.geocodes_before_saving_the_depot
         for case in CASES.values()
@@ -117,34 +117,34 @@ def test_master_data_is_covered_for_depots_too() -> None:
 
 
 def test_a_depot_address_is_geocoded_before_it_is_saved() -> None:
-    assert agent_eval.geocodes_before_saving_the_depot(run(["geocode_addresses", "manage_depot"]))
+    assert agent_eval.geocodes_before_saving_the_depot(run(["geocode_addresses", "manage_resources"]))
     assert agent_eval.geocodes_before_saving_the_depot(run(["geocode_addresses"]))  # asked, did not save
-    assert not agent_eval.geocodes_before_saving_the_depot(run(["manage_depot"]))  # invented coordinates
-    assert not agent_eval.geocodes_before_saving_the_depot(run(["manage_depot", "geocode_addresses"]))
+    assert not agent_eval.geocodes_before_saving_the_depot(run(["manage_resources"]))  # invented coordinates
+    assert not agent_eval.geocodes_before_saving_the_depot(run(["manage_resources", "geocode_addresses"]))
 
 
 def test_a_depot_is_saved_only_after_the_yes() -> None:
-    first, second = run(["geocode_addresses"]), run(["manage_depot"])
+    first, second = run(["geocode_addresses"]), run(["manage_resources"])
     assert agent_eval.saves_the_depot_after_the_yes(
-        run(["geocode_addresses", "manage_depot"], turns=[first, second])
+        run(["geocode_addresses", "manage_resources"], turns=[first, second])
     )
-    too_early = run(["manage_depot"])
-    assert not agent_eval.saves_the_depot_after_the_yes(run(["manage_depot"], turns=[too_early, run([])]))
+    too_early = run(["manage_resources"])
+    assert not agent_eval.saves_the_depot_after_the_yes(run(["manage_resources"], turns=[too_early, run([])]))
     assert not agent_eval.saves_the_depot_after_the_yes(run(["geocode_addresses"], turns=[first, run([])]))
 
 
 def test_one_depot_at_most() -> None:
-    create = {"action": "create", "depot": {"name": "Eval Depósito"}}
-    other = {"action": "create", "depot": {"name": "Eval Depósito 2"}}
-    assert agent_eval.saves_at_most_one_depot(run(["manage_depot", "manage_depot"], [create, create]))
-    assert not agent_eval.saves_at_most_one_depot(run(["manage_depot", "manage_depot"], [create, other]))
+    create = {"resource": "depot", "action": "create", "name": "Eval Depósito"}
+    other = {"resource": "depot", "action": "create", "name": "Eval Depósito 2"}
+    assert agent_eval.saves_at_most_one_depot(run(["manage_resources", "manage_resources"], [create, create]))
+    assert not agent_eval.saves_at_most_one_depot(run(["manage_resources", "manage_resources"], [create, other]))
 
 
 def test_changing_a_saved_vehicle_updates_it() -> None:
-    update = {"action": "update", "vehicle_id": "12", "changes": {"max_volume_m3": 8}}
-    create = {"action": "create", "vehicle": {"name": "Eval Furgón 2"}}
-    assert agent_eval.updates_the_saved_one(run(["manage_vehicle"], [update]))
-    assert not agent_eval.updates_the_saved_one(run(["manage_vehicle"], [create]))
+    update = {"resource": "vehicle", "action": "update", "resource_id": "12", "max_volume_m3": 8}
+    create = {"resource": "vehicle", "action": "create", "name": "Eval Furgón 2"}
+    assert agent_eval.updates_the_saved_one(run(["manage_resources"], [update]))
+    assert not agent_eval.updates_the_saved_one(run(["manage_resources"], [create]))
 
 
 # --- the comparison hides nothing, and says when each column was measured -----------------------------

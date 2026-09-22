@@ -22,8 +22,7 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | always |
 | `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | always |
 | `list_fleet` | List what the connected Vepathos account has saved. | no | always |
-| `manage_vehicle` | Add or change a vehicle saved in the user's Vepathos account: master data that stays after this conversation and shows in their dashboard. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
-| `manage_depot` | Add or change a depot saved in the user's Vepathos account, the place routes start from: master data that stays after this conversation. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `manage_resources` | Add or change one of the account's own things. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
 | `list_automations` | List the connected Vepathos account's standing rules. | no | always |
 | `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | always |
 | `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | `MCP_MAP_SHARES_ENABLED` |

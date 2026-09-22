@@ -643,14 +643,20 @@ async def test_an_account_without_automations_is_told_so_before_anything_is_writ
 
 
 CATALOG_WRITES = {"MCP_CATALOG_WRITE_TOOLS_ENABLED": "true"}
-SPRINTER = {"action": "create", "vehicle": {"name": "Sprinter", "max_weight_kg": 1500, "max_volume_m3": 14}}
+SPRINTER = {
+    "resource": "vehicle",
+    "action": "create",
+    "name": "Sprinter",
+    "max_weight_kg": 1500,
+    "max_volume_m3": 14,
+}
 
 
 async def test_a_saved_vehicle_shows_in_the_fleet_and_asking_again_writes_nothing(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, created = await call(client, "manage_vehicle", SPRINTER)
+        is_error, created = await call(client, "manage_resources", SPRINTER)
         assert not is_error, created
         assert created["outcome"] == "created" and created["vehicle"]["max_weight_kg"] == 1500
         assert created["account_url"].endswith("/vehicles")
@@ -659,8 +665,8 @@ async def test_a_saved_vehicle_shows_in_the_fleet_and_asking_again_writes_nothin
         assert [v["name"] for v in fleet["vehicles"]] == ["Sprinter"]
 
         # A retry, or a model asking twice with another spelling, converges on the same row.
-        again = {"action": "create", "vehicle": {**SPRINTER["vehicle"], "name": "sprinter"}}
-        is_error, replay = await call(client, "manage_vehicle", again)
+        again = {**SPRINTER, "name": "sprinter"}
+        is_error, replay = await call(client, "manage_resources", again)
         assert not is_error and replay["outcome"] == "already_existed"
         assert replay["vehicle"]["vehicle_id"] == created["vehicle"]["vehicle_id"]
     assert len(core_state.vehicles) == 1
@@ -670,9 +676,9 @@ async def test_a_name_in_use_with_other_values_is_the_users_call(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        await call(client, "manage_vehicle", SPRINTER)
-        other = {"action": "create", "vehicle": {"name": "Sprinter", "max_weight_kg": 900}}
-        is_error, payload = await call(client, "manage_vehicle", other)
+        await call(client, "manage_resources", SPRINTER)
+        other = {"resource": "vehicle", "action": "create", "name": "Sprinter", "max_weight_kg": 900}
+        is_error, payload = await call(client, "manage_resources", other)
     assert is_error and payload["error"]["code"] == "NAME_TAKEN"
     assert payload["error"]["details"]["existing"]["max_weight_kg"] == 1500
     assert len(core_state.vehicles) == 1
@@ -682,16 +688,16 @@ async def test_a_saved_vehicle_is_updated_by_the_id_list_fleet_gave(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
-        _, created = await call(client, "manage_vehicle", SPRINTER)
+        _, created = await call(client, "manage_resources", SPRINTER)
         vehicle_id = created["vehicle"]["vehicle_id"]
-        update = {"action": "update", "vehicle_id": vehicle_id, "changes": {"max_volume_m3": 12}}
-        is_error, updated = await call(client, "manage_vehicle", update)
+        update = {"resource": "vehicle", "action": "update", "resource_id": vehicle_id, "max_volume_m3": 12}
+        is_error, updated = await call(client, "manage_resources", update)
         assert not is_error, updated
         assert updated["outcome"] == "updated" and updated["vehicle"]["max_volume_m3"] == 12
         assert updated["vehicle"]["max_weight_kg"] == 1500
 
-        missing = {"action": "update", "vehicle_id": "999", "changes": {"name": "x"}}
-        is_error, payload = await call(client, "manage_vehicle", missing)
+        missing = {"resource": "vehicle", "action": "update", "resource_id": "999", "name": "x"}
+        is_error, payload = await call(client, "manage_resources", missing)
         assert is_error and payload["error"]["code"] == "VEHICLE_NOT_FOUND"
 
 
@@ -700,7 +706,7 @@ async def test_the_plans_catalog_cap_is_said_before_anything_is_written(
 ) -> None:
     core_state.max_vehicles = 0
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, payload = await call(client, "manage_vehicle", SPRINTER)
+        is_error, payload = await call(client, "manage_resources", SPRINTER)
     assert is_error and payload["error"]["code"] == "PLAN_UPGRADE_REQUIRED"
     assert payload["error"]["details"]["reason"] == "CATALOG_VEHICLE_LIMIT"
     assert core_state.vehicles == []
@@ -712,9 +718,9 @@ async def test_use_25_vehicles_cannot_become_25_saved_vehicles(
     async with await mcp_client(**CATALOG_WRITES) as client:
         for arguments in (
             {**SPRINTER, "count": 25},
-            {"action": "create", "vehicle": {"name": "S", "count": 25}},
+            {"resource": "vehicle", "action": "create", "name": "S", "available": False},
         ):
-            is_error, payload = await call(client, "manage_vehicle", arguments)
+            is_error, payload = await call(client, "manage_resources", arguments)
             assert is_error and payload["error"]["code"] == "INVALID_INPUT"
     assert core_state.vehicles == []
 
@@ -723,11 +729,14 @@ async def test_a_saved_depot_is_read_back_with_coordinates_an_optimization_takes
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
     barracas = {
+        "resource": "depot",
         "action": "create",
-        "depot": {"name": "Barracas", "latitude": -34.6441, "longitude": -58.3816},
+        "name": "Barracas",
+        "latitude": -34.6441,
+        "longitude": -58.3816,
     }
     async with await mcp_client(**CATALOG_WRITES) as client:
-        is_error, created = await call(client, "manage_depot", barracas)
+        is_error, created = await call(client, "manage_resources", barracas)
         assert not is_error, created
         assert created["outcome"] == "created" and created["account_url"].endswith("/milestones")
 
@@ -736,19 +745,20 @@ async def test_a_saved_depot_is_read_back_with_coordinates_an_optimization_takes
         assert fleet["depots"][0]["latitude"] == -34.6441
 
         # The same place under the same name is the same depot; another place is not.
-        nearby = {"action": "create", "depot": {**barracas["depot"], "latitude": -34.64412}}
-        _, replay = await call(client, "manage_depot", nearby)
+        nearby = {**barracas, "latitude": -34.64412}
+        _, replay = await call(client, "manage_resources", nearby)
         assert replay["outcome"] == "already_existed"
-        elsewhere = {"action": "create", "depot": {**barracas["depot"], "latitude": -34.9}}
-        is_error, payload = await call(client, "manage_depot", elsewhere)
+        elsewhere = {**barracas, "latitude": -34.9}
+        is_error, payload = await call(client, "manage_resources", elsewhere)
         assert is_error and payload["error"]["code"] == "NAME_TAKEN"
 
         rename = {
+            "resource": "depot",
             "action": "update",
-            "depot_id": created["depot"]["depot_id"],
-            "changes": {"name": "Barracas Sur"},
+            "resource_id": created["depot"]["depot_id"],
+            "name": "Barracas Sur",
         }
-        _, renamed = await call(client, "manage_depot", rename)
+        _, renamed = await call(client, "manage_resources", rename)
         assert renamed["outcome"] == "updated" and renamed["depot"]["name"] == "Barracas Sur"
     assert len(core_state.depots) == 1
 
@@ -760,14 +770,14 @@ async def test_depots_are_read_on_every_server_but_written_only_behind_the_flag(
     async with await mcp_client() as client:
         names = {t.name for t in (await client.list_tools()).tools}
         _, fleet = await call(client, "list_fleet", {})
-    assert not names & {"manage_vehicle", "manage_depot"}
+    assert "manage_resources" not in names
     assert fleet["depots"][0]["name"] == "Barracas"
 
 
 async def test_tools_that_overwrite_something_saved_say_so(mcp_client: Callable[..., Any]) -> None:
     async with await mcp_client(**CATALOG_WRITES) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    for name in ("optimize_routes", "optimize_routes", "manage_vehicle", "manage_depot"):
+    for name in ("optimize_routes", "manage_resources"):
         annotations = tools[name].annotations
         assert annotations is not None
         assert annotations.destructive_hint is True and annotations.read_only_hint is False, name

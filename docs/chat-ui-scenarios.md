@@ -147,7 +147,7 @@ is already read by `compare()`.
 > depending on which plan is newest — `volumen`, `duracion`, `sin_si`, `correr_y_reintentar`: copy the new
 > text from `CASES`. And four keys are new — `sprinter_no_sale`, `deposito_del_plan`, `furgon_actualizar`,
 > `deposito_por_direccion`. The two write cases take different paths on the web, so assert the one the page
-> actually has: a vehicle goes through `manage_resource` and a pre-filled form, like `sprinter` (nothing is
+> actually has: a vehicle goes through the page's `manage_resource` and a pre-filled form, like `sprinter` (nothing is
 > written before `ai-fleet-dialog-submit`); a depot, per `e2e/ai-planner.spec.ts` `AI-resource-resume`, is
 > created by the page once it is located, with **no** form — so there the evidence is that the location
 > question is answered before the POST, not a submit click. Until the web copies them, those rows show `-`.
@@ -270,7 +270,7 @@ Ask for a run, approve, then ask to rerun with other vehicles.
 ### `sprinter` · L5 · may leave one vehicle — *a different mechanism here*
 Say: `agregame a mi cuenta una Sprinter de 1.500 kg y 14 m³`.
 
-On this surface there is no `manage_vehicle`. The model emits `manage_resource`
+On this surface the MCP's `manage_resources` is not offered. The model emits the page's `manage_resource`
 (`lib/ai/manage-resource-tool.ts`), the page opens a **pre-filled form**, and the person saves.
 
 - **E** `manage-resource` event → `ai-fleet-dialog` opens with `ai-fleet-dialog-name` pre-filled

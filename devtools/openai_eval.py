@@ -66,7 +66,7 @@ MAX_HOPS_PER_TURN = 6
 # Tools whose call must be approved before it runs. The rest are `require_approval: never`, as the
 # dashboard sends them. These are the ones that spend the account's stops or change what it has saved:
 # the ticket in front of them is the whole reason the web reads the arguments before approving.
-NEEDS_APPROVAL = ("optimize_routes", "manage_vehicle", "manage_depot")
+NEEDS_APPROVAL = ("optimize_routes", "manage_resources")
 # What the user says to mean yes. An approval is answered only right after one of these: a model that
 # asks to run something the user never agreed to must be refused, and that refusal is the measurement.
 # A yes also counts when it closes the message ("...de 1.500 kg y 14 m3. Si, guardalo."), which is how
