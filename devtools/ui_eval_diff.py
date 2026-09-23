@@ -7,6 +7,7 @@ question instead: between THESE two labels, which rows moved, which got slower, 
 compared at all because the check itself changed in between. A row nobody can compare is said so, never
 shown as a tie.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -32,9 +33,13 @@ def main(left_label, right_label):
     print(f"{left_label} (runs {left['runs']}) → {right_label} (runs {right['runs']})")
     if right.get("cascade"):
         c = right["cascade"]
-        print(f"cascada medida: {c.get('primary_provider')} · {c.get('local_llm_model')} → {c.get('secondary_llm_model')} → {c.get('fallback_provider')}")
+        print(
+            f"cascada medida: {c.get('primary_provider')} · {c.get('local_llm_model')} → "
+            f"{c.get('secondary_llm_model')} → {c.get('fallback_provider')}"
+        )
     if right.get("decided", {}).get("models"):
-        print("quién decidió:", ", ".join(f"{who} ×{n}" for who, n in sorted(right["decided"]["models"].items())))
+        decided = right["decided"]["models"].items()
+        print("quién decidió:", ", ".join(f"{who}: {n}" for who, n in sorted(decided)))
     for key in right["cases"]:
         if key not in left["cases"]:
             continue
@@ -42,7 +47,9 @@ def main(left_label, right_label):
         here["_runs"], there["_runs"] = left["runs"], right["runs"]
         seconds = [f"{median(here.get('seconds', []))}s", f"{median(there.get('seconds', []))}s"]
         print(f"\n[{key}]  {seconds[0]} → {seconds[1]}{who(there)}")
-        for name in sorted(set(here.get("passed", {})) | set(there.get("passed", {})) | set(here.get("partial", {})) | set(there.get("partial", {}))):
+        names = set(here.get("passed", {})) | set(there.get("passed", {}))
+        names |= set(here.get("partial", {})) | set(there.get("partial", {}))
+        for name in sorted(names):
             a, an = rate(here, name)
             b, bn = rate(there, name)
             if name in CHANGED:
@@ -55,8 +62,16 @@ def main(left_label, right_label):
 
 
 def who(report):
-    """Which model answered this case, when the run recorded it: a tie means nothing without knowing who tied."""
-    models = sorted({model for run in report.get("transcripts", []) for turn in (run.get("decidedBy") or []) for model in turn})
+    """Which model answered this case, when the run recorded it: a tie means nothing without
+    knowing who tied."""
+    models = sorted(
+        {
+            model
+            for run in report.get("transcripts", [])
+            for turn in (run.get("decidedBy") or [])
+            for model in turn
+        }
+    )
     return f"  ({', '.join(models)})" if models else ""
 
 

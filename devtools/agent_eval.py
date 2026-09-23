@@ -220,9 +220,7 @@ def creates_one_vehicle_at_most(run: Run) -> bool:
     names = {
         str(args.get("name", "")).strip().lower()
         for tool, args in zip(run.tools, run.inputs, strict=False)
-        if tool == "manage_catalog"
-        and args.get("resource") == "vehicle"
-        and args.get("action") == "create"
+        if tool == "manage_catalog" and args.get("resource") == "vehicle" and args.get("action") == "create"
     }
     return len(names) <= 1
 
@@ -314,9 +312,7 @@ def saves_at_most_one_depot(run: Run) -> bool:
     names = {
         str(args.get("name", "")).strip().lower()
         for tool, args in zip(run.tools, run.inputs, strict=False)
-        if tool == "manage_catalog"
-        and args.get("resource") == "depot"
-        and args.get("action") == "create"
+        if tool == "manage_catalog" and args.get("resource") == "depot" and args.get("action") == "create"
     }
     return len(names) <= 1
 

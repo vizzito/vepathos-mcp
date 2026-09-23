@@ -66,8 +66,14 @@ def test_plan_settings_and_batches_have_no_way_in(arguments: dict[str, object]) 
         # A field of the other resource is refused, not ignored: dropping it would save a row
         # the user never described.
         {"resource": "vehicle", "action": "create", "name": "x", "latitude": -34.6, "longitude": -58.3},
-        {"resource": "depot", "action": "create", "name": "x", "latitude": 1, "longitude": 2,
-         "max_weight_kg": 1500},
+        {
+            "resource": "depot",
+            "action": "create",
+            "name": "x",
+            "latitude": 1,
+            "longitude": 2,
+            "max_weight_kg": 1500,
+        },
     ],
 )
 def test_each_field_belongs_to_one_resource(arguments: dict[str, object]) -> None:
@@ -85,8 +91,13 @@ def test_a_depot_moves_with_both_coordinates_or_neither() -> None:
     )
     assert core_body(renamed) == {"name": "Barracas Sur"}
     created = ManageCatalogInput.model_validate(
-        {"resource": "depot", "action": "create", "name": "Barracas", "latitude": -34.6441,
-         "longitude": -58.3816}
+        {
+            "resource": "depot",
+            "action": "create",
+            "name": "Barracas",
+            "latitude": -34.6441,
+            "longitude": -58.3816,
+        }
     )
     assert core_body(created) == {"name": "Barracas", "latitude": -34.6441, "longitude": -58.3816}
 
