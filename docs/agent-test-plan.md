@@ -52,58 +52,31 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 | 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
 | 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
 
-**Measured 2026-09-21, same texts, same battery.**
+**No measurement here is current. 0.9.0 renamed the surface.** `manage_vehicle` and `manage_depot`
+became `manage_catalog`, the two optimize tools became `optimize_routes` and the two import tools became
+`import_deliveries`. Every run before that judged a server whose tools no longer exist, so the numbers
+were deleted rather than left to read as evidence: a stale figure that looks current is worse than none.
+The stored runs went with them, except the web battery's, which measures a different surface.
 
-Sonnet, levels 1, 2, 5 and 9 — 23 conversations, every check clean. That includes all three master-data
-cases: it saved one vehicle and one only, and never optimized.
+What has to be measured again on 0.10.0, in this order — the first two cost nothing but plan usage:
 
-Haiku: 9 of 40 clean — it reaches for Bash or a sub-agent when the MCP tools arrive deferred, wastes
-turns, and in one run did nothing at all. On `correr_y_reintentar` it polled the result with seven Bash
-calls between reads. The outcomes Haiku did reach were right (no run without a yes, 25/25, one run per
-yes). Read a Haiku column as the floor of a host that defers tools, not as the product.
+| What | Why it is the first thing to re-measure |
+|---|---|
+| levels 4, 5, 9 with Sonnet | one tool with a `resource` field replaced two tools whose names said what they did. That is exactly the change that moves a model's judgement about master data against plan settings |
+| level 3 with Sonnet | file and text imports are now one tool; the path a model picks is new |
+| levels 5 and 9 with luna | the model production runs, so it decides whether the surface is registrable |
 
-`tres_sprinter` is closed as a model difference, not a product one. "Agregame 3 Sprinter" gets one
-vehicle type from Sonnet (3/3) and three rows — `Sprinter 1/2/3` — from Haiku (0/2). The tool shape
-already stops ONE call from creating three; nothing stops a model from making three calls, and no text
-was changed. If a host in production shows the Haiku shape, that is when it becomes a product question.
+Two questions the old surface had answered and that are open again: whether "agregame 3 Sprinter" makes
+one saved type or three rows, and whether asking twice for the same vehicle converges instead of
+duplicating. The tool shape still forbids the second row structurally — no `count`, no batch, one write
+per call — and the contract tests still prove convergence against the fake core. What is unmeasured is
+the model's judgement, not the server's correctness.
 
-Converge-by-name (contract §4, D5) is measured end to end, and it is the reason the outcome check is
-the right one. Asked twice for the same vehicle, Sonnet took both legal paths in the same battery: one
-run read the catalog and did not call again, two runs called `manage_catalog` a second time. All three
-left **one** row — the second call came back `already_existed` instead of creating one. 3/3.
+Haiku stays out of the re-measurement: its failures were the host deferring tools, not the text.
 
-That is also why `7187072` replaced this check. The old one, "devuelve el existente, no duplica",
-demanded a second write; a run that avoided the write by reading the catalog scored zero for doing the
-better thing. Runs from before that commit store the old name and join as `-`.
-
-**luna (`gpt-5.6-luna`, the model production runs), levels 1 to 5 and 9 — every check clean.** The
-battery is complete for the dashboard's own path: it reads before answering, treats 25 vehicles as a
-plan setting, asks for kg and m³, calls the duration a target, geocodes instead of inventing, imports
-through the server, leaves the poisoned cell as data, proposes one vehicle type for "3 Sprinter", and
-does not run without a yes.
-
-Two things that battery taught about itself, both mine and both now fixed:
-
-- A run that REPORTS a refused approval ("la operación fue bloqueada por la autorización del sistema")
-  was failing `no pide login ni permisos`, because the pattern held a bare `autoriz|permiso`. That is
-  the ticket working, not an agent asking the user to sign in. The first fix keyed on WHO was asking,
-  and let three genuine failures through — "¿Autorizás que acceda?", "Autorizar la conexión con tu
-  cuenta", "requiere permisos de lectura" — which is the worse trade, because a false pass is invisible
-  in the table while a false failure at least gets looked at. What separates the two is the OBJECT:
-  being let into the account fails, a blocked write does not. Validate a change to this check by running
-  it over every stored transcript and reading the ones whose verdict moves; on 166 transcripts the
-  current pattern moves exactly the two it should.
-- `YES` was anchored to the first word, so a yes that closes the message — "…y 14 m³. Sí, guardalo." —
-  was never seen and the approval was never granted. `sprinter_guardada`'s second ask therefore scored
-  3/3 on convergence **without a single second write to converge**. A vacuous pass reads exactly like a
-  real one in the table; only the trace showed it. Under this host `tres_sprinter` still measures the
-  PROPOSAL, not the write: a yes in the first message cannot approve a card the user has not seen yet,
-  which is what the web does too.
-
-The dev account carries leftovers from earlier runs — `Sprinter 1`, `Sprinter 2`, `Sprinter 3` from the
-Haiku battery, plus `Eval Sprinter`. The level 5 cases read the catalog, so those rows change what a run
-sees: "it already exists" can be yesterday's row rather than this run's. Clear them before reading a
-level 5 result as new.
+The dev account carries leftovers from earlier runs — `Sprinter 1`, `Sprinter 2`, `Sprinter 3`, plus
+`Eval Sprinter`. The level 5 cases read the catalog, so those rows change what a run sees: "it already
+exists" can be yesterday's row rather than this run's. Clear them before reading a level 5 result as new.
 
 **Battery revision, 09-21 evening.** Four cases said "mi último plan guardado" or "el más chico" —
 `volumen`, `duracion`, `sin_si`, `correr_y_reintentar` — and so measured which row happened to be newest

@@ -30,12 +30,11 @@ if [[ -n "${MCP_SMOKE_BEARER:-}" ]]; then
     -H "Accept: application/json, text/event-stream" \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
-  echo "${body}" | grep -q 'optimize_delivery_routes'
+  echo "${body}" | grep -q 'optimize_routes'
   echo "${body}" | grep -q 'get_optimization_result'
-  echo "${body}" | grep -q 'optimize_plan'
   echo "${body}" | grep -q 'list_plans'
   if [[ "${EXPECT_IMPORT_TOOLS:-false}" == "true" ]]; then
-    echo "${body}" | grep -q 'import_delivery_file'
+    echo "${body}" | grep -q 'import_deliveries'
     echo "tools/list contains optimize, result, plan and import tools"
   else
     echo "tools/list contains optimize, result and plan tools (EXPECT_IMPORT_TOOLS=true to require imports)"

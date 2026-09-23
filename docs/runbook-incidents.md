@@ -14,7 +14,7 @@ than into the fixes.
 | Symptom | First check | Section |
 |---|---|---|
 | The client shows "Connect" again after authorizing | Auth codes exchanged, grant `lastUsedAt` | [Connect loop](#chatgpt-shows-connect-again-after-authorizing) |
-| The client reads account and fleet but never optimizes | `optimize_delivery_routes` lines with `optimization_id: null` | [Never optimizes](#the-client-reads-data-but-never-optimizes) |
+| The client reads account and fleet but never optimizes | `optimize_routes` lines with `optimization_id: null` | [Never optimizes](#the-client-reads-data-but-never-optimizes) |
 | Nothing from a client reaches the MCP | `tool_call` lines with its `client_type` | [Where the evidence is](#where-the-evidence-is) |
 | `curl` to `/mcp` answers 401 | Nothing: 401 without a credential is correct | [Checking the endpoint](#checking-the-endpoint-by-hand) |
 | `[auth][error] CallbackRouteError: unexpected "iss"` in api-doc | Which provider the error names | [Auth.js iss error](#authjs-callbackrouteerror-unexpected-iss) |
@@ -156,7 +156,8 @@ symptom.
 
 2026-09-16. ChatGPT called `get_account`, `list_fleet` and the geocode tools, then nothing ran.
 
-Signature: an `optimize_delivery_routes` line with `optimization_id: null`, `status: null`, ~100 ms,
+Signature: an `optimize_routes` line with `optimization_id: null`, `status: null`, ~100 ms,
+(before 0.9.0 that tool was `optimize_delivery_routes`; older logs carry the old name)
 and no `get_optimization_result` after it. That is a preflight: with `MCP_CONFIRM_BEFORE_OPTIMIZE`
 on (the default), a call without `confirmed=true` returns a summary and charges nothing. ChatGPT sent
 `confirmed: false` explicitly and never made the second call, because a preflight answers as a success
