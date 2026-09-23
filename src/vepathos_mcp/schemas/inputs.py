@@ -199,7 +199,9 @@ class OptimizeInput(StrictModel):
     )
     max_load_ratio: float | None = Field(
         None,
-        ge=0.5,
+        # 0, not 0.5: the floor was the schema's alone (nothing here needs it, load_margin_warnings just
+        # multiplies), and the web accepted values under it, so a card set to 30 % was refused at the door.
+        ge=0,
         le=1,
         description="Highest share of each vehicle's weight/volume capacity to fill. "
         "Default 0.95 (5% margin); 1 only when the user asks to fill vehicles completely.",
@@ -514,7 +516,9 @@ class OptimizeRoutesInput(StrictModel):
     )
     max_load_ratio: float | None = Field(
         None,
-        ge=0.5,
+        # 0, not 0.5: the floor was the schema's alone (nothing here needs it, load_margin_warnings just
+        # multiplies), and the web accepted values under it, so a card set to 30 % was refused at the door.
+        ge=0,
         le=1,
         description="Highest share of each vehicle's weight/volume capacity to fill. Default 0.95 (5% "
         "margin); 1 only when the user asks to fill vehicles completely.",
