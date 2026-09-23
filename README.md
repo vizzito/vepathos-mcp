@@ -15,7 +15,7 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `optimize_routes` | Plan delivery routes (vehicle routing problem, VRP). | yes | always |
 | `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | always |
 | `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | always |
-| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat: a file, a link or pasted rows, street addresses included (the import geocodes them). | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
 | `get_import_result` | Status and summary of an import_deliveries job. | no | `MCP_IMPORT_TOOLS_ENABLED` |
 | `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
 | `list_datasets` | List imports from this or earlier chats. | no | `MCP_IMPORT_TOOLS_ENABLED` |

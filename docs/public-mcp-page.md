@@ -25,7 +25,7 @@ ask the assistant to optimize deliveries. No API keys for that flow.
 | `optimize_routes` | Plan delivery routes (vehicle routing problem, VRP). | yes | Always |
 | `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | Always |
 | `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | Always |
-| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat: a file, a link or pasted rows, street addresses included (the import geocodes them). | yes | Rolling out (imports) |
+| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat. | yes | Rolling out (imports) |
 | `get_import_result` | Status and summary of an import_deliveries job. | no | Rolling out (imports) |
 | `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | Rolling out (imports) |
 | `list_datasets` | List imports from this or earlier chats. | no | Rolling out (imports) |

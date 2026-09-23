@@ -310,8 +310,10 @@ _GEOCODE = (
 def geocode_description(*, import_tools: bool) -> str:
     if import_tools:
         return _GEOCODE + (
-            ". Use it to check a few addresses or place a depot: a delivery list goes to import_deliveries, "
-            "which geocodes it into a plan to optimize by id."
+            ". It carries ADDRESSES AND NOTHING ELSE: a customer, phone, package count, weight, volume, "
+            "note or delivery window sent here is dropped without a word. Rows carrying any of those are "
+            "a delivery list, however few, and go to import_deliveries, which keeps them and geocodes "
+            "them itself. Use this one for bare addresses: checking a handful, or placing a depot."
         )
     return _GEOCODE + "; the coordinates then go to optimize_routes as stops."
 
@@ -336,7 +338,9 @@ GET_RESULT_DESCRIPTION = (
 IMPORT_TITLE = "Import deliveries"
 IMPORT_DESCRIPTION = (
     "Import deliveries into Vepathos so their rows never pass through this chat: a file, a link or "
-    "pasted rows, street addresses included (the import geocodes them). Send one source: file when your "
+    "pasted rows, street addresses included (it geocodes them, so they skip geocode_addresses). What a "
+    "row carries besides the address — customer, phone, packages, weight, volume, note, delivery "
+    "window — survives only here, however few rows. Send one source: file when your "
     "host hands attachments to tools (ChatGPT: _meta openai/fileParams); url for a public https link or "
     "a Google Drive, Sheets or Docs share link as copied; text for pasted rows or a CSV or JSON file's "
     "text (a few hundred rows; larger files go by url). A path on the user's disk is not a url: this "
