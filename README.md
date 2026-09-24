@@ -1,3 +1,4 @@
+[![Smithery Badge](https://smithery.ai/badge/@martinvizzolini/vepathos)](https://smithery.ai/server/@martinvizzolini/vepathos)
 # Vepathos MCP
 
 **Large-scale delivery and fleet optimization for AI agents.**
