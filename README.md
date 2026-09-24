@@ -37,12 +37,19 @@ invent coordinates.
 
 ## Status
 
-Production runs **0.10.0** at `https://mcp.vepathos.com/mcp` and publishes all **15 tools**: the
+Production runs **0.11.0** at `https://mcp.vepathos.com/mcp` and publishes all **15 tools**: the
 import tools, the shareable map and `manage_catalog` are switched on there, so the "Available"
 column above describes what the code gates, not what this deployment withholds.
 
-Vepathos is not listed in any directory yet, so a client has to add it as a custom connector with
-that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos).
+`manage_catalog` saves three kinds of thing: a vehicle, a depot, and a fleet grouping vehicles the
+account already has. A fleet's `units` is what it holds standing, never how many go out on one run,
+which is `vehicles[].count` on `optimize_routes`. To run with a saved fleet, read it with
+`list_fleet` and pass its vehicles: `optimize_routes` takes no `fleet_id`.
+
+Vepathos is not in the official MCP registry yet, so a client has to add it as a custom connector
+with that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos)
+and [Glama](https://glama.ai/mcp/servers/vizzito/vepathos-mcp). Both take a snapshot when they
+crawl, so a listing can lag a deployment by a day.
 
 Paid self-serve is off. A request the account's plan cannot run answers `PLAN_UPGRADE_REQUIRED`
 with a `contact_url`, never a Stripe Checkout link, and the user retries without reconnecting once
