@@ -175,3 +175,29 @@ def test_plan_and_depot_names_reach_core_only_when_set() -> None:
     assert named["plan_name"] == "Lunes zona 1" and named["depot_name"] == "Galpón"
     # A name is part of the request: naming the plan differently is a different call.
     assert request_fingerprint(named) != request_fingerprint(unnamed)
+
+
+def test_a_stored_run_refuses_a_constraint_its_vehicles_cannot_carry() -> None:
+    """The inline path refused this from the start; the plan_id/dataset_id path did not.
+
+    api-doc fills a missing capacity with 0 when it builds the workspace, and 0 is a real number to
+    the engine rather than "unset", so a hand-set flag against capacity-less vehicles would have
+    reached it as a weight rebalance where nothing fits.
+    """
+
+    from pydantic import ValidationError
+
+    from vepathos_mcp.tools.import_tools import OptimizePlanInput
+
+    base = {"plan_id": "pln_abc12345", "depot": {"latitude": -37.3, "longitude": -59.1}}
+    without = [{"vehicle_id": "v1", "count": 1}]
+
+    for flag, field in (("use_weight", "max_weight_kg"), ("use_volume", "max_volume_m3")):
+        with pytest.raises(ValidationError, match=f"{flag} is true but no vehicle has {field}"):
+            OptimizePlanInput.model_validate({**base, "vehicles": without, flag: True})
+        # The same flag is fine once a vehicle declares that capacity, and false is always fine:
+        # false is how a caller keeps the data for reference without routing by it.
+        OptimizePlanInput.model_validate(
+            {**base, "vehicles": [{**without[0], field: 900}], flag: True}
+        )
+        OptimizePlanInput.model_validate({**base, "vehicles": without, flag: False})

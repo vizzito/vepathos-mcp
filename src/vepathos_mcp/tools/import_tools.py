@@ -245,6 +245,21 @@ class OptimizePlanInput(StrictModel):
     )
 
     @model_validator(mode="after")
+    def _constraints_have_capacity(self) -> OptimizePlanInput:
+        """A flag turned on by hand against vehicles that carry no capacity.
+
+        The inline path already refuses this (schemas/inputs.py, `constraint_without_capacity`) and
+        this one did not, so a saved plan or an import could reach Core with the weight rebalance
+        enabled and every vehicle at zero: api-doc fills a missing capacity with 0, and 0 is a real
+        number to the engine, not "unset". The stops live in the plan here, so only the vehicles of
+        this run can be checked — which is exactly where the contradiction is."""
+
+        for flag, field in (("use_weight", "max_weight_kg"), ("use_volume", "max_volume_m3")):
+            if getattr(self, flag) and not any(getattr(v, field) is not None for v in self.vehicles):
+                raise ValueError(f"{flag} is true but no vehicle has {field}")
+        return self
+
+    @model_validator(mode="after")
     def _one_source(self) -> OptimizePlanInput:
         if (self.plan_id is None) == (self.dataset_id is None):
             raise ValueError("send exactly one of plan_id or dataset_id")
