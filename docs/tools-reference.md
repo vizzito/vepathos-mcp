@@ -366,7 +366,7 @@ Turn street addresses into latitude/longitude using Vepathos Smart Import. Requi
 
 | Field | Type | Description |
 |---|---|---|
-| `geocode_id` | string | Handle for get_geocode_result. |
+| `geocode_id` | string | Handle for get_geocode_result, while the job is still running. A finished job returns its stops here instead and no handle: there is nothing left to poll. |
 | `status` | queued \| running \| completed \| failed | queued / running / completed / failed. |
 | `submitted_stops` | integer | Addresses sent to Smart Import. |
 | `resolved_stops` | integer | Stops that received a latitude and longitude. |
@@ -398,7 +398,7 @@ Get the status and coordinates of a geocode_addresses job. Read-only. When compl
 
 | Field | Type | Description |
 |---|---|---|
-| `geocode_id` | string | Handle for get_geocode_result. |
+| `geocode_id` | string | Handle for get_geocode_result, while the job is still running. A finished job returns its stops here instead and no handle: there is nothing left to poll. |
 | `status` | queued \| running \| completed \| failed | queued / running / completed / failed. |
 | `submitted_stops` | integer | Addresses sent to Smart Import. |
 | `resolved_stops` | integer | Stops that received a latitude and longitude. |

@@ -213,13 +213,23 @@ async def test_geocode_addresses_returns_pins_from_smart_import_contract(
             },
         )
         assert is_error is False
+        # Still running, so the handle is real and worth handing back.
         assert created["geocode_id"].startswith("mcpg_")
         is_error, payload = await call(client, "get_geocode_result", {"geocode_id": created["geocode_id"]})
-    assert is_error is False
-    assert payload["status"] == "completed"
-    assert payload["stops"][0]["stop_id"] == "A1"
-    assert payload["stops"][0]["latitude"] is not None
-    assert payload.get("needs_confirmation") is False
+        assert is_error is False
+        assert payload["status"] == "completed"
+        assert payload["stops"][0]["stop_id"] == "A1"
+        assert payload["stops"][0]["latitude"] is not None
+        assert payload.get("needs_confirmation") is False
+        # The stops arrived and the job went with them, so no handle is offered a second time:
+        # against the real server that read is what answers GEOCODE_EXPIRED.
+        assert payload.get("geocode_id") is None
+
+        is_error, expired = await call(
+            client, "get_geocode_result", {"geocode_id": created["geocode_id"]}
+        )
+    assert is_error
+    assert expired["error"]["code"] == "GEOCODE_EXPIRED"
 
 
 async def test_validation_errors_are_structured(mcp_client: Callable[..., Any]) -> None:

@@ -90,7 +90,10 @@ def _from_core(result: CoreGeocodeResult) -> GeocodeResult:
     unresolved, review = classify_geocoded_stops(stops) if stops else ([], [])
     needs_confirmation = bool(unresolved or review) if stops is not None else None
     return GeocodeResult(
-        geocode_id=result.job_id,
+        # Core deletes the Smart Import job on the read that produces these stops, so a terminal
+        # job's handle is already dead: get_geocode_result answers GEOCODE_EXPIRED with it. The
+        # description always said "pins, OR a geocode_id"; this is the code saying the same.
+        geocode_id=None if result.is_terminal else result.job_id,
         status=result.status,
         submitted_stops=result.submitted_stops,
         resolved_stops=result.resolved_stops,

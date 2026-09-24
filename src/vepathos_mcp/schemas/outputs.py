@@ -373,7 +373,11 @@ class GeocodedStop(OutputModel):
 class GeocodeResult(OutputModel):
     """Output of geocode_addresses and get_geocode_result."""
 
-    geocode_id: str | None = Field(None, description="Handle for get_geocode_result.")
+    geocode_id: str | None = Field(
+        None,
+        description="Handle for get_geocode_result, while the job is still running. A finished "
+        "job returns its stops here instead and no handle: there is nothing left to poll.",
+    )
     status: JobStatus | None = Field(None, description="queued / running / completed / failed.")
     submitted_stops: int | None = Field(None, description="Addresses sent to Smart Import.")
     resolved_stops: int | None = Field(None, description="Stops that received a latitude and longitude.")
@@ -399,7 +403,9 @@ class GeocodeResult(OutputModel):
 
     @model_validator(mode="after")
     def validate_variant(self) -> GeocodeResult:
-        success = self.geocode_id is not None and self.status is not None
+        # A finished job has no handle to give back — Core drops it on the read that returns the
+        # stops — so `status` alone marks the success variant.
+        success = self.status is not None
         if success == (self.error is not None):
             raise ValueError("output must contain either a geocode result or an error")
         return self

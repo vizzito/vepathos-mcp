@@ -77,6 +77,8 @@ class FakeCoreState:
     used_stops: dict[str, int] = field(default_factory=dict)
     trial_used: set[str] = field(default_factory=set)
     geocode_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Ids whose stops were already handed over, so a second read is EXPIRED and not NOT_FOUND.
+    geocode_jobs_read: set[str] = field(default_factory=set)
     imports: dict[str, dict[str, Any]] = field(default_factory=dict)
     datasets: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Route plans (OptimizationPlan), keyed by plan_id. `state.plan` is the account's subscription.
@@ -809,6 +811,9 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             return account
         job_id = request.path_params["job_id"]
         job = state.geocode_jobs.get(job_id)
+        if job is None and job_id in state.geocode_jobs_read:
+            # Read once and gone: production answers 410 here, not 404 (api-doc geocode/[jobId]).
+            return _error(410, "GEOCODE_EXPIRED", "This geocoding job is no longer available.")
         if job is None or job["account"] != account:
             return _error(404, "GEOCODE_NOT_FOUND", "Unknown geocode job.")
         mapped = []
@@ -825,6 +830,11 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
                     "matched_address": stop.get("address"),
                 }
             )
+        # Production reads the stops and drops the Smart Import job in the same call
+        # (api-doc src/server/mcp/geocode.ts, `void deleteImport`). Keeping it here made the suite
+        # prove a second read that answers GEOCODE_EXPIRED against the real server.
+        state.geocode_jobs.pop(job_id, None)
+        state.geocode_jobs_read.add(job_id)
         return JSONResponse(
             {
                 "job_id": job_id,
