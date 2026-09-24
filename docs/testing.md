@@ -67,7 +67,12 @@ VEPATHOS_GROWTH_CREDENTIAL=<vpt_…:vpt_sk_…> \
 Scenarios: 10 and 150 stops; weight, volume and time windows; invalid and far-away coordinates; plan
 limit (`PLAN_UPGRADE_REQUIRED`); one-time trial (Duck + 80 stops + time windows; the second attempt is
 rejected); quota untouched by the trial; idempotent retry without duplicate jobs; backend failure;
-unauthorized credential.
+unauthorized credential; and the catalog round trips against real RouteHub — vehicles and depots, and
+fleets (the `{id, qty}` composition Core writes from `units`, convergence by name, a `vehicle_id` the
+account does not own, and a PATCH that replaces what the fleet holds).
+
+These spend no stops and no geocoding, but RouteHub has no delete on this channel: each run leaves one
+vehicle, one depot and one fleet in the DEV account, named with a per-run tag so reruns never collide.
 
 ## Real agents
 
