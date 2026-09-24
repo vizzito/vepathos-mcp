@@ -52,6 +52,9 @@ class Settings(BaseSettings):
         8 * 1024 * 1024, ge=64 * 1024, validation_alias=_env("MCP_MAX_REQUEST_BODY_BYTES")
     )
     metrics_bearer_token: SecretStr | None = Field(None, validation_alias=_env("METRICS_BEARER_TOKEN"))
+    # OpenAI domain verification. The portal shows a token; this URL must return that exact
+    # string as text/plain. Empty means the route answers 404. Never commit the token.
+    openai_apps_challenge: SecretStr | None = Field(None, validation_alias=_env("OPENAI_APPS_CHALLENGE"))
 
     # --- Vepathos Core ----------------------------------------------------------------------
     core_base_url: str = Field("http://localhost:3000", validation_alias=_env("VEPATHOS_API_BASE_URL"))
@@ -107,6 +110,16 @@ class Settings(BaseSettings):
     rate_limit_catalog_writes_per_minute: int = Field(
         20, ge=1, validation_alias=_env("MCP_RATE_LIMIT_CATALOG_WRITES_PER_MINUTE")
     )
+
+    @field_validator("openai_apps_challenge", mode="before")
+    @classmethod
+    def _blank_challenge_is_unset(cls, value: object) -> object:
+        if isinstance(value, SecretStr):
+            value = value.get_secret_value()
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return value
 
     @field_validator("mcp_path")
     @classmethod
