@@ -307,10 +307,24 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 retryable=False,
             )
         case "VEHICLE_NOT_FOUND":
+            # Also answered when a fleet names vehicles the account does not have: which ones matters,
+            # because the fix is to save those first, not to retry the same list.
+            unknown = details.get("unknown_vehicle_ids")
             return DomainError(
                 ErrorCode.VEHICLE_NOT_FOUND,
                 "No saved vehicle with this vehicle_id exists in the connected Vepathos account.",
-                suggestion="Call list_fleet and use a vehicle_id from its top-level vehicles.",
+                suggestion="Call list_fleet and use a vehicle_id from its top-level vehicles. "
+                "To put a vehicle in a fleet, save the vehicle first.",
+                details={"unknown_vehicle_ids": [str(v) for v in unknown][:25]}
+                if isinstance(unknown, list) and unknown
+                else None,
+                retryable=False,
+            )
+        case "FLEET_NOT_FOUND":
+            return DomainError(
+                ErrorCode.FLEET_NOT_FOUND,
+                "No saved fleet with this fleet_id exists in the connected Vepathos account.",
+                suggestion="Call list_fleet and use a fleet_id from its fleets.",
                 retryable=False,
             )
         case "DEPOT_NOT_FOUND":

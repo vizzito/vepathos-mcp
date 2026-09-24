@@ -815,3 +815,108 @@ async def test_the_route_duration_is_published_as_the_target_it_is(mcp_client: C
     for text in (tools["optimize_routes"].input_schema["properties"]["max_route_minutes"]["description"],):
         assert "not a hard limit" in text.replace("not \n", "not ") and "target" in text
         assert "Maximum" not in text
+
+
+async def test_a_fleet_groups_saved_vehicles_and_shows_in_the_catalog(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        _, van = await call(client, "manage_catalog", SPRINTER)
+        vehicle_id = van["vehicle"]["vehicle_id"]
+
+        fleet = {
+            "resource": "fleet",
+            "action": "create",
+            "name": "norte",
+            "vehicles": [{"vehicle_id": vehicle_id, "units": 6}],
+        }
+        is_error, created = await call(client, "manage_catalog", fleet)
+        assert not is_error, created
+        assert created["outcome"] == "created"
+        assert created["fleet"]["name"] == "norte" and created["fleet"]["total_units"] == 6
+        assert [v["vehicle_id"] for v in created["fleet"]["vehicles"]] == [vehicle_id]
+
+        _, catalog = await call(client, "list_fleet", {})
+        assert [f["name"] for f in catalog["fleets"]] == ["norte"]
+
+        # Asking again with the same contents converges, like a vehicle or a depot.
+        is_error, replay = await call(client, "manage_catalog", {**fleet, "name": "Norte"})
+        assert not is_error and replay["outcome"] == "already_existed"
+    assert len(core_state.fleets) == 1
+
+
+async def test_a_fleet_cannot_hold_a_vehicle_the_account_does_not_have(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    """Inventing the vehicle would save a fleet of something that does not exist."""
+
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        fleet = {
+            "resource": "fleet",
+            "action": "create",
+            "name": "norte",
+            "vehicles": [{"vehicle_id": "999", "units": 6}],
+        }
+        is_error, payload = await call(client, "manage_catalog", fleet)
+    assert is_error and payload["error"]["code"] == "VEHICLE_NOT_FOUND"
+    assert core_state.fleets == []
+
+
+async def test_a_run_only_count_never_reaches_the_saved_catalog(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    """"Use 25 vans tomorrow" is optimize_routes, not a fleet. The write tool must not accept it as one."""
+
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        _, van = await call(client, "manage_catalog", SPRINTER)
+        vehicle_id = van["vehicle"]["vehicle_id"]
+
+        # count belongs to an optimization's vehicles[], and is not a field of this tool at all.
+        stray = {
+            "resource": "fleet",
+            "action": "create",
+            "name": "norte",
+            "vehicles": [{"vehicle_id": vehicle_id, "count": 25}],
+        }
+        is_error, payload = await call(client, "manage_catalog", stray)
+        assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+
+        # And a vehicle field sent with resource=fleet is refused rather than silently dropped.
+        mixed = {"resource": "fleet", "action": "create", "name": "norte", "max_weight_kg": 900}
+        is_error, payload = await call(client, "manage_catalog", mixed)
+        assert is_error and payload["error"]["code"] == "INVALID_INPUT"
+    assert core_state.fleets == []
+
+
+async def test_a_fleet_update_replaces_what_it_holds(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        _, van = await call(client, "manage_catalog", SPRINTER)
+        vehicle_id = van["vehicle"]["vehicle_id"]
+        _, created = await call(
+            client,
+            "manage_catalog",
+            {
+                "resource": "fleet",
+                "action": "create",
+                "name": "norte",
+                "vehicles": [{"vehicle_id": vehicle_id, "units": 6}],
+            },
+        )
+        fleet_id = created["fleet"]["fleet_id"]
+
+        update = {
+            "resource": "fleet",
+            "action": "update",
+            "resource_id": fleet_id,
+            "vehicles": [{"vehicle_id": vehicle_id, "units": 22}],
+        }
+        is_error, updated = await call(client, "manage_catalog", update)
+        assert not is_error, updated
+        assert updated["outcome"] == "updated" and updated["fleet"]["total_units"] == 22
+
+        missing = {"resource": "fleet", "action": "update", "resource_id": "999", "name": "x"}
+        is_error, payload = await call(client, "manage_catalog", missing)
+        assert is_error and payload["error"]["code"] == "FLEET_NOT_FOUND"
+    assert len(core_state.fleets) == 1

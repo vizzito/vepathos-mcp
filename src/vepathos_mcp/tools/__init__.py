@@ -174,7 +174,9 @@ def build_tools(deps: ToolDeps) -> list[Tool]:
             make_list_fleet_tool(deps),
             name=LIST_FLEET_TOOL,
             title=descriptions.LIST_FLEET_TITLE,
-            description=descriptions.LIST_FLEET_DESCRIPTION,
+            description=descriptions.list_fleet_description(
+                catalog_writes=deps.settings.catalog_write_tools_enabled
+            ),
             schema_model=ListFleetInput,
             read_only=True,
         ),

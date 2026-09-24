@@ -298,6 +298,87 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
         rows.append(created)
         return answer(created, "created", 201)
 
+    async def write_fleet(request: Request) -> JSONResponse:
+        """A fleet groups saved vehicles: same convergence by name, but the row is a composition.
+
+        `units` is the fleet's own membership, kept apart from an optimization's per-run count on
+        purpose: production Core refuses a vehicle_id the account does not own rather than inventing it.
+        """
+
+        account = authenticate(request)
+        if isinstance(account, JSONResponse):
+            return account
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            body = None
+        if not isinstance(body, dict) or set(body) - {"name", "vehicles"}:
+            return _error(400, "INVALID_INPUT", "The fleet is not valid.")
+
+        members = body.get("vehicles")
+        if members is not None:
+            if not isinstance(members, list) or not members:
+                return _error(400, "INVALID_INPUT", "The fleet is not valid.")
+            owned = {v["vehicle_id"] for v in state.vehicles}
+            unknown = [m.get("vehicle_id") for m in members if m.get("vehicle_id") not in owned]
+            if unknown:
+                return _error(
+                    404,
+                    "VEHICLE_NOT_FOUND",
+                    "A fleet can only hold vehicles this account has saved.",
+                    {"unknown_vehicle_ids": unknown},
+                )
+
+        def held(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            by_id = {v["vehicle_id"]: v for v in state.vehicles}
+            return [{**by_id[m["vehicle_id"]], "count": m["units"]} for m in rows]
+
+        def composition(fleet: dict[str, Any]) -> dict[str, int]:
+            return {v["vehicle_id"]: v.get("count") or 1 for v in fleet["vehicles"]}
+
+        def answer(row: dict[str, Any], outcome: str, status: int) -> JSONResponse:
+            return JSONResponse(
+                {"fleet": row, "outcome": outcome, "account_url": ACCOUNT_URL + "/fleets"},
+                status_code=status,
+            )
+
+        def store(row: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+            row["vehicles"] = rows
+            row["total_units"] = sum(v.get("count") or 1 for v in rows)
+
+        target_id = request.path_params.get("fleet_id")
+        if target_id is not None:
+            row = next((f for f in state.fleets if f["fleet_id"] == target_id), None)
+            if row is None:
+                return _error(404, "FLEET_NOT_FOUND", "No saved fleet with this id.")
+            if not body:
+                return _error(400, "INVALID_INPUT", "The fleet is not valid.")
+            if "name" in body:
+                wanted = _norm(body["name"])
+                others = [f for f in state.fleets if f is not row and _norm(f.get("name") or "") == wanted]
+                if others:
+                    taken = {"existing": others[0], "matches": len(others)}
+                    return _error(409, "NAME_TAKEN", "Name taken.", taken)
+                row["name"] = body["name"].strip()
+            if members is not None:
+                store(row, held(members))
+            return answer(row, "updated", 200)
+
+        name = body.get("name")
+        if not isinstance(name, str) or not name.strip() or members is None:
+            return _error(400, "INVALID_INPUT", "The fleet is not valid.")
+        wanted = {m["vehicle_id"]: m["units"] for m in members}
+        matches = [f for f in state.fleets if _norm(f.get("name") or "") == _norm(name)]
+        if matches:
+            if len(matches) == 1 and composition(matches[0]) == wanted:
+                return answer(matches[0], "already_existed", 200)
+            return _error(409, "NAME_TAKEN", "Name taken.", {"existing": matches[0], "matches": len(matches)})
+        state.next_catalog_id += 1
+        created: dict[str, Any] = {"fleet_id": str(state.next_catalog_id), "name": name.strip()}
+        store(created, held(members))
+        state.fleets.append(created)
+        return answer(created, "created", 201)
+
     async def write_vehicle(request: Request) -> JSONResponse:
         return await write_catalog(request, "vehicle")
 
@@ -1171,6 +1252,8 @@ def create_fake_core(state: FakeCoreState | None = None) -> Starlette:
             Route("/api/mcp/v1/catalog", get_catalog, methods=["GET"]),
             Route("/api/mcp/v1/catalog/vehicles", write_vehicle, methods=["POST"]),
             Route("/api/mcp/v1/catalog/vehicles/{vehicle_id}", write_vehicle, methods=["PATCH"]),
+            Route("/api/mcp/v1/catalog/fleets", write_fleet, methods=["POST"]),
+            Route("/api/mcp/v1/catalog/fleets/{fleet_id}", write_fleet, methods=["PATCH"]),
             Route("/api/mcp/v1/catalog/depots", write_depot, methods=["POST"]),
             Route("/api/mcp/v1/catalog/depots/{depot_id}", write_depot, methods=["PATCH"]),
             Route("/api/mcp/v1/optimization/jobs", create_job, methods=["POST"]),

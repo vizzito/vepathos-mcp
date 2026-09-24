@@ -280,6 +280,14 @@ class CoreVehicleSaved(CoreModel):
     account_url: str | None = None
 
 
+class CoreFleetSaved(CoreModel):
+    """A fleet written to (or already in) the account: outcome is created, updated or already_existed."""
+
+    fleet: CoreCatalogFleet
+    outcome: str = "created"
+    account_url: str | None = None
+
+
 class CoreDepotSaved(CoreModel):
     depot: CoreCatalogDepot
     outcome: str = "created"
