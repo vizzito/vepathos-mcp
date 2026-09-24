@@ -1,4 +1,3 @@
-[![Smithery Badge](https://smithery.ai/badge/@martinvizzolini/vepathos)](https://smithery.ai/server/@martinvizzolini/vepathos)
 # Vepathos MCP
 
 **Large-scale delivery and fleet optimization for AI agents.**
@@ -36,19 +35,25 @@ There is no cancel tool. A submitted optimization runs to completion. Street add
 through `geocode_addresses` (or, with imports on, `import_deliveries`) first; `optimize_routes` does not
 invent coordinates.
 
-## Status (2026-09-14)
+## Status
 
-Production is live at `https://mcp.vepathos.com/mcp` (`/ready` ok, authenticated `tools/list`
-ok). Claude and other directories do **not** list Vepathos yet — a user must add a custom
-connector with that URL. Publication order: [docs/publish-marketplaces.md](docs/publish-marketplaces.md).
+Production runs **0.10.0** at `https://mcp.vepathos.com/mcp` and publishes all **15 tools**: the
+import tools, the shareable map and `manage_catalog` are switched on there, so the "Available"
+column above describes what the code gates, not what this deployment withholds.
 
-Do not add "Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+Vepathos is not listed in any directory yet, so a client has to add it as a custom connector with
+that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos).
 
-Paid self-serve is **off**. Public listings must say **Free + contact**. Jobs the plan cannot
-run return `contact_url`, not Stripe Checkout.
+Paid self-serve is off. A request the account's plan cannot run answers `PLAN_UPGRADE_REQUIRED`
+with a `contact_url`, never a Stripe Checkout link, and the user retries without reconnecting once
+the account can run it.
 
-- Local / CI: this server + a **fake Core** (test double; it does not route or geocode for real).
-- Local real: `vepathos-api-doc` MCP channel + optimizer + Smart Import worker.
+Two ways to run it away from production:
+
+- **Local and CI**: this server against a **fake Core**, a test double that neither routes nor
+  geocodes for real. Everything in `tests/` uses it.
+- **Local against the real stack**: the `vepathos-api-doc` MCP channel, the optimizer and the Smart
+  Import worker.
 
 ## Connect (production target)
 
@@ -94,7 +99,7 @@ the REST API.
     }
   ],
   "schedule": {
-    "date": "2026-09-14",
+    "date": "2026-10-01",
     "route_start_time": "07:30",
     "time_zone": "America/New_York",
     "service_time_minutes": 4
@@ -131,14 +136,18 @@ the optimizer.
 .venv/bin/ruff check src tests devtools
 ```
 
-MCP Inspector and the real local-stack integration (after the Core channel lands):
+MCP Inspector and the integration against the real local stack:
 [docs/testing.md](docs/testing.md).
 
 ## Privacy
 
 The tools accept coordinates, optional weight/volume/time windows and your own stop and vehicle
-ids. They do not accept names, phones, emails or addresses. Results do not echo coordinates.
-Logs omit tokens, payloads and coordinates. Hosted results are retained for 24 hours. See
+ids. Street addresses reach Smart Import through `geocode_addresses` and `import_deliveries` and are
+not echoed back. Results do not repeat coordinates, logs omit tokens, payloads and coordinates, and
+hosted results are kept for 24 hours.
+
+Account and logistics data follow the public policy at
+[vepathos.com/privacy](https://vepathos.com/privacy), which carries an MCP section. See also
 [docs/security.md](docs/security.md) and [SECURITY.md](SECURITY.md).
 
 ## Research & benchmarks
@@ -166,14 +175,8 @@ peer-reviewed publication.
 | [docs/publish-marketplaces.md](docs/publish-marketplaces.md) | Claude, MCP Registry, ChatGPT, Cursor — order and blockers |
 | [docs/directory-listing.md](docs/directory-listing.md) | Paste-ready listing copy (Free + contact) |
 | [docs/publication-checklist.md](docs/publication-checklist.md) | Registry and directory gates |
-| [docs/privacy-mcp.md](docs/privacy-mcp.md) | Draft MCP section for the public privacy policy |
-| [docs/public-mcp-page.md](docs/public-mcp-page.md) | Draft copy for vepathos.com/mcp |
-
-## Privacy
-
-Account and logistics data follow the public policy at [vepathos.com/privacy](https://vepathos.com/privacy).
-The MCP-specific section (what agents send, 24 h result retention, no payload logs) is drafted in
-[docs/privacy-mcp.md](docs/privacy-mcp.md) and must be copied onto that page before directory review.
+| [docs/privacy-mcp.md](docs/privacy-mcp.md) | The MCP section of the public privacy policy |
+| [docs/public-mcp-page.md](docs/public-mcp-page.md) | The copy behind vepathos.com/mcp |
 
 ## License
 
