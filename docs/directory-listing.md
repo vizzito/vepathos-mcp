@@ -34,9 +34,9 @@ a dispatcher, not a developer, even though the channel is technical.
 
 ## Description (≤ 2,000), for the Claude and ChatGPT listings
 
-Vepathos plans last-mile delivery routes for a fleet: bring the orders in from a spreadsheet, a link or the chat itself, and it assigns each stop to a vehicle and sequences every route from one depot, minimizing total distance while respecting the limits you set (stops per vehicle, weight, volume, time windows). Dozens of stops or thousands, anywhere in the world.
+Vepathos plans last-mile delivery routes for a fleet: bring the orders in from a spreadsheet, a link or the chat itself, and it assigns each stop to a vehicle and sequences every route from one depot, minimizing total distance while respecting the limits you set (stops per vehicle, weight, volume, time windows). Dozens of stops or thousands, anywhere in the world. One run takes as much as the plan allows: 15,000 stops on Scale, no cap on Enterprise.
 
-Connect from Claude or another MCP client, sign in (or create a Free account) at Vepathos, and ask the assistant to import orders, geocode addresses and optimize routes. The same account, plan and monthly stop quota apply as the Vepathos web app and REST API. No API keys for that flow.
+Connect from Claude or another MCP client, sign in or create a Free account, and ask the assistant to import orders, geocode addresses and optimize routes. The same account, plan and monthly stop quota apply as the Vepathos web app and REST API. No API keys for that flow.
 
 Tools: get_account, list_fleet, list_plans, list_datasets and list_automations (the account); import_deliveries, get_import_result and update_import_mapping (a spreadsheet, a link or pasted rows become a plan, without the rows passing through the chat); geocode_addresses and get_geocode_result (street addresses into coordinates via Vepathos Smart Import); manage_catalog (save a vehicle or a depot in the account); optimize_routes and get_optimization_result (routing for a saved plan, an import or stops with coordinates; poll with optimization_id); create_optimization_map (a 48 hour public link to the result); create_automation (prepares a rule that routes on a schedule, created switched off, so only the user starts it). Optimize never invents coordinates: unresolved and low confidence pins are flagged to confirm first. A rerun of the same plan within 24 hours, with the same stops or fewer, charges nothing.
 
@@ -44,7 +44,6 @@ This public channel currently offers the Free plan. Jobs the plan cannot run ret
 
 Do not put names, phones or emails in stop ids. We do not log access tokens, coordinates or request bodies.
 
-Technical report (not peer-reviewed): https://doi.org/10.5281/zenodo.19859531
 
 ## Use cases (Claude portal)
 
