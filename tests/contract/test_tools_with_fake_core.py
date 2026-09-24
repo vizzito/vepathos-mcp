@@ -920,3 +920,73 @@ async def test_a_fleet_update_replaces_what_it_holds(
         is_error, payload = await call(client, "manage_catalog", missing)
         assert is_error and payload["error"]["code"] == "FLEET_NOT_FOUND"
     assert len(core_state.fleets) == 1
+
+
+async def test_a_fleet_holds_more_than_one_kind_of_vehicle(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    """The fleet a user actually describes: "6 vans and 2 sprinters", not six of one thing."""
+
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        _, sprinter = await call(client, "manage_catalog", SPRINTER)
+        _, van = await call(
+            client,
+            "manage_catalog",
+            {"resource": "vehicle", "action": "create", "name": "Van", "max_weight_kg": 800},
+        )
+        held = [
+            {"vehicle_id": van["vehicle"]["vehicle_id"], "units": 6},
+            {"vehicle_id": sprinter["vehicle"]["vehicle_id"], "units": 2},
+        ]
+        is_error, created = await call(
+            client, "manage_catalog", {"resource": "fleet", "action": "create", "name": "mixta", "vehicles": held}
+        )
+        assert not is_error, created
+        assert created["fleet"]["total_units"] == 8
+        assert {v["vehicle_id"]: v["count"] for v in created["fleet"]["vehicles"]} == {
+            van["vehicle"]["vehicle_id"]: 6,
+            sprinter["vehicle"]["vehicle_id"]: 2,
+        }
+
+        # Asking again with the lines the other way round is the same fleet, not a second one.
+        is_error, replay = await call(
+            client,
+            "manage_catalog",
+            {"resource": "fleet", "action": "create", "name": "mixta", "vehicles": list(reversed(held))},
+        )
+        assert not is_error and replay["outcome"] == "already_existed"
+    assert len(core_state.fleets) == 1
+
+
+async def test_a_fleet_is_renamed_without_touching_what_it_holds(
+    mcp_client: Callable[..., Any], core_state: FakeCoreState
+) -> None:
+    async with await mcp_client(**CATALOG_WRITES) as client:
+        _, van = await call(client, "manage_catalog", SPRINTER)
+        vehicle_id = van["vehicle"]["vehicle_id"]
+        fleet = {
+            "resource": "fleet",
+            "action": "create",
+            "name": "norte",
+            "vehicles": [{"vehicle_id": vehicle_id, "units": 6}],
+        }
+        _, created = await call(client, "manage_catalog", fleet)
+        _, other = await call(client, "manage_catalog", {**fleet, "name": "sur"})
+
+        renamed = {
+            "resource": "fleet",
+            "action": "update",
+            "resource_id": created["fleet"]["fleet_id"],
+            "name": "zona norte",
+        }
+        is_error, updated = await call(client, "manage_catalog", renamed)
+        assert not is_error, updated
+        assert updated["fleet"]["name"] == "zona norte"
+        # What it holds is untouched: a rename is not a way to empty a fleet.
+        assert updated["fleet"]["total_units"] == 6
+
+        # Renaming onto another fleet's name is the user's call, not a silent merge.
+        onto_other = {**renamed, "name": other["fleet"]["name"]}
+        is_error, payload = await call(client, "manage_catalog", onto_other)
+        assert is_error and payload["error"]["code"] == "NAME_TAKEN"
+    assert len(core_state.fleets) == 2
