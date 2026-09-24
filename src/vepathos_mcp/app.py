@@ -12,8 +12,10 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.types import ASGIApp
 
 from vepathos_mcp import __version__
 from vepathos_mcp.auth.verifier import JwksTokenVerifier
@@ -101,6 +103,13 @@ def register_operational_routes(mcp: MCPServer, settings: Settings, core: Vepath
         status, body = await probe.evaluate()
         return JSONResponse(body, status_code=status)
 
+    # Clients that ask for the resource metadata without the resource path (the bare form is still
+    # in use) are pointed at the canonical document instead of a 404 they cannot recover from.
+    @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])  # type: ignore[untyped-decorator]
+    async def protected_resource_alias(_: Request) -> Response:
+        path = settings.mcp_path if settings.mcp_path.startswith("/") else f"/{settings.mcp_path}"
+        return RedirectResponse(f"/.well-known/oauth-protected-resource{path}", status_code=307)
+
     @mcp.custom_route("/metrics", methods=["GET"])  # type: ignore[untyped-decorator]
     async def metrics_endpoint(request: Request) -> Response:
         expected = settings.metrics_bearer_token.get_secret_value() if settings.metrics_bearer_token else None
@@ -110,6 +119,37 @@ def register_operational_routes(mcp: MCPServer, settings: Settings, core: Vepath
         elif not _is_private_client(request):
             return PlainTextResponse("not found", status_code=404)
         return Response(generate_latest(metrics.REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
+
+# Browser-based MCP clients send a preflight before every call, without credentials. Answering it
+# after authentication means a 401 with no CORS headers, which the browser turns into a blocked
+# request the user only sees as "failed to connect". Bearer tokens travel in the Authorization
+# header, never cookies, so "*" is correct here and credentials stay disallowed.
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": (
+        "Authorization, Content-Type, Accept, Last-Event-ID, Mcp-Session-Id, MCP-Protocol-Version"
+    ),
+    # Without this the browser hides both the 401's discovery pointer and the session id from JS.
+    "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id, MCP-Protocol-Version",
+    "Access-Control-Max-Age": "86400",
+}
+
+
+class CorsMiddleware(BaseHTTPMiddleware):
+    """Answer preflight before auth, and carry the headers on every response."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
+            return Response(status_code=204, headers=CORS_HEADERS)
+        response = await call_next(request)
+        for header, value in CORS_HEADERS.items():
+            response.headers.setdefault(header, value)
+        return response
 
 
 def create_app(
@@ -142,6 +182,8 @@ def create_app(
         ),
         host=settings.host,
     )
+
+    app.add_middleware(CorsMiddleware)
 
     sdk_lifespan = app.router.lifespan_context
 

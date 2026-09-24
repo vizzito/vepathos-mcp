@@ -4,8 +4,12 @@
 # reverse proxy (see deploy/Caddyfile.example), which reaches this container over the external
 # Docker network `vepathos-edge`.
 #
-#   docker network create vepathos-edge   # once per host
-#   docker compose -p vepathos-mcp -f deploy/docker-compose.prod.yml --env-file /etc/vepathos-mcp/.env up -d --build
+# On a greenfield host:
+#   docker network create vepathos-edge
+#   docker compose -p vepathos-mcp -f deploy/docker-compose.prod.yml --env-file ../.env up -d --build
+#
+# On api-prod (Caddy already on vepathos-net), add the overlay:
+#   -f deploy/docker-compose.apiprod.yml
 
 name: vepathos-mcp
 
@@ -16,7 +20,9 @@ services:
     image: vepathos/mcp:${VEPATHOS_MCP_VERSION:-latest}
     restart: unless-stopped
     env_file:
-      - ${VEPATHOS_MCP_ENV_FILE:-/etc/vepathos-mcp/.env}
+      # Relative to this file: repo-root `.env` (gitignored). The `deploy` user on
+      # api-prod has no sudo for /etc. Override with VEPATHOS_MCP_ENV_FILE if needed.
+      - ${VEPATHOS_MCP_ENV_FILE:-../.env}
     environment:
       ENVIRONMENT: production
       MCP_HOST: 0.0.0.0

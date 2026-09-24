@@ -83,6 +83,37 @@ def test_time_windows_require_route_start_time() -> None:
     assert parse_optimize_input(args).uses_time_windows
 
 
+def test_a_flag_set_false_keeps_the_data_without_enforcing_it() -> None:
+    args = sample_arguments(stops=2)
+    args["vehicles"] = [{"vehicle_id": "van", "count": 2, "max_weight_kg": 900, "max_volume_m3": 3}]
+    args["stops"][0]["time_window"] = {"start": "09:00", "end": "12:00"}
+    args["schedule"].pop("route_start_time", None)
+    args.update({"use_weight": False, "use_volume": False, "use_time_windows": False})
+    inp = parse_optimize_input(args)
+    assert not (inp.uses_weight or inp.uses_volume or inp.uses_time_windows)
+
+
+def test_a_flag_set_true_needs_a_capacity_to_apply() -> None:
+    args = sample_arguments(stops=2)
+    args["use_volume"] = True
+    err = expect_error(args, ErrorCode.INVALID_INPUT)
+    assert "max_volume_m3" in err.message + str(err.details) + str(err.suggestion)
+
+
+def test_only_the_flags_the_caller_set_reach_core() -> None:
+    from vepathos_mcp.schemas.mapping import to_core_request
+
+    args = sample_arguments(stops=2)
+    assert "constraints" not in to_core_request(parse_optimize_input(args), "2026-09-17")
+    args["use_time_windows"] = False
+    assert to_core_request(parse_optimize_input(args), "2026-09-17")["constraints"] == {"time_windows": False}
+    args["max_load_ratio"] = 1
+    assert to_core_request(parse_optimize_input(args), "2026-09-17")["constraints"] == {
+        "time_windows": False,
+        "max_load_ratio": 1,
+    }
+
+
 def test_time_window_order_and_format() -> None:
     args = sample_arguments(stops=1)
     args["schedule"]["route_start_time"] = "08:00"
@@ -114,9 +145,7 @@ def test_issue_list_is_capped_and_never_echoes_input() -> None:
 def test_geocode_accepts_inspector_stringified_addresses() -> None:
     inp = parse_geocode_input(
         {
-            "addresses": (
-                '[{"stop_id":"A1","address":"Av. Corrientes 1000","city":"CABA","country":"AR"}]'
-            ),
+            "addresses": ('[{"stop_id":"A1","address":"Av. Corrientes 1000","city":"CABA","country":"AR"}]'),
             "city": "CABA",
             "country": "AR",
         }
@@ -131,3 +160,44 @@ def test_get_result_input() -> None:
         parse_get_result_input({"optimization_id": "../../etc"})
     with pytest.raises(DomainError):
         parse_get_result_input({"optimization_id": "mcp_" + "a" * 32, "detail": "everything"})
+
+
+def test_plan_and_depot_names_reach_core_only_when_set() -> None:
+    from vepathos_mcp.schemas.mapping import request_fingerprint, to_core_request
+
+    args = sample_arguments(stops=2)
+    unnamed = to_core_request(parse_optimize_input(args), "2026-09-17")
+    assert "plan_name" not in unnamed and "depot_name" not in unnamed
+
+    named = to_core_request(
+        parse_optimize_input({**args, "plan_name": "Lunes zona 1", "depot_name": "Galpón"}), "2026-09-17"
+    )
+    assert named["plan_name"] == "Lunes zona 1" and named["depot_name"] == "Galpón"
+    # A name is part of the request: naming the plan differently is a different call.
+    assert request_fingerprint(named) != request_fingerprint(unnamed)
+
+
+def test_a_stored_run_refuses_a_constraint_its_vehicles_cannot_carry() -> None:
+    """The inline path refused this from the start; the plan_id/dataset_id path did not.
+
+    api-doc fills a missing capacity with 0 when it builds the workspace, and 0 is a real number to
+    the engine rather than "unset", so a hand-set flag against capacity-less vehicles would have
+    reached it as a weight rebalance where nothing fits.
+    """
+
+    from pydantic import ValidationError
+
+    from vepathos_mcp.tools.import_tools import OptimizePlanInput
+
+    base = {"plan_id": "pln_abc12345", "depot": {"latitude": -37.3, "longitude": -59.1}}
+    without = [{"vehicle_id": "v1", "count": 1}]
+
+    for flag, field in (("use_weight", "max_weight_kg"), ("use_volume", "max_volume_m3")):
+        with pytest.raises(ValidationError, match=f"{flag} is true but no vehicle has {field}"):
+            OptimizePlanInput.model_validate({**base, "vehicles": without, flag: True})
+        # The same flag is fine once a vehicle declares that capacity, and false is always fine:
+        # false is how a caller keeps the data for reference without routing by it.
+        OptimizePlanInput.model_validate(
+            {**base, "vehicles": [{**without[0], field: 900}], flag: True}
+        )
+        OptimizePlanInput.model_validate({**base, "vehicles": without, flag: False})

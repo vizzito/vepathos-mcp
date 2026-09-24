@@ -79,6 +79,7 @@ def _map_stops(rows: list[CoreGeocodedStop] | None) -> list[GeocodedStop] | None
             longitude=row.lng,
             band=row.band,
             confidence=row.confidence,
+            matched_address=row.matched_address,
         )
         for row in rows
     ]
@@ -89,7 +90,10 @@ def _from_core(result: CoreGeocodeResult) -> GeocodeResult:
     unresolved, review = classify_geocoded_stops(stops) if stops else ([], [])
     needs_confirmation = bool(unresolved or review) if stops is not None else None
     return GeocodeResult(
-        geocode_id=result.job_id,
+        # Core deletes the Smart Import job on the read that produces these stops, so a terminal
+        # job's handle is already dead: get_geocode_result answers GEOCODE_EXPIRED with it. The
+        # description always said "pins, OR a geocode_id"; this is the code saying the same.
+        geocode_id=None if result.is_terminal else result.job_id,
         status=result.status,
         submitted_stops=result.submitted_stops,
         resolved_stops=result.resolved_stops,
@@ -166,10 +170,7 @@ def make_get_geocode_tool(deps: ToolDeps) -> Any:
             inp = parse_get_geocode_input(arguments)
             deps.rate_limiter.check(identity.subject, "calls")
             status = await deps.core.get_geocode(identity.call, inp.geocode_id)
-            if (
-                not status.is_terminal
-                and deps.settings.result_longpoll_seconds > 0
-            ):
+            if not status.is_terminal and deps.settings.result_longpoll_seconds > 0:
                 status = await _wait_geocode(
                     ctx, deps, identity, inp.geocode_id, deps.settings.result_longpoll_seconds
                 )

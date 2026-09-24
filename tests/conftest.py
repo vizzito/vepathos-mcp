@@ -83,6 +83,14 @@ async def core_client(
         await client.aclose()
 
 
+def tool_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """sample_arguments as optimize_routes takes them: the schedule fields are top-level there."""
+
+    flat = {key: value for key, value in arguments.items() if key != "schedule"}
+    flat.update(arguments.get("schedule") or {})
+    return flat
+
+
 def sample_arguments(stops: int = 12, **extra: Any) -> dict[str, Any]:
     return {
         "depot": {"latitude": -34.6037, "longitude": -58.3816},
@@ -92,5 +100,8 @@ def sample_arguments(stops: int = 12, **extra: Any) -> dict[str, Any]:
             for i in range(stops)
         ],
         "schedule": {"date": "2026-09-14", "time_zone": "America/Argentina/Buenos_Aires"},
+        # Confirmed by default: these fixtures exercise the optimization path. The confirmation
+        # gate has its own tests, which pass confirmed=False explicitly.
+        "confirmed": True,
         **extra,
     }

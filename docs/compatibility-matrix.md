@@ -3,20 +3,31 @@
 Filled only from official documentation (cited) and from our own tests. "Tested" stays empty until a
 real client run passes the smoke prompts.
 
-Last documentation review: 2026-09-13.
+Last documentation review: 2026-09-13. Last client run: 2026-09-16 (Claude, Codex).
 
 | Client | Remote MCP | Streamable HTTP | OAuth | Tasks extension | Protocol version observed | Tested |
 |---|---|---|---|---|---|---|
-| Claude (web, Desktop, mobile) | Yes: custom connectors and Connectors Directory [1] | Yes [1] | Yes: DCR, CIMD (requires `client_id_metadata_document_supported` + `none` auth method), Anthropic-held credentials; static headers in beta [1] | Not listed in the extension matrix [3] | — | — |
+| Claude (web, Desktop, mobile) | Yes: custom connectors and Connectors Directory [1] | Yes [1] | Yes: DCR, CIMD (requires `client_id_metadata_document_supported` + `none` auth method), Anthropic-held credentials; static headers in beta [1] | Not listed in the extension matrix [3] | — | Yes — 2026-09-16, api-prod. Consent screen, hosted callback (`https://claude.ai/api/mcp/auth_callback`), `get_account` returned the account and plan. |
 | Claude Code | Yes (`claude mcp add --transport http`) | Yes | Yes: own CIMD, loopback redirect on any port [1] | Not listed [3] | — | Planned (step 2, `service` mode) |
 | Cursor | Yes (`url` in `mcp.json`) [4] | Yes [4] | Yes: browser OAuth; static client configuration supported [4] | Not listed [3] | — | — |
 | VS Code (GitHub Copilot) | Yes (`type: http`) | Yes | Yes (verify DCR/CIMD at release) | Not listed [3] | — | — |
-| Codex (CLI / IDE) | Yes (`url` in `config.toml`) [5] | Yes [5] | Yes (`codex mcp login`; may need `oauth_resource`) [5] | Not listed [3] | — | — |
+| Codex (CLI / IDE) | Yes (`url` in `config.toml`) [5] | Yes [5] | Yes (`codex mcp login`; may need `oauth_resource`) [5] | Not listed [3] | — | Yes — 2026-09-16, api-prod. DCR + loopback redirect on an ephemeral port (`127.0.0.1:55922`); consent screen showed the loopback warning. `oauth_resource` was not needed. |
 | ChatGPT (developer mode / apps) | Yes, public HTTPS [6] | Yes (and SSE) [6] | Yes: CIMD supported, DCR [6] | Not listed [3] | — | — |
 | MCP Inspector 2.6.0 | Yes | Yes | Yes | — | 2026-07-28 client | Yes — fake Core tools (2026-09-13). Real stack: discovery/401/DCR (`scripts/smoke-local.sh`, 2026-09-13). Tools/call on Core pending a dashboard key or OAuth consent. |
 
 Notes:
 
+- The two OAuth paths that matter are both exercised: a **hosted callback** (Claude, a cloud client
+  with a fixed HTTPS redirect registered through CIMD) and a **loopback callback** (Codex, a CLI
+  that opens a local port per run and registers it through DCR, per RFC 8252). A client that fails
+  to connect is almost always one of these two shapes, so start by asking which it is.
+- Codex documents an `oauth_resource` setting for cases where the client cannot derive the resource
+  from discovery. It was **not** required on 2026-09-16; if a Codex user reports a token the server
+  rejects as wrong-audience, that setting is the first thing to check — on their side, not ours.
+- Browser-based clients additionally need the CORS preflight answered before authentication and
+  `WWW-Authenticate` exposed; both were missing until 2026-09-16 and are covered by
+  `tests/protocol/test_http_endpoint.py`. Cursor, VS Code and ChatGPT remain untested against
+  api-prod, so their rows stay documentation-only.
 - No mainstream client listed support for `io.modelcontextprotocol/tasks` as of 2026-09-13; the official
   Python and TypeScript SDKs had not shipped it either. Vepathos works through explicit
   `optimization_id` polling.

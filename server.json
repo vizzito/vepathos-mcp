@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.vepathos/vepathos",
   "title": "Vepathos",
-  "description": "Multi-vehicle delivery route optimization at scale, with capacity and time-window constraints.",
-  "version": "0.1.0",
+  "description": "Import orders, manage your fleet, and generate optimized last-mile delivery routes at scale.",
+  "version": "0.10.0",
   "websiteUrl": "https://vepathos.com",
   "repository": {
     "url": "https://github.com/vizzito/vepathos-mcp",

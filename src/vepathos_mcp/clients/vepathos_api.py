@@ -16,7 +16,7 @@ import random
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 from urllib.parse import quote
 
@@ -27,20 +27,46 @@ from pydantic import BaseModel, ValidationError
 from vepathos_mcp import __version__
 from vepathos_mcp.clients.breaker import CircuitBreaker
 from vepathos_mcp.clients.core_models import (
+    CoreAccount,
+    CoreAutomationCreated,
+    CoreAutomationList,
+    CoreCatalog,
+    CoreDataset,
+    CoreDepotSaved,
     CoreGeocodeCreated,
     CoreGeocodeResult,
     CoreJobCreated,
     CoreJobResult,
     CoreJobStatusResponse,
+    CorePlan,
+    CorePlanList,
+    CoreVehicleSaved,
 )
 from vepathos_mcp.errors.codes import DomainError, ErrorCode
 from vepathos_mcp.errors.mapping import from_core_error
+from vepathos_mcp.schemas.maps import MapCreated
 
 BASE_PATH = "/api/mcp/v1"
 RETRYABLE_STATUS = frozenset({502, 503, 504})
 MAX_RETRY_AFTER_SECONDS = 5.0
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+# A Core from before catalog master data: the agent can still plan, it just cannot save.
+_CANNOT_SAVE_VEHICLES = DomainError(
+    ErrorCode.INTERNAL_ERROR,
+    "This Vepathos deployment cannot save vehicles yet.",
+    suggestion="Plan with the vehicle in vehicles[] without saving it; the user can add it in the "
+    "Vepathos dashboard.",
+    retryable=False,
+)
+_CANNOT_SAVE_DEPOTS = DomainError(
+    ErrorCode.INTERNAL_ERROR,
+    "This Vepathos deployment cannot save depots yet.",
+    suggestion="Pass the depot coordinates to the optimize call without saving it; the user can add it "
+    "in the Vepathos dashboard.",
+    retryable=False,
+)
 Observer = Callable[[str, float, int | None], None]
 
 
@@ -48,7 +74,9 @@ Observer = Callable[[str, float, int | None], None]
 class CallContext:
     """Per-call data forwarded to Core. `authorization` is the caller's own credential."""
 
-    authorization: str
+    # Never in a repr: a traceback, a log line or a CI report prints the dataclass, credential included
+    # (seen in a failing integration test, 2026-09-20).
+    authorization: str = field(repr=False)
     client_label: str | None = None
     traceparent: str | None = None
     request_id: str | None = None
@@ -91,6 +119,11 @@ class VepathosApiClient:
     async def create_job(
         self, call: CallContext, body: dict[str, Any], idempotency_key: str
     ) -> CoreJobCreated:
+        """Start an optimization. `body` carries exactly one stop source: `plan_id` (the plan's stops),
+        `dataset_id` (an import's copy) or inline `stops` (a new plan), plus the optional
+        `exclude_stop_ids` (plan or dataset), `plan_name` (inline) and `depot_name`. Every run lives in
+        a plan: the response names it (`plan_id`, `account_url`) and any library rotation."""
+
         data = await self._request(
             "POST",
             f"{BASE_PATH}/optimization/jobs",
@@ -152,6 +185,230 @@ class VepathosApiClient:
         )
         return self._parse(CoreGeocodeResult, data)
 
+    async def create_map(self, call: CallContext, job_id: str) -> MapCreated:
+        # Core deduplicates permanently per account/job; retries never extend the TTL.
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/optimization/jobs/{_segment(job_id)}/map",
+            call,
+            operation="map_create",
+            json_body={},
+            idempotency_key=f"map:{job_id}",
+        )
+        return self._parse(MapCreated, data)
+
+    async def get_account(self, call: CallContext) -> CoreAccount:
+        """Who the caller's credential belongs to, plus plan limits and period usage."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/account",
+            call,
+            operation="account",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not report account information yet.",
+                suggestion=(
+                    "Skip get_account. To see which Vepathos account is connected, the user can open "
+                    "Connected apps in the Vepathos dashboard."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAccount, data)
+
+    async def list_automations(self, call: CallContext) -> CoreAutomationList:
+        """The account's standing rules, the stores one could be pointed at, and how many may run."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/automations",
+            call,
+            operation="automations_list",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not expose automations yet.",
+                suggestion=(
+                    "Skip list_automations. The user can see and change their automations in the "
+                    "Vepathos dashboard."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAutomationList, data)
+
+    async def create_automation(
+        self, call: CallContext, body: dict[str, Any], *, operation_id: str
+    ) -> CoreAutomationCreated:
+        """Writes a rule, switched off. Only the person turns one on, on their own screen."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/automations",
+            call,
+            operation="automations_create",
+            json_body=body,
+            # Same key, same rule: a retried call returns the one already written instead of a second.
+            idempotency_key=f"automation:{operation_id}",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment cannot create automations yet.",
+                suggestion="Ask the user to set the automation up in the Vepathos dashboard.",
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreAutomationCreated, data)
+
+    async def get_catalog(self, call: CallContext) -> CoreCatalog:
+        """The account's own fleets, vehicles and depots, already in kilograms, cubic metres and degrees."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/catalog",
+            call,
+            operation="catalog",
+            absent_error=DomainError(
+                ErrorCode.INTERNAL_ERROR,
+                "This Vepathos deployment does not expose the vehicle catalog yet.",
+                suggestion=(
+                    "Skip list_fleet and ask the user to describe the fleet, then pass those vehicles "
+                    "to optimize_routes."
+                ),
+                retryable=False,
+            ),
+        )
+        return self._parse(CoreCatalog, data)
+
+    async def create_vehicle(
+        self, call: CallContext, body: dict[str, Any], *, idempotency_key: str
+    ) -> CoreVehicleSaved:
+        """Saves a vehicle in the account. Core converges by name, so a retried call writes nothing new."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/catalog/vehicles",
+            call,
+            operation="catalog_vehicle_create",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            absent_error=_CANNOT_SAVE_VEHICLES,
+        )
+        return self._parse(CoreVehicleSaved, data)
+
+    async def update_vehicle(
+        self, call: CallContext, vehicle_id: str, body: dict[str, Any]
+    ) -> CoreVehicleSaved:
+        data = await self._request(
+            "PATCH",
+            f"{BASE_PATH}/catalog/vehicles/{vehicle_id}",
+            call,
+            operation="catalog_vehicle_update",
+            json_body=body,
+            absent_error=_CANNOT_SAVE_VEHICLES,
+        )
+        return self._parse(CoreVehicleSaved, data)
+
+    async def create_depot(
+        self, call: CallContext, body: dict[str, Any], *, idempotency_key: str
+    ) -> CoreDepotSaved:
+        """Saves a depot in the account. Core converges by name, so a retried call writes nothing new."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/catalog/depots",
+            call,
+            operation="catalog_depot_create",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            absent_error=_CANNOT_SAVE_DEPOTS,
+        )
+        return self._parse(CoreDepotSaved, data)
+
+    async def update_depot(self, call: CallContext, depot_id: str, body: dict[str, Any]) -> CoreDepotSaved:
+        data = await self._request(
+            "PATCH",
+            f"{BASE_PATH}/catalog/depots/{depot_id}",
+            call,
+            operation="catalog_depot_update",
+            json_body=body,
+            absent_error=_CANNOT_SAVE_DEPOTS,
+        )
+        return self._parse(CoreDepotSaved, data)
+
+    async def create_import(
+        self, call: CallContext, body: dict[str, Any], idempotency_key: str | None = None
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/imports",
+            call,
+            operation="import_submit",
+            json_body=body,
+            idempotency_key=idempotency_key or f"import:{uuid.uuid4().hex}",
+            request_timeout=self._submit_timeout,
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def get_import(self, call: CallContext, import_id: str) -> dict[str, Any]:
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/imports/{_segment(import_id)}",
+            call,
+            operation="import_status",
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def update_import_mapping(
+        self, call: CallContext, import_id: str, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        data = await self._request(
+            "PUT",
+            f"{BASE_PATH}/imports/{_segment(import_id)}",
+            call,
+            operation="import_mapping",
+            json_body=body,
+            request_timeout=self._submit_timeout,
+        )
+        return data if isinstance(data, dict) else {}
+
+    async def list_datasets(self, call: CallContext, *, limit: int = 20) -> dict[str, Any]:
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/datasets",
+            call,
+            operation="datasets",
+            params={"limit": limit},
+        )
+        return data if isinstance(data, dict) else {"datasets": []}
+
+    async def get_dataset(self, call: CallContext, dataset_id: str) -> CoreDataset:
+        """Counts for one dataset and whether its next optimization is billed. Never the stops."""
+
+        data = await self._request(
+            "GET",
+            f"{BASE_PATH}/datasets/{_segment(dataset_id)}",
+            call,
+            operation="dataset",
+        )
+        return self._parse(CoreDataset, data)
+
+    async def list_plans(
+        self, call: CallContext, *, limit: int = 20, query: str | None = None
+    ) -> CorePlanList:
+        """The account's plans (newest first, favorites on top) and the library caps. Never the stops."""
+
+        params: dict[str, Any] = {"limit": limit}
+        if query:
+            params["query"] = query
+        data = await self._request("GET", f"{BASE_PATH}/plans", call, operation="plans", params=params)
+        return self._parse(CorePlanList, data)
+
+    async def get_plan(self, call: CallContext, plan_id: str) -> CorePlan:
+        """One plan: counts, depot, what its next run costs and `last_agent_run`. Never the stops."""
+
+        data = await self._request("GET", f"{BASE_PATH}/plans/{_segment(plan_id)}", call, operation="plan")
+        return self._parse(CorePlan, data)
+
     async def health(self) -> bool:
         """Cheap reachability probe used by /ready (service key only, no account access)."""
 
@@ -178,6 +435,7 @@ class VepathosApiClient:
         params: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
         request_timeout: float | None = None,
+        absent_error: DomainError | None = None,
     ) -> Any:
         if self._breaker.is_open:
             raise DomainError(
@@ -243,7 +501,11 @@ class VepathosApiClient:
                     else:
                         # A 4xx means Core is reachable and answered deliberately.
                         self._breaker.record_success()
-                    raise from_core_error(response.status_code, _json(response), retry_after)
+                    payload = _json(response)
+                    if response.status_code == 404 and absent_error is not None and payload is None:
+                        # No error envelope on a 404: this Core build does not serve the route.
+                        raise absent_error
+                    raise from_core_error(response.status_code, payload, retry_after)
                 else:
                     self._breaker.record_success()
                     payload = _json(response)

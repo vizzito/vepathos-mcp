@@ -8,28 +8,46 @@ and sequences each route from one depot, at scales from dozens to thousands of s
 This repository is the remote MCP adapter (`mcp.vepathos.com`). It is not a product of its own.
 Web, REST and MCP share the same Vepathos account, plan, features, limits and monthly stop quota.
 
-| Tool | What it does |
-|---|---|
-| `geocode_addresses` | Turn street addresses into coordinates via Vepathos Smart Import. |
-| `get_geocode_result` | Read geocode status and pins. |
-| `optimize_delivery_routes` | Submit an asynchronous fleet optimization (VRP). |
-| `get_optimization_result` | Read status, a compact summary, stop sequences or unassigned ids. |
+<!-- BEGIN GENERATED: tools-table (vepathos-mcp tools --write-docs) -->
+| Tool | What it does | Changes data | Available |
+|---|---|---|---|
+| `get_account` | Show which Vepathos account this connection uses and what its plan allows. | no | always |
+| `optimize_routes` | Plan delivery routes (vehicle routing problem, VRP). | yes | always |
+| `list_plans` | List the plans in the connected Vepathos account (the dashboard's plans; every optimization is saved in one). | no | always |
+| `get_optimization_result` | Get the status and outcome of a route optimization by its optimization_id. | no | always |
+| `import_deliveries` | Import deliveries into Vepathos so their rows never pass through this chat. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `get_import_result` | Status and summary of an import_deliveries job. | no | `MCP_IMPORT_TOOLS_ENABLED` |
+| `update_import_mapping` | Correct an import's column mapping without re-uploading. | yes | `MCP_IMPORT_TOOLS_ENABLED` |
+| `list_datasets` | List imports from this or earlier chats. | no | `MCP_IMPORT_TOOLS_ENABLED` |
+| `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | always |
+| `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | always |
+| `list_fleet` | List what the connected Vepathos account has saved. | no | always |
+| `manage_catalog` | Add or change one of the account's own things. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `list_automations` | List the connected Vepathos account's standing rules. | no | always |
+| `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | always |
+| `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | `MCP_MAP_SHARES_ENABLED` |
+<!-- END GENERATED: tools-table -->
+
+No tool switches an automation on: `create_automation` always writes it switched off, and only its
+owner turns it on in the dashboard, because a rule that is on spends their stops unattended.
 
 There is no cancel tool. A submitted optimization runs to completion. Street addresses must go
-through `geocode_addresses` first; `optimize_delivery_routes` does not invent coordinates.
+through `geocode_addresses` (or, with imports on, `import_deliveries`) first; `optimize_routes` does not
+invent coordinates.
 
-## Status (2026-09-13)
+## Status (2026-09-14)
 
-The adapter and the Core MCP channel work on the local stack (optimize + geocode, OAuth, trial,
-structured plan errors). Production `develop` does not have the channel enabled. Do not add
-"Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+Production is live at `https://mcp.vepathos.com/mcp` (`/ready` ok, authenticated `tools/list`
+ok). Claude and other directories do **not** list Vepathos yet — a user must add a custom
+connector with that URL. Publication order: [docs/publish-marketplaces.md](docs/publish-marketplaces.md).
 
-Paid self-serve is **off** until Stripe is configured. MCP accounts stay on Free; jobs the plan
-cannot run return `contact_url`, not Checkout. That is enough for internal / beta. For the public
-Claude directory, enable Stripe or state clearly that the channel is Free + contact.
+Do not add "Add to Claude / Cursor / …" buttons until each flow is verified end to end.
+
+Paid self-serve is **off**. Public listings must say **Free + contact**. Jobs the plan cannot
+run return `contact_url`, not Stripe Checkout.
 
 - Local / CI: this server + a **fake Core** (test double; it does not route or geocode for real).
-- Local real: `feat/mcp-channel` in `vepathos-api-doc` + optimizer + Smart Import worker.
+- Local real: `vepathos-api-doc` MCP channel + optimizer + Smart Import worker.
 
 ## Connect (production target)
 
@@ -40,7 +58,7 @@ Add Vepathos → Connect → Sign in / Sign up → Authorize
 1. Discover Vepathos from Claude or another MCP client.
 2. Connect. The client signs in (or creates a Free / Duck account) at `api.vepathos.com`.
 3. Authorize the client to optimize routes with that account.
-4. Call `optimize_delivery_routes`. If the plan cannot run the request, the tool returns
+4. Call `optimize_routes`. If the plan cannot run the request, the tool returns
    `PLAN_UPGRADE_REQUIRED` with `upgrade_url` (when paid plans are on) or `contact_url`
    (Free-only, until Stripe is configured). Payment, when enabled, is handled entirely by
    Stripe. Retry without reconnecting after the account can run the job.
@@ -137,12 +155,24 @@ peer-reviewed publication.
 | [docs/core-channel-contract.md](docs/core-channel-contract.md) | HTTP contract `/api/mcp/v1` |
 | [docs/auth.md](docs/auth.md) | OAuth, API keys, service mode |
 | [docs/onboarding.md](docs/onboarding.md) | Connect, signup, upgrade |
-| [docs/tools.md](docs/tools.md) | Tool schemas, annotations, errors |
+| [docs/tools.md](docs/tools.md) | How the tools behave: plans, confirmation, master data, errors |
+| [docs/tools-reference.md](docs/tools-reference.md) | Generated reference: every tool, inputs, annotations, workflows |
+| [docs/agent-test-plan.md](docs/agent-test-plan.md) | Every scenario to run with a real agent, from health to a connected store, and the open findings |
+| [docs/chatgpt-test-battery.md](docs/chatgpt-test-battery.md) | What only ChatGPT can tell us: the 512-character window, attachments, cached schemas |
 | [docs/async.md](docs/async.md) | `optimization_id` + poll; Tasks later |
-| [docs/deployment.md](docs/deployment.md) | Container, Caddy, health |
+| [docs/deployment.md](docs/deployment.md) | Operator index (container, Caddy, health) |
+| [docs/deploy-api-prod.md](docs/deploy-api-prod.md) | First prod cut on api-prod (2026-09-14): every step and pitfall |
+| [docs/publish-marketplaces.md](docs/publish-marketplaces.md) | Claude, MCP Registry, ChatGPT, Cursor — order and blockers |
+| [docs/directory-listing.md](docs/directory-listing.md) | Paste-ready listing copy (Free + contact) |
 | [docs/publication-checklist.md](docs/publication-checklist.md) | Registry and directory gates |
 | [docs/privacy-mcp.md](docs/privacy-mcp.md) | Draft MCP section for the public privacy policy |
 | [docs/public-mcp-page.md](docs/public-mcp-page.md) | Draft copy for vepathos.com/mcp |
+
+## Privacy
+
+Account and logistics data follow the public policy at [vepathos.com/privacy](https://vepathos.com/privacy).
+The MCP-specific section (what agents send, 24 h result retention, no payload logs) is drafted in
+[docs/privacy-mcp.md](docs/privacy-mcp.md) and must be copied onto that page before directory review.
 
 ## License
 

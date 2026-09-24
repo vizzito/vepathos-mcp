@@ -16,6 +16,8 @@ class ErrorCode(StrEnum):
     NO_VEHICLES = "NO_VEHICLES"
     INVALID_COORDINATES = "INVALID_COORDINATES"
     PLAN_UPGRADE_REQUIRED = "PLAN_UPGRADE_REQUIRED"
+    # The account's plan has no automations at all: nothing to retry, the answer is an upgrade.
+    AUTOMATION_NOT_INCLUDED = "AUTOMATION_NOT_INCLUDED"
     QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
     CONCURRENT_OPTIMIZATION_LIMIT = "CONCURRENT_OPTIMIZATION_LIMIT"
     IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
@@ -28,6 +30,14 @@ class ErrorCode(StrEnum):
     OPTIMIZATION_FAILED = "OPTIMIZATION_FAILED"
     GEOCODE_NOT_FOUND = "GEOCODE_NOT_FOUND"
     GEOCODE_EXPIRED = "GEOCODE_EXPIRED"
+    IMPORT_NOT_FOUND = "IMPORT_NOT_FOUND"
+    DATASET_NOT_FOUND = "DATASET_NOT_FOUND"
+    PLAN_NOT_FOUND = "PLAN_NOT_FOUND"
+    PLAN_BUSY = "PLAN_BUSY"
+    # Catalog master data: a saved name that already exists, or an id the account does not have.
+    NAME_TAKEN = "NAME_TAKEN"
+    VEHICLE_NOT_FOUND = "VEHICLE_NOT_FOUND"
+    DEPOT_NOT_FOUND = "DEPOT_NOT_FOUND"
     BACKEND_UNAVAILABLE = "BACKEND_UNAVAILABLE"
     TIMEOUT = "TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -36,6 +46,7 @@ class ErrorCode(StrEnum):
 RETRYABLE_CODES: frozenset[ErrorCode] = frozenset(
     {
         ErrorCode.CONCURRENT_OPTIMIZATION_LIMIT,
+        ErrorCode.PLAN_BUSY,
         ErrorCode.RATE_LIMITED,
         ErrorCode.OPTIMIZATION_FAILED,
         ErrorCode.BACKEND_UNAVAILABLE,
@@ -49,6 +60,7 @@ PLAN_CODES: frozenset[ErrorCode] = frozenset(
         ErrorCode.PLAN_UPGRADE_REQUIRED,
         ErrorCode.QUOTA_EXCEEDED,
         ErrorCode.CONCURRENT_OPTIMIZATION_LIMIT,
+        ErrorCode.AUTOMATION_NOT_INCLUDED,
     }
 )
 

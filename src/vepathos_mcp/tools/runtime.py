@@ -16,15 +16,49 @@ from mcp.server.mcpserver.context import Context
 from mcp_types import CallToolResult
 
 from vepathos_mcp.auth.upstream import subject_key, upstream_authorization
+from vepathos_mcp.auth.verifier import credential_kind
 from vepathos_mcp.clients.core_models import CoreJobStatusResponse
 from vepathos_mcp.clients.vepathos_api import CallContext, VepathosApiClient
-from vepathos_mcp.config import Settings
+from vepathos_mcp.config import AuthMode, Settings
 from vepathos_mcp.errors.codes import PLAN_CODES, DomainError, ErrorCode
+from vepathos_mcp.errors.mapping import API_KEY_AUTH_SUGGESTION
 from vepathos_mcp.rate_limit import RateLimiter
 from vepathos_mcp.telemetry import metrics
 from vepathos_mcp.telemetry.client_detect import detect_client
 from vepathos_mcp.telemetry.logging import log_event
 from vepathos_mcp.tools.rendering import error_result, estimate_tokens, result_text
+
+
+class AccountLabelCache:
+    """Short-lived `subject -> account label`, so plan errors can name the connected account.
+
+    An empty string is a remembered miss. Bounded: the label is a convenience, never state a tool
+    result depends on.
+    """
+
+    def __init__(self, ttl_seconds: float = 300.0, max_entries: int = 1024) -> None:
+        self._ttl = ttl_seconds
+        self._max_entries = max_entries
+        self._entries: dict[str, tuple[float, str]] = {}
+
+    def get(self, subject: str, now: float) -> str | None:
+        entry = self._entries.get(subject)
+        if entry is None:
+            return None
+        expires_at, label = entry
+        if expires_at <= now:
+            self._entries.pop(subject, None)
+            return None
+        return label
+
+    def put(self, subject: str, label: str, now: float) -> None:
+        if len(self._entries) >= self._max_entries:
+            for stale, (expires_at, _) in list(self._entries.items()):
+                if expires_at <= now:
+                    self._entries.pop(stale, None)
+            if len(self._entries) >= self._max_entries:
+                self._entries.clear()
+        self._entries[subject] = (now + self._ttl, label)
 
 
 @dataclass
@@ -34,6 +68,7 @@ class ToolDeps:
     rate_limiter: RateLimiter
     sleep: Callable[[float], Awaitable[None]] = anyio.sleep
     clock: Callable[[], float] = field(default=time.monotonic)
+    account_labels: AccountLabelCache = field(default_factory=AccountLabelCache)
 
 
 @dataclass(frozen=True)
@@ -42,6 +77,7 @@ class RequestIdentity:
     subject: str
     client_label: str
     protocol_version: str | None
+    credential_kind: str | None = None
 
 
 def raw_arguments(ctx: Context) -> dict[str, Any]:
@@ -77,6 +113,7 @@ def resolve_identity(ctx: Context, deps: ToolDeps) -> RequestIdentity:
         subject=subject_key(deps.settings, access_token),
         client_label=client_label,
         protocol_version=ctx.protocol_version,
+        credential_kind=credential_kind(access_token),
     )
 
 
@@ -108,6 +145,37 @@ async def wait_for_terminal(
     return status
 
 
+AUTH_CODES = frozenset({ErrorCode.AUTHENTICATION_REQUIRED, ErrorCode.INVALID_CREDENTIALS})
+
+
+def explain_auth_failure(identity: RequestIdentity | None, err: DomainError) -> DomainError:
+    """Point an authorization failure at the credential the caller actually used."""
+
+    if identity is None or err.code not in AUTH_CODES:
+        return err
+    if identity.credential_kind == AuthMode.API_KEY.value:
+        err.suggestion = API_KEY_AUTH_SUGGESTION
+    return err
+
+
+async def name_connected_account(
+    deps: ToolDeps, identity: RequestIdentity | None, err: DomainError
+) -> DomainError:
+    """Add the connected account to plan errors: the usual cause is being on the wrong one."""
+
+    if identity is None or err.code not in PLAN_CODES:
+        return err
+    from vepathos_mcp.tools.account import remember_account  # circular at module level
+
+    label = await remember_account(deps, identity)
+    if not label:
+        return err
+    err.details["connected_account"] = label
+    named = f"The connected Vepathos account is {label}: name it when reporting this to the user."
+    err.suggestion = f"{err.suggestion} {named}" if err.suggestion else named
+    return err
+
+
 async def instrumented(
     tool: str,
     ctx: Context,
@@ -121,6 +189,7 @@ async def instrumented(
     subject = "anonymous"
     outcome = "success"
     error_code = ""
+    identity: RequestIdentity | None = None
     result: CallToolResult
     try:
         identity = resolve_identity(ctx, deps)
@@ -132,7 +201,9 @@ async def instrumented(
         ).inc()
         result = await handler(identity, arguments)
     except DomainError as err:
-        result = error_result(err)
+        result = error_result(
+            explain_auth_failure(identity, await name_connected_account(deps, identity, err))
+        )
     except Exception as exc:
         log_event("tool_crashed", logging.ERROR, tool=tool, exception=type(exc).__name__)
         result = error_result(

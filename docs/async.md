@@ -6,7 +6,7 @@ into a long synchronous HTTP call.
 ## Flow used by every client today
 
 ```
-optimize_delivery_routes ──► Core creates job (idempotent) ──► optimization_id
+optimize_routes ──► Core creates job (idempotent) ──► optimization_id
         │  waits ≤ 8 s (configurable) and includes the result when it finishes quickly
         ▼
 get_optimization_result(optimization_id)

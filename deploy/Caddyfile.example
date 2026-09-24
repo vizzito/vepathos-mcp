@@ -1,7 +1,11 @@
 # Site block for the edge Caddy that already serves api.vepathos.com on the same host.
-# The edge Caddy container must join the external Docker network `vepathos-edge`.
-# DNS: an A/AAAA record for mcp.vepathos.com pointing at this host must exist before Caddy starts,
-# so Let's Encrypt can issue the certificate.
+# On api-prod that Caddy is already on `vepathos-net` (use deploy/docker-compose.apiprod.yml
+# so this container joins the same network). DNS: an A record for mcp.vepathos.com must
+# resolve to this host before Caddy reloads, so Let's Encrypt can issue the certificate.
+#
+# Host file on api-prod:
+#   ~/vepathos-deploy/vepathos-router-client/deploy/hetzner/vm-api/Caddyfile
+# Confirm with: docker inspect vepathos-caddy --format '{{range .Mounts}}{{println .Source}}{{end}}'
 
 mcp.vepathos.com {
 	# Operational endpoints stay private: health checks run inside Docker, metrics are scraped internally.

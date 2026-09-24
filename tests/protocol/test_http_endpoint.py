@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.conftest import API_KEY, DEV_TOKEN, make_settings, sample_arguments
+from tests.conftest import API_KEY, DEV_TOKEN, make_settings, sample_arguments, tool_arguments
 from vepathos_mcp.app import create_app
 from vepathos_mcp.clients.vepathos_api import VepathosApiClient
 
@@ -112,7 +112,8 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
         assert "mcp-session-id" not in init.headers  # stateless: no session affinity required
         body = parse_rpc(init)
         assert body["result"]["serverInfo"]["name"] == "vepathos"
-        assert "Vepathos solves vehicle routing problems" in body["result"]["instructions"]
+        assert "call get_account, list_fleet and list_plans" in body["result"]["instructions"]
+        assert "Vepathos plans delivery operations" in body["result"]["instructions"]
 
         listed = await client.post(
             "/mcp",
@@ -120,7 +121,7 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
             headers={**headers, "MCP-Protocol-Version": "2025-06-18"},
         )
         tools = {t["name"]: t for t in parse_rpc(listed)["result"]["tools"]}
-        assert tools["optimize_delivery_routes"]["annotations"]["idempotentHint"] is True
+        assert tools["optimize_routes"]["annotations"]["idempotentHint"] is True
         assert tools["get_optimization_result"]["annotations"]["readOnlyHint"] is True
 
         called = await client.post(
@@ -129,7 +130,7 @@ async def test_legacy_client_stateless_initialize_and_tools(http: Callable[..., 
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "optimize_delivery_routes", "arguments": sample_arguments(stops=3)},
+                "params": {"name": "optimize_routes", "arguments": tool_arguments(sample_arguments(stops=3))},
             },
             headers={**headers, "MCP-Protocol-Version": "2025-06-18"},
         )
@@ -192,3 +193,50 @@ async def test_metrics_with_bearer_token(http: Callable[..., Any]) -> None:
         assert (await client.get("/metrics")).status_code == 401
         ok = await client.get("/metrics", headers={"Authorization": "Bearer metrics-secret"})
         assert ok.status_code == 200 and "mcp_tool_calls_total" in ok.text
+
+
+async def test_preflight_is_answered_before_authentication(http: Callable[..., Any]) -> None:
+    """A browser sends OPTIONS without credentials; a 401 here blocks the call it precedes."""
+
+    async with http(AUTH_MODES="oauth,api_key") as client:
+        response = await client.options(
+            "/mcp",
+            headers={
+                "Origin": "https://example.test",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+    assert response.status_code == 204
+    assert response.headers["access-control-allow-origin"] == "*"
+    allowed = response.headers["access-control-allow-headers"].lower()
+    assert "authorization" in allowed and "mcp-protocol-version" in allowed
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+async def test_the_401_discovery_pointer_is_readable_from_a_browser(http: Callable[..., Any]) -> None:
+    async with http(AUTH_MODES="oauth,api_key") as client:
+        response = await client.post(
+            "/mcp",
+            headers={"Accept": ACCEPT, "Content-Type": "application/json", "Origin": "https://example.test"},
+            json=legacy_initialize(),
+        )
+    assert response.status_code == 401
+    # Cross-origin JavaScript cannot read WWW-Authenticate unless the server exposes it, and without
+    # it the client never learns where the authorization server is.
+    exposed = response.headers.get("access-control-expose-headers", "").lower()
+    assert "www-authenticate" in exposed
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+async def test_resource_metadata_without_the_resource_path_is_recoverable(
+    http: Callable[..., Any],
+) -> None:
+    async with http(AUTH_MODES="oauth") as client:
+        response = await client.get("/.well-known/oauth-protected-resource")
+        assert response.status_code == 307
+        assert response.headers["location"] == "/.well-known/oauth-protected-resource/mcp"
+
+        followed = await client.get("/.well-known/oauth-protected-resource", follow_redirects=True)
+    assert followed.status_code == 200
+    assert followed.json()["resource"].endswith("/mcp")
