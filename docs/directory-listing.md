@@ -92,77 +92,136 @@ Replace the placeholders. Never put a live secret in git.
 
 ## Review prompts
 
-Written the way a dispatcher actually types, because that is how they were tested. Each one says what
-should happen, so a reviewer can tell a wrong answer from a right one.
+English, New York, and written the way a dispatcher types rather than as a test script. Each one says
+what a right answer looks like, so a reviewer can tell it from a wrong one.
 
 **1. What am I connected to**
 
-> ¿Qué cuenta tengo conectada, qué flota y qué planes guardados?
+> What account am I connected to, what fleet do I have, and what saved plans?
 
-Reads the account, the fleet and the plans before answering, and reports the plan name, the stops left
+Reads the account, the fleet and the plans before answering, then gives the plan name, the stops left
 this period, the saved vehicles and depots, and the saved plans. It should not read tool names out.
 
 **2. Addresses into pins, with the doubtful ones named**
 
-> Tengo estas entregas para mañana y no tengo las coordenadas. Geocodificá estas direcciones y
-> decime cuáles conviene revisar antes de rutear: Av. Colón 1100, Tandil; Gral. Rodríguez 450,
-> Tandil; Av. España 1200, Tandil.
+> These are tomorrow's deliveries and I do not have coordinates. Geocode them and tell me which pins
+> I should check before routing: 350 5th Ave, New York, NY; 89 E 42nd St, New York, NY; 200 Central
+> Park West, New York, NY.
 
-Geocodes them and names the pins whose match is uncertain, with the address the geocoder matched, so
-the user can confirm. It must not route anything yet.
+Geocodes them and names the pins whose match is uncertain, quoting the address the geocoder matched,
+so the user can confirm. It must not route anything yet.
 
 **3. The run, with the numbers said first**
 
-> Rutéalas desde el depósito de Tandil con una camioneta, salida 9:00, 5 minutos por entrega.
-> Antes de correr decime cuántas paradas me cobra y cuántas me quedan.
+> Route those from the Brooklyn depot with one van, leaving at 09:00, 5 minutes per delivery. Before
+> you run it, tell me how many stops it charges me and how many I have left.
 
 Says what it will charge and what remains, waits for a yes, then runs once. Reports vehicles used,
 total distance, arrival times and any stop it could not assign.
 
 **4. The spreadsheet, which is the real path at volume**
 
-> Te adjunto el archivo de pedidos de hoy. Importalo y decime cuántas paradas, cuántos kilos y si
-> hay direcciones que no resolvió.
+> Here is today's order file. Import it and tell me how many stops, how many kilos, and whether any
+> address did not resolve.
 
-Imports the file rather than pasting rows into the chat, reports the counts, and names the columns it
-was unsure about instead of guessing them.
+Imports the file instead of pasting rows into the chat, reports the counts, and names the columns it
+was unsure about rather than guessing them.
 
 **5. Fleet sizing**
 
-> ¿Cuántos vehículos hicieron falta de verdad, de los que tenía disponibles?
+> Of the vehicles I had available, how many did it actually need?
 
 Answers from the finished run, comparing vehicles used against vehicles available.
 
 **6. Sharing the result**
 
-> Pasame un link del mapa para mandarle al chofer.
+> Give me a map link I can send to the driver.
 
-Creates the link only now that it was asked for, and says it lasts 48 hours and that anyone holding it
-can see the delivery locations.
+Creates the link only now that it was asked for, and says it lasts 48 hours and that anyone holding
+it can see the delivery locations.
 
 **7. Master data, which is not a plan setting**
 
-> Agregame a la cuenta una Sprinter de 1.500 kg y 14 m³.
+> Add a 1,500 kg, 14 m3 Sprinter to my account.
 
 Asks for confirmation, saves one vehicle, and says it is saved. It must not optimize anything. Asking
-twice returns the same vehicle rather than creating a second one.
+again returns the same vehicle rather than creating a second one.
 
-**Negative prompts, where the right answer is a refusal**
+### Long prompts, the way people actually ask
 
-> Usá 25 vehículos para el reparto de mañana.
+These two are real prompts, not simplified ones. They were written for the Vepathos dashboard chat
+and adapted here to what this channel offers: there are no forms or cards over MCP, and the server
+creates vehicles and depots but not fleets or drivers, which stay in the dashboard.
+
+**A. Everything at once, with pieces still missing**
+
+> I need to organize and run tomorrow's deliveries. I have 2 rented vans, but I have not given you
+> their capacities, the departure point or the orders yet. I want to leave at 09:00, spend 6 minutes
+> at each delivery, at most 15 stops per vehicle, and routes of up to 5 hours.
+>
+> The vans and the depot are for this job only: do not save them to my account. I accept a plan being
+> recorded so the run can happen, without keeping it among my saved plans. Do not take data from
+> another delivery run, and do not invent capacities, addresses or orders.
+>
+> Walk me through it here: tell me what you could already set from this message, and ask me only for
+> what you genuinely still need in order to produce routes. If I have to send a file, offer to take
+> it. Keep everything I answer and carry on by yourself with whatever already has enough data.
+>
+> When we have it all, show me the full summary and the cost so I can confirm. After I confirm, run
+> it and follow through to the real result: routes, assigned, unassigned, vehicles used and the
+> longest route. If something stops the run, tell me what is missing and how to fix it without losing
+> what is already done.
+
+What a right answer does: sets the departure, the service time, the stop cap and the route length
+from this one message instead of asking for them again; asks for the missing pieces one at a time,
+starting with the orders, rather than listing every gap at once; keeps the vans and the depot in the
+run and never writes them to the account; states the charge and waits; and after the yes, reports the
+finished run rather than saying it started one.
+
+**B. Build the account and the plan, keeping both**
+
+> I want to set up and run a delivery round from scratch with the orders in the attached file, and
+> keep the resources afterwards.
+>
+> Create a depot called "QA Central Brooklyn" at 630 Flushing Ave, Brooklyn, NY. Show me the location
+> so I can confirm it before you save it. Then create a vehicle called "QA Van 800" with a capacity of
+> 800 kg and 6 m3. If either name already exists, tell me before creating a duplicate or changing it.
+>
+> With those, prepare a plan called "QA Brooklyn Round" from the attached orders, for tomorrow at
+> 07:30, and keep it so I can reuse it. Set 8 minutes per delivery, at most 20 stops per vehicle,
+> routes of up to 6 hours, respect the delivery windows, and fill vehicles to 90% at most. Do not
+> invent capacities or anything missing from the file. If the constraints make it impossible to
+> deliver everything, explain the problem and ask me what I would rather change.
+>
+> Show me the cost and let me confirm before running. Do not replace any other plan.
+>
+> After it runs, follow through to the final result: how many routes, how many orders assigned and
+> unassigned, how many vehicles were used, and how long the longest route is. If there are reasons
+> for the unassigned ones, explain them. Finish by telling me which saved plan and which resources
+> are now in my account.
+
+What a right answer does: geocodes the depot address and shows the matched location before saving
+anything; saves the depot and the vehicle as two separate confirmed writes; imports the file rather
+than reading its rows into the chat; says plainly that a fleet and a driver are created in the
+Vepathos dashboard, not here, instead of pretending to create them; states the charge and waits; and
+closes with the plan id and the two saved resources.
+
+### Negative prompts, where refusing is the right answer
+
+> Use 25 vehicles for tomorrow's round.
 
 Nothing is saved to the account. The 25 is a setting of that run, not 25 new vehicles.
 
-> Rutéame estas direcciones directamente, sin geocodificar.
+> Just route these street addresses, skip the geocoding.
 
 Refuses to invent coordinates and offers to geocode them first.
 
-> Corré una optimización de 3.000 paradas con ventanas horarias.
+> Run an optimization for 3,000 stops with time windows.
 
 On the Free plan this returns a plan limit error with a contact link, not a payment page, and the
-assistant explains what plan would cover it.
+assistant explains which plan would cover it.
 
-> ¿Cómo salió la optimización `opt_zzzzzzzz`?
+> How did optimization opt_zzzzzzzz turn out?
 
 A clear "not found", never an invented result.
 
