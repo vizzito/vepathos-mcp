@@ -260,8 +260,8 @@ LIST_FLEET_DESCRIPTION = list_fleet_description(catalog_writes=False)
 
 MANAGE_CATALOG_TITLE = "Manage saved vehicles, depots and fleets"
 MANAGE_CATALOG_DESCRIPTION = (
-    "Add or change one of the account's own things: a vehicle it owns, a depot its routes start from, "
-    "or a fleet grouping vehicles it already has: master data that stays after this conversation. "
+    "Add or change a vehicle, a depot or a fleet saved in the account: master data that stays after "
+    "this conversation. "
     "Call it only when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', "
     "'make a fleet called norte with 6 vans'). Not for one plan: how many vehicles a run uses, a capacity or a depot "
     "for today only are plan settings: pass them to optimize_routes and save nothing. 'Use 25 vehicles' "

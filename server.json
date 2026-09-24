@@ -3,7 +3,7 @@
   "name": "com.vepathos/vepathos",
   "title": "Vepathos",
   "description": "Import orders, manage your fleet, and generate optimized last-mile delivery routes at scale.",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "websiteUrl": "https://vepathos.com",
   "repository": {
     "url": "https://github.com/vizzito/vepathos-mcp",

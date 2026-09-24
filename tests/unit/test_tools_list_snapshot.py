@@ -38,7 +38,7 @@ EXPECTED_TOOL_NAMES = (
 
 # sha256 of sorted (name, description) pairs with gate off (prod default as of 16/09) and import tools on.
 # Changed on 0.9.0: manage_vehicle and manage_depot became one manage_catalog.
-EXPECTED_DESC_HASH_GATE_OFF = "f44fdd8e2c067fb2e5f8fa89df40f4d6dab47de45dc472753e4552c26870fcda"
+EXPECTED_DESC_HASH_GATE_OFF = "a78714b824d9254bf3181871b7f193ffcf042c38caede475ad3613767d75d6d9"
 
 
 CATALOG_WRITE_TOOLS = {"manage_catalog"}
