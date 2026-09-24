@@ -86,10 +86,16 @@ IMPORT_PLAN_ID_DESCRIPTION = (
 class FileParam(StrictModel):
     """ChatGPT Apps SDK file reference (_meta openai/fileParams)."""
 
-    download_url: str | None = Field(None, max_length=2048)
-    file_id: str | None = Field(None, max_length=200)
-    mime_type: str | None = Field(None, max_length=120)
-    file_name: str | None = Field(None, max_length=200)
+    download_url: str | None = Field(
+        None, max_length=2048, description="Signed URL the host gives for the attachment."
+    )
+    file_id: str | None = Field(None, max_length=200, description="The host's id for the file.")
+    mime_type: str | None = Field(
+        None, max_length=120, description="Media type, used to pick the extension Smart Import reads."
+    )
+    file_name: str | None = Field(
+        None, max_length=200, description="Original file name; it becomes the new plan's name."
+    )
 
 
 class ImportDeliveriesInput(StrictModel):
@@ -110,8 +116,12 @@ class ImportDeliveriesInput(StrictModel):
         description="Deliveries as text: rows the user pasted, or a CSV or JSON file's text.",
     )
     filename: str | None = Field(None, max_length=200, description="Names the new plan; default: the file's.")
-    timezone: str | None = Field(None, max_length=64)
-    depot_country: str | None = Field(None, max_length=64)
+    timezone: str | None = Field(
+        None, max_length=64, description="IANA time zone the rows' dates and times are written in."
+    )
+    depot_country: str | None = Field(
+        None, max_length=64, description="Country the addresses are in, to disambiguate the geocoding."
+    )
     plan_id: str | None = Field(None, pattern=PLAN_ID_PATTERN, description=IMPORT_PLAN_ID_DESCRIPTION)
 
     @model_validator(mode="after")
@@ -124,7 +134,9 @@ class ImportDeliveriesInput(StrictModel):
 
 
 class GetImportInput(StrictModel):
-    import_id: str = Field(min_length=8, max_length=200)
+    import_id: str = Field(
+        min_length=8, max_length=200, description="The import to check, returned by import_deliveries."
+    )
 
 
 class ColumnMapping(StrictModel):
@@ -146,7 +158,9 @@ class ColumnMapping(StrictModel):
 
 
 class UpdateMappingInput(StrictModel):
-    import_id: str = Field(min_length=8, max_length=200)
+    import_id: str = Field(
+        min_length=8, max_length=200, description="The import to correct, from import_deliveries."
+    )
     mapping: dict[str, str | ColumnMapping | None] = Field(
         description="Source column → vepathos field, null to ignore the column, or {field, unit, format} "
         "when its values are in another unit or format.",
@@ -154,7 +168,7 @@ class UpdateMappingInput(StrictModel):
 
 
 class ListDatasetsInput(StrictModel):
-    limit: int = Field(20, ge=1, le=100)
+    limit: int = Field(20, ge=1, le=100, description="How many imports to return, newest first.")
 
 
 class DatasetVehicle(StrictModel):

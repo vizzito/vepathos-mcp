@@ -23,7 +23,10 @@ LANGUAGE_TAG_PATTERN = r"^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8}){0,3}$"
 
 
 class CreateMapInput(StrictModel):
-    optimization_id: str = Field(pattern=OPTIMIZATION_ID_PATTERN)
+    optimization_id: str = Field(
+        pattern=OPTIMIZATION_ID_PATTERN,
+        description="The finished optimization to share, from optimize_routes.",
+    )
     language: str | None = Field(
         None,
         pattern=LANGUAGE_TAG_PATTERN,
