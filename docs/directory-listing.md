@@ -57,6 +57,29 @@ The public MCP channel currently provides the Free plan: 2,000 stops a month, an
 Privacy: do not include names, phone numbers, or emails in stop IDs. Vepathos does not log access tokens, delivery coordinates, or request bodies.
 
 
+## Tools published
+
+The names the server answers `tools/list` with. The description above sells the capability; this
+is the contract, and a reviewer checking one against the other should find them agreeing.
+
+| Tool | Published |
+|---|---|
+| `create_automation` | always |
+| `create_optimization_map` | with `MCP_MAP_SHARES_ENABLED` |
+| `geocode_addresses` | always |
+| `get_account` | always |
+| `get_geocode_result` | always |
+| `get_import_result` | with `MCP_IMPORT_TOOLS_ENABLED` |
+| `get_optimization_result` | always |
+| `import_deliveries` | with `MCP_IMPORT_TOOLS_ENABLED` |
+| `list_automations` | always |
+| `list_datasets` | with `MCP_IMPORT_TOOLS_ENABLED` |
+| `list_fleet` | always |
+| `list_plans` | always |
+| `manage_catalog` | with `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `optimize_routes` | always |
+| `update_import_mapping` | with `MCP_IMPORT_TOOLS_ENABLED` |
+
 ## Use cases (Claude portal)
 
 Each one is a flow that was run end to end against production, not a hypothetical.
