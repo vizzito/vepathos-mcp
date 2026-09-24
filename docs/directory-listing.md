@@ -9,7 +9,7 @@ Use this in Claude, ChatGPT, and the official registry. Do not invent extra clai
 |---|---|
 | Server name | Vepathos |
 | Tagline (≤ 55) | Delivery and fleet routing for AI agents. |
-| Registry description (≤ 100) | Import orders, manage your fleet, and generate optimized last-mile delivery routes. |
+| Registry description (≤ 100) | Import orders, manage your fleet, and generate optimized last-mile delivery routes at scale. |
 | Slug (Claude, permanent) | `vepathos` |
 | Categories (pick 1–5) | Business, Productivity, Developer tools |
 | Documentation URL | `https://vepathos.com/mcp` (publish first; until then GitHub README) |

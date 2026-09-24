@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.vepathos/vepathos",
   "title": "Vepathos",
-  "description": "Import orders, manage your fleet, and generate optimized last-mile delivery routes.",
+  "description": "Import orders, manage your fleet, and generate optimized last-mile delivery routes at scale.",
   "version": "0.10.0",
   "websiteUrl": "https://vepathos.com",
   "repository": {
