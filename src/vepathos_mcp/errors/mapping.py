@@ -335,9 +335,12 @@ def from_core_error(status: int, body: Any, retry_after: int | None = None) -> D
                 retry_after_seconds=retry_after or 30,
             )
         case "BACKEND_UNAVAILABLE":
+            # Core's own sentence, when it sent one: "Import is not configured." and what Smart Import
+            # answered are the difference between a diagnosis and three blind retries. The generic
+            # sentence stays for the 5xx below, where the body is not ours and may be anything.
             return DomainError(
                 ErrorCode.BACKEND_UNAVAILABLE,
-                "Vepathos is temporarily unavailable.",
+                _clip(message or "Vepathos is temporarily unavailable."),
                 suggestion="Retry in a moment; identical requests are safe to resend.",
                 retry_after_seconds=retry_after or 30,
             )
