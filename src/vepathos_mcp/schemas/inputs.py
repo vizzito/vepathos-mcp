@@ -617,7 +617,7 @@ class AddressStop(StrictModel):
     )
     city: str | None = Field(None, max_length=120, description="City, when known.")
     region: str | None = Field(None, max_length=120, description="State, province or region.")
-    postcode: str | None = Field(None, max_length=32)
+    postcode: str | None = Field(None, max_length=32, description="Postal code, when known.")
     country: str | None = Field(None, max_length=64, description="Country name or ISO code, when known.")
 
 
@@ -636,7 +636,9 @@ class GeocodeInput(StrictModel):
     city: str | None = Field(
         None, max_length=120, description="City used to pick the map region when depot is omitted."
     )
-    country: str | None = Field(None, max_length=64)
+    country: str | None = Field(
+        None, max_length=64, description="Country or ISO code the addresses are in."
+    )
     timezone: str | None = Field(
         None,
         max_length=64,

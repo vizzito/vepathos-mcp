@@ -94,10 +94,19 @@ class CreateAutomationInput(StrictModel):
         max_length=64,
         description="Template vehicle entry. Omit for a single type; otherwise choose in the dashboard.",
     )
-    look: Literal["clock", "fill", "both"] = "clock"
-    fill_by: Literal["orders", "packages", "stops", "weight", "volume"] = "orders"
-    min_packages: int = Field(5, ge=1, le=100_000)
-    fill_percent: int = Field(80, ge=1, le=100)
+    look: Literal["clock", "fill", "both"] = Field(
+        "clock",
+        description="clock looks at a time of day; fill looks when enough orders wait; both does either.",
+    )
+    fill_by: Literal["orders", "packages", "stops", "weight", "volume"] = Field(
+        "orders", description="What fill_percent counts before a run is worth starting."
+    )
+    min_packages: int = Field(
+        5, ge=1, le=100_000, description="Fewer waiting packages than this and the slot is skipped."
+    )
+    fill_percent: int = Field(
+        80, ge=1, le=100, description="Share of the fleet's capacity that makes a run worth it."
+    )
     max_units: int = Field(
         1, ge=1, le=10_000, description="Vehicles the user can actually put on the street."
     )

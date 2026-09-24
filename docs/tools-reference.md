@@ -210,15 +210,15 @@ Import deliveries into Vepathos so their rows never pass through this chat: a fi
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `file` | object | no | The attachment, filled in by hosts that hand files to tools (ChatGPT file params); never build it by hand. |
-| `file.download_url` | string | no |  |
-| `file.file_id` | string | no |  |
-| `file.mime_type` | string | no |  |
-| `file.file_name` | string | no |  |
+| `file.download_url` | string | no | Signed URL the host gives for the attachment. |
+| `file.file_id` | string | no | The host's id for the file. |
+| `file.mime_type` | string | no | Media type, used to pick the extension Smart Import reads. |
+| `file.file_name` | string | no | Original file name; it becomes the new plan's name. |
 | `url` | string | no | Public https URL of the file, or a Google Drive, Sheets or Docs share link as copied. |
 | `text` | string | no | Deliveries as text: rows the user pasted, or a CSV or JSON file's text. |
 | `filename` | string | no | Names the new plan; default: the file's. |
-| `timezone` | string | no |  |
-| `depot_country` | string | no |  |
+| `timezone` | string | no | IANA time zone the rows' dates and times are written in. |
+| `depot_country` | string | no | Country the addresses are in, to disambiguate the geocoding. |
 | `plan_id` | string | no | Load the stops into this existing plan, replacing its stops and keeping its depot, fleet and settings. Omit to create a new plan named after the file. |
 
 ### Output
@@ -248,7 +248,7 @@ Status and summary of an import_deliveries job. When complete: plan_id (the plan
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `import_id` | string | yes |  |
+| `import_id` | string | yes | The import to check, returned by import_deliveries. |
 
 ### Output
 
@@ -286,7 +286,7 @@ Correct an import's column mapping without re-uploading: {source_column: vepatho
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `import_id` | string | yes |  |
+| `import_id` | string | yes | The import to correct, from import_deliveries. |
 | `mapping` | object | yes | Source column → vepathos field, null to ignore the column, or {field, unit, format} when its values are in another unit or format. |
 
 ### Output
@@ -325,7 +325,7 @@ List imports from this or earlier chats: the plan each loaded into (plan_id), wh
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `limit` | integer | no |  |
+| `limit` | integer | no | How many imports to return, newest first. |
 
 ### Output
 
@@ -353,13 +353,13 @@ Turn street addresses into latitude/longitude using Vepathos Smart Import. Requi
 | `addresses[].address` | string | yes | Street address to geocode. Not a coordinate. |
 | `addresses[].city` | string | no | City, when known. |
 | `addresses[].region` | string | no | State, province or region. |
-| `addresses[].postcode` | string | no |  |
+| `addresses[].postcode` | string | no | Postal code, when known. |
 | `addresses[].country` | string | no | Country name or ISO code, when known. |
 | `depot` | object | no | Depot coordinates. Helps pick the map region. Required if city is omitted. |
 | `depot.latitude` | number | yes | Depot latitude in decimal degrees (WGS84). |
 | `depot.longitude` | number | yes | Depot longitude in decimal degrees (WGS84). |
 | `city` | string | no | City used to pick the map region when depot is omitted. |
-| `country` | string | no |  |
+| `country` | string | no | Country or ISO code the addresses are in. |
 | `timezone` | string | no | IANA time zone, e.g. America/Argentina/Buenos_Aires. |
 
 ### Output
@@ -542,10 +542,10 @@ Prepare a rule that routes deliveries on a schedule. template_plan_id (from list
 | `min_orders` | integer | no | Fewer waiting orders than this and the slot is skipped. |
 | `match_tags` | array of string | no | Only orders carrying these tags, e.g. ml:flex, ship:envio-a-domicilio. |
 | `vehicle_type_id` | string | no | Template vehicle entry. Omit for a single type; otherwise choose in the dashboard. |
-| `look` | clock \| fill \| both | no |  |
-| `fill_by` | orders \| packages \| stops \| weight \| volume | no |  |
-| `min_packages` | integer | no |  |
-| `fill_percent` | integer | no |  |
+| `look` | clock \| fill \| both | no | clock looks at a time of day; fill looks when enough orders wait; both does either. |
+| `fill_by` | orders \| packages \| stops \| weight \| volume | no | What fill_percent counts before a run is worth starting. |
+| `min_packages` | integer | no | Fewer waiting packages than this and the slot is skipped. |
+| `fill_percent` | integer | no | Share of the fleet's capacity that makes a run worth it. |
 | `max_units` | integer | no | Vehicles the user can actually put on the street. |
 | `stops_per_vehicle` | integer | no | Stops each vehicle takes. |
 | `mode` | string | no | suggest: it works the routes out and asks. auto: it routes on its own once switched on. |
@@ -577,7 +577,7 @@ Create a temporary public link to the map of a completed optimization owned by t
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `optimization_id` | string | yes |  |
+| `optimization_id` | string | yes | The finished optimization to share, from optimize_routes. |
 | `language` | string | no | Language of the conversation, e.g. es, es-AR, pt-BR, en. The map page opens in it when supported (en, es, pt); otherwise it follows the viewer's browser. |
 
 ### Output
