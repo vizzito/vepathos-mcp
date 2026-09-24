@@ -15,34 +15,46 @@ and the ones below were read from Claude's connector directory on 2026-09-24.
 | Tagline (≤ 55) | Import orders, route your fleet, at scale. |
 | Registry description (≤ 100) | Import orders, manage your fleet, and generate optimized last-mile delivery routes at scale. |
 | Slug (Claude, permanent) | `vepathos` |
-| Categories (pick 1–5) | Productivity, Commerce & shopping, Travel |
+| Categories (pick 1–5) | Productivity, Commerce & shopping, Data & analytics, Developer tools |
 | Documentation URL | `https://vepathos.com/mcp` |
 | Privacy policy URL | `https://vepathos.com/privacy` |
 | Website | `https://vepathos.com` |
-| Support | The public support email on vepathos.com |
+| Support | https://api.vepathos.com/contact |
 | Icon | Existing Vepathos mark, square PNG/SVG, HTTPS |
 | MCP URL | `https://mcp.vepathos.com/mcp` |
 | Transport | Streamable HTTP |
 | Auth | OAuth 2.0 (DCR + CIMD). Scope `optimize`. Resource `https://mcp.vepathos.com/mcp` |
 
-**On the categories.** Claude's directory has no logistics, transport or delivery category, so none of
-these is a perfect fit. Productivity is the honest anchor: the server takes a dispatcher's daily work
-off their hands. Commerce & shopping is the closest adjacency, because the orders usually come from a
-store and the server reads connected Shopify and Mercado Libre accounts. Travel is the only category
-that touches vehicles and geography. Developer tools was dropped on purpose: the person using this is
-a dispatcher, not a developer, even though the channel is technical.
+**On the categories.** Claude's directory has no logistics, transport or delivery category. These four
+are the ones that fit, read from the marketplace filters on 2026-09-24. Productivity is the anchor:
+the server takes a dispatcher's daily work off their hands. Commerce & shopping is where store orders
+and post-purchase logistics sit, and the server reads connected Shopify and Mercado Libre accounts.
+Data & analytics covers the numbers the run returns: weight, volume, distance and vehicles used.
+Developer tools is who usually discovers and installs the connector for the operations team.
 
 ## Description (≤ 2,000), for the Claude and ChatGPT listings
 
-Vepathos plans last-mile delivery routes for a fleet: bring the orders in from a spreadsheet, a link or the chat itself, and it assigns each stop to a vehicle and sequences every route from one depot, minimizing total distance while respecting the limits you set (stops per vehicle, weight, volume, time windows). Dozens of stops or thousands, anywhere in the world. One run takes as much as the plan allows: 15,000 stops on Scale, no cap on Enterprise.
+Vepathos plans and optimizes last-mile delivery routes. Import orders from a spreadsheet, URL, or pasted data, and Vepathos geocodes addresses, assigns stops to vehicles, and sequences each route from a depot while minimizing total distance and respecting constraints such as stops per vehicle, weight, volume, capacity, and delivery time windows.
 
-Connect from Claude or another MCP client, sign in or create a Free account, and ask the assistant to import orders, geocode addresses and optimize routes. The same account, plan and monthly stop quota apply as the Vepathos web app and REST API. No API keys for that flow.
+Plan dozens, thousands, or tens of thousands of stops worldwide in a single optimization. Scale supports up to 15,000 stops per run, with custom limits on Enterprise.
 
-Tools: get_account, list_fleet, list_plans, list_datasets and list_automations (the account); import_deliveries, get_import_result and update_import_mapping (a spreadsheet, a link or pasted rows become a plan, without the rows passing through the chat); geocode_addresses and get_geocode_result (street addresses into coordinates via Vepathos Smart Import); manage_catalog (save a vehicle or a depot in the account); optimize_routes and get_optimization_result (routing for a saved plan, an import or stops with coordinates; poll with optimization_id); create_optimization_map (a 48 hour public link to the result); create_automation (prepares a rule that routes on a schedule, created switched off, so only the user starts it). Optimize never invents coordinates: unresolved and low confidence pins are flagged to confirm first. A rerun of the same plan within 24 hours, with the same stops or fewer, charges nothing.
+Connect from Claude or any compatible MCP client, then sign in or create a Free account. No API key is required for the MCP flow. The same Vepathos account, plan, and monthly stop quota are shared across MCP, the web app, and REST API.
 
-This public channel currently offers the Free plan. Jobs the plan cannot run return a contact link, not a payment page. When paid plans are enabled later, Stripe handles payment outside the chat, and you retry without reconnecting.
+Tools let assistants:
+• Import deliveries from spreadsheets, URLs, or pasted rows
+• Detect and map delivery fields with Smart Import
+• Geocode addresses and flag unresolved or low-confidence locations
+• Manage vehicles and depots
+• Optimize routes and retrieve asynchronous results
+• Generate public route maps that expire after 48 hours
+• Inspect plans, datasets, fleet resources, and automations
+• Prepare scheduled routing automations, created disabled until activated by the user
 
-Do not put names, phones or emails in stop ids. We do not log access tokens, coordinates or request bodies.
+Vepathos never invents coordinates: locations that cannot be resolved confidently are flagged for confirmation before optimization. Re-running the same plan within 24 hours with the same stops or fewer does not consume additional stops.
+
+The public MCP channel currently provides the Free plan: 2,000 stops a month, and up to 150 stops per run. Jobs outside the available plan return a contact link rather than initiating payment in chat.
+
+Privacy: do not include names, phone numbers, or emails in stop IDs. Vepathos does not log access tokens, delivery coordinates, or request bodies.
 
 
 ## Use cases (Claude portal)
