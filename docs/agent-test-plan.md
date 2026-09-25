@@ -52,27 +52,19 @@ is scored. It runs on the developer's Claude subscription (`claude -p`): no per-
 | 6, 7 | — | always by hand: a ten-step job, and a store connected in the dashboard |
 | 9 | `sin_si` | L9.2–L9.8 have unit/contract tests |
 
-**No measurement here is current. 0.9.0 renamed the surface.** `manage_vehicle` and `manage_depot`
-became `manage_catalog`, the two optimize tools became `optimize_routes` and the two import tools became
-`import_deliveries`. Every run before that judged a server whose tools no longer exist, so the numbers
-were deleted rather than left to read as evidence: a stale figure that looks current is worse than none.
-The stored runs went with them, except the web battery's, which measures a different surface.
+**History: 0.9.0 renamed the surface.** `manage_vehicle` and `manage_depot` became `manage_catalog`,
+the two optimize tools became `optimize_routes` and the two import tools became `import_deliveries`.
+Every run before that judged a server whose tools no longer exist, so those numbers were deleted
+rather than left to read as evidence. The ✅ marks below (09-20/09-21) are the re-measurement against
+the renamed surface; they are current.
 
-What has to be measured again on 0.10.0, in this order — the first two cost nothing but plan usage:
+**Open now: 0.11.0 added `resource: "fleet"` to `manage_catalog`, unmeasured with a real agent.** Level
+5 below covers vehicle and depot; it has no row yet for saving a fleet, updating one, or a `vehicle_id`
+the account does not own. The contract tests prove the server side (`tests/contract/test_tools_with_fake_core.py`)
+and RouteHub round trip (`tests/integration/test_local_stack.py::test_fleet_round_trip_against_routehub`);
+what is unmeasured is a model's judgement calling it from a real conversation.
 
-| What | Why it is the first thing to re-measure |
-|---|---|
-| levels 4, 5, 9 with Sonnet | one tool with a `resource` field replaced two tools whose names said what they did. That is exactly the change that moves a model's judgement about master data against plan settings |
-| level 3 with Sonnet | file and text imports are now one tool; the path a model picks is new |
-| levels 5 and 9 with luna | the model production runs, so it decides whether the surface is registrable |
-
-Two questions the old surface had answered and that are open again: whether "agregame 3 Sprinter" makes
-one saved type or three rows, and whether asking twice for the same vehicle converges instead of
-duplicating. The tool shape still forbids the second row structurally — no `count`, no batch, one write
-per call — and the contract tests still prove convergence against the fake core. What is unmeasured is
-the model's judgement, not the server's correctness.
-
-Haiku stays out of the re-measurement: its failures were the host deferring tools, not the text.
+Haiku stays out of Level 5 re-measurement: its failures were the host deferring tools, not the text.
 
 The dev account carries leftovers from earlier runs — `Sprinter 1`, `Sprinter 2`, `Sprinter 3`, plus
 `Eval Sprinter`. The level 5 cases read the catalog, so those rows change what a run sees: "it already
@@ -211,6 +203,9 @@ Behind `MCP_CATALOG_WRITE_TOOLS_ENABLED`. The line under test: **master data is 
 | L5.7 | account at its plan's cap (Free: 2 depots) | `manage_catalog` | `PLAN_UPGRADE_REQUIRED`, nothing written, and "you can still route without saving it" | ✅ integration 09-21 |
 | L5.8 | Free account, vehicle with kg and m³ | `manage_catalog` | **allowed**, as in the dashboard: capacities are data, the plan only gates their use in a run | ✅ by construction; ◻ run |
 | L5.9 | flag off | — | the two tools are absent from `tools/list` and from the instructions | ✅ contract |
+| L5.10 | "armame una flota Norte con 6 van1" | `list_fleet → manage_catalog(create, resource=fleet)` | saved with `units: 6`, never `count` | ◻ by an agent |
+| L5.11 | "a la flota Norte subile a 22 van1" | `manage_catalog(update, resource=fleet)` | `vehicles` replaces the whole composition | ◻ by an agent |
+| L5.12 | fleet naming a `vehicle_id` the account does not own | `manage_catalog(create, resource=fleet)` | `VEHICLE_NOT_FOUND` with `unknown_vehicle_ids`; nothing written | ✅ integration 09-24 |
 
 ## Level 6 — A whole job in one conversation (the mix)
 

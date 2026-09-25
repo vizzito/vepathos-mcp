@@ -22,7 +22,7 @@ who submits a large job gets `contact_url`, not Checkout.
 | `https://vepathos.com` | 200 |
 | `https://vepathos.com/privacy` | 200 — **no MCP section yet** |
 | `https://vepathos.com/mcp` | **404** |
-| Official MCP Registry | Not listed (`search=vepathos` empty) |
+| Official MCP Registry | **Listed**: `com.vepathos/vepathos`, republished on every version bump |
 | Claude Connectors Directory | Not submitted. Claude does **not** know Vepathos |
 | ChatGPT Plugins Directory | Not submitted |
 
@@ -110,8 +110,18 @@ to point at docs instead of the homepage.
 
 ## 3. Official MCP Registry (feeds VS Code and aggregators)
 
-Namespace `com.vepathos/vepathos` requires **domain** auth on `vepathos.com` (not GitHub
-`io.github.vizzito/…`).
+**Done.** `com.vepathos/vepathos` is live on `registry.modelcontextprotocol.io`, namespace under
+**domain** auth on `vepathos.com` (not GitHub `io.github.vizzito/…`). The private key lives at
+`~/.vepathos/mcp-registry-ed25519.key` (Mac only, 600, never in git). To republish on a version bump:
+
+```bash
+mcp-publisher login dns --domain vepathos.com --private-key "$(cat ~/.vepathos/mcp-registry-ed25519.key)" \
+  && mcp-publisher publish
+```
+
+`server.json` lives at the repo root, so `publish` takes no argument. Bump its `version` to match
+`__version__` before running this. The steps below are how the key and the first entry were made;
+kept for reference and for rotating the key.
 
 On a machine that will keep the private key **off git**:
 

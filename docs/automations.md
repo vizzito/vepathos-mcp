@@ -1,9 +1,9 @@
 # Automations over MCP
 
-**Status:** implemented, not deployed. Spans `vepathos-api-doc` (the channel routes and the owned
-plan), `vepathos-mcp` 0.7.1 (the two tools) and the web client (which uses its own proxy, not these
-tools). Ship api-doc first: a new adapter against an older Core answers "this deployment does not
-expose automations yet", which is correct but useless.
+**Status:** implemented and deployed since 0.7.1. `list_automations` and `create_automation` are two
+of the 15 tools production publishes today, always on, no flag. Spans `vepathos-api-doc` (the
+channel routes and the owned plan), `vepathos-mcp` (the two tools) and the web client (which uses
+its own proxy, not these tools).
 
 ## What an automation is
 
@@ -65,7 +65,7 @@ Answer in the user's language. The rule's own words are the operation's: *pedido
 *depósito*, *flota*. "It is prepared and switched off" is the sentence; "it is running" is never.
 
 
-## E4 · 0.7.1 contract
+## E4 · Contract (added in 0.7.1)
 
 `vehicle_type_id` optionally selects a template entry. When omitted, a template with exactly one valid entry selects it automatically. Several entries leave `missing: ["fleet"]` and return `vehicle_options` (`id`, `name`); the user chooses in the dashboard. Replaying an operation does not edit it.
 

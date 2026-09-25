@@ -198,8 +198,9 @@ plan that ignores what each vehicle carries, and route ids nobody in the operati
 ## `manage_catalog`
 
 Published with `MCP_CATALOG_WRITE_TOOLS_ENABLED=true`. One tool for the account's **master data**:
-`resource: "vehicle"` or `resource: "depot"`. It never touches a plan and never spends stops. There is
-no delete, and no tool for fleets or drivers: which vehicles form a fleet is arranged in the dashboard.
+`resource: "vehicle"`, `resource: "depot"` or `resource: "fleet"`. It never touches a plan and never
+spends stops. There is no delete, and no tool for drivers: a fleet groups vehicles already saved,
+through `manage_catalog` itself, so nothing about it needs the dashboard.
 
 The two were one tool from 0.9.0: the dashboard chat already exposed a single `manage_catalog`, and
 two catalogs naming the same work differently cost the small models a choice they kept getting wrong.
@@ -208,7 +209,7 @@ two catalogs naming the same work differently cost the small models a choice the
 
 | | Master data | Plan settings |
 |---|---|---|
-| What | saved vehicles (a type and its capacity), saved depots | how many vehicles a run uses (`count`), stops per vehicle, a capacity or a depot for one day, a vehicle that is out tomorrow |
+| What | saved vehicles (a type and its capacity), saved depots, saved fleets (a name and the saved vehicles it holds, with `units`) | how many vehicles a run uses (`count`), stops per vehicle, a capacity or a depot for one day, a vehicle that is out tomorrow |
 | Lives | in the account, after the conversation | in one optimization |
 | Tool | `manage_catalog` | `vehicles[]` / `depot` of `optimize_routes` |
 
@@ -221,17 +222,24 @@ two catalogs naming the same work differently cost the small models a choice the
 | "The Sprinter is out tomorrow." | nothing is saved: it is left out of that run |
 | "Use the Barracas depot." | `list_fleet` depots → its coordinates as `depot`; nothing is saved |
 | "Save a depot at San Martín 700." | `geocode_addresses` → the user confirms the match → `manage_catalog` create (`resource: "depot"`) |
+| "Make a fleet called norte with 6 vans." | `list_fleet` for the vehicle's id → `manage_catalog` create (`resource: "fleet"`, `vehicles: [{vehicle_id, units: 6}]`) |
+| "The norte fleet now has 22 vans." | `manage_catalog` update, `vehicles` replaces the whole list |
 
-The shape defends the line: one row per call, and no `count`, `available` or list exists, so
-"use 25 vehicles" cannot become 25 saved vehicles — an unknown field is `INVALID_INPUT`. A depot takes
-coordinates, never an address, for the same reason optimize does.
+The shape defends the line: a vehicle or a depot is one row per call, with no `count`, `available`
+or list on it, so "use 25 vehicles" cannot become 25 saved vehicles — an unknown field is
+`INVALID_INPUT`. A fleet does take a list, but only of vehicles already saved: `vehicles:
+[{vehicle_id, units}]`. `units` is what the fleet holds standing, never a run: "25 go out tomorrow"
+is `count` on `optimize_routes` and is never written here. A depot takes coordinates, never an
+address, for the same reason optimize does.
 
 The fields are flat and each belongs to one resource: `max_weight_kg` and `max_volume_m3` to a
-vehicle, `latitude` and `longitude` to a depot. Sending one for the other resource is refused rather
-than ignored, because dropping it silently would save a row the user never described.
-`action: "create"` needs `name` (and both coordinates for a depot); `action: "update"` needs
-`resource_id` from `list_fleet` plus the fields to change, and only what is sent changes (a depot
-moves with both coordinates or neither).
+vehicle, `latitude` and `longitude` to a depot, `vehicles` to a fleet. Sending one for another
+resource is refused rather than ignored, because dropping it silently would save a row the user
+never described. `action: "create"` needs `name` (both coordinates for a depot, `vehicles` for a
+fleet); `action: "update"` needs `resource_id` from `list_fleet` plus the fields to change, and only
+what is sent changes (a depot moves with both coordinates or neither; a fleet's `vehicles` replaces
+the whole composition, not a merge). A fleet's `vehicle_id`s must already be saved: one the account
+does not own is `VEHICLE_NOT_FOUND` naming which.
 
 A create **converges by name**, because RouteHub has neither unique names nor idempotency. Names are
 compared normalized (case, accents, `-_/.`). The same name with the same values answers the one that
