@@ -25,12 +25,12 @@ needs a separate explicit OK.
 - [ ] Smoke prompts pass with at least one real client (`docs/smoke-prompts.md`)
 - [x] Compatibility matrix updated with tested clients (Inspector fake Core + real-stack discovery; Claude still empty)
 
-## 2. Official MCP Registry
+## 2. Official MCP Registry — done, 0.11.1 live
 
-- [ ] `server.json` validated against `https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json` (check the description length limit)
-- [ ] DNS authentication for `com.vepathos/*`: Ed25519 key, TXT record `v=MCPv1; k=ed25519; p=<public key>` at the apex `vepathos.com`
-- [ ] `mcp-publisher login dns --domain vepathos.com --private-key …`
-- [ ] `mcp-publisher publish`; version bumped on every contract change
+- [x] `server.json` validated against `https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`
+- [x] DNS authentication for `com.vepathos/*`: Ed25519 key, TXT record `v=MCPv1; k=ed25519; p=<public key>` at the apex `vepathos.com`
+- [x] `mcp-publisher login dns --domain vepathos.com --private-key …`
+- [x] `mcp-publisher publish`; **republish on every version bump** — the last one it did not see is a live gap, not a one-time task. See [publish-marketplaces.md §3](publish-marketplaces.md) for the exact command.
 
 ## 3. Claude Connectors Directory
 
@@ -50,7 +50,7 @@ needs a separate explicit OK.
 - [ ] ChatGPT: developer mode test; Apps directory submission if pursued
 - [ ] Cursor: verify install flow and any directory listing
 - [ ] VS Code: MCP gallery entry via the official registry
-- [ ] Smithery and other aggregators: confirm they are still relevant; most ingest the official registry
+- [x] Smithery and Glama: both listed, both ingest the official registry so they refresh on their own crawl (can lag a deploy by up to a day)
 - [x] GitHub: public repository `vizzito/vepathos-mcp` (Apache-2.0), README, security policy
 - [ ] Vepathos website: landing section, "Research & benchmarks" link to DOI 10.5281/zenodo.19859531 (no peer-review or superiority claims)
 
@@ -60,6 +60,8 @@ Add "Add to Claude / Cursor / VS Code / Codex" entries only after each flow is v
 
 ## Notes
 
-- 0.8.0: tools, annotations, prompts and the reference resource reviewed; the list of tools is generated
-  in [tools-reference.md](tools-reference.md) (`vepathos-mcp tools --write-docs`). `server.json` still
-  says the last registered version: bump it to the version that is live when publishing.
+- The list of tools is generated in [tools-reference.md](tools-reference.md)
+  (`vepathos-mcp tools --write-docs`); it stays in sync with the code on every version bump.
+- `server.json`'s version has to match `__version__` before `mcp-publisher publish`, every time —
+  the registry does not infer it, and a mismatch means the entry advertises a version the endpoint
+  does not serve.

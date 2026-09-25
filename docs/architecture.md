@@ -88,9 +88,11 @@ api.vepathos.com — MCP channel (gate → entitlements → job engine → ledge
 optimizer (workers, RabbitMQ, Redis)
 ```
 
-- **Tools:** `geocode_addresses`, `get_geocode_result`, `optimize_routes`, `get_optimization_result`,
-  `get_account` (which account is connected, and what its plan allows), `list_fleet` (the
-  account's own vehicles, so a plan uses the real fleet), and `list_automations` /
+- **Tools (15, all published today):** `geocode_addresses`, `get_geocode_result`, `optimize_routes`,
+  `get_optimization_result`, `list_plans`, `get_account` (which account is connected, and what its
+  plan allows), `list_fleet` (the account's own vehicles and fleets, so a plan uses the real fleet),
+  `manage_catalog` (saves a vehicle, a depot or a fleet), `import_deliveries` / `get_import_result` /
+  `update_import_mapping` / `list_datasets`, `create_optimization_map`, and `list_automations` /
   `create_automation` (standing rules; created switched off — only the user turns one on).
   No cancel tool.
 - **MCP channel in Core:** same pattern as the RapidAPI and Shopify channels (shared job engine),
@@ -207,8 +209,7 @@ need no sticky sessions. See `docs/deployment.md`.
 MCP Tasks; MCP Apps (interactive route maps); multi-depot and structured unassignment reasons
 in the engine; x402-style paid calls. None of these are part of v1.
 
-**Editable working set (orderset)** — design locked in
-[architecture-mcp-orderset.md](architecture-mcp-orderset.md): mutable per-account draft that
-merges several imports, supports textual remove, then confirms into a `dataset_id` for
-`optimize_dataset`. Superseded before it was built: MCP runs are plans
-([architecture-mcp-plans.md](architecture-mcp-plans.md)); import → plan → `optimize_routes` is the large-file path.
+**Editable working set (orderset)** — an earlier design (a mutable per-account draft merging several
+imports, confirmed into a dataset for a dedicated optimize tool) was superseded before it was built.
+MCP runs are plans instead ([architecture-mcp-plans.md](architecture-mcp-plans.md));
+import → plan → `optimize_routes` is the large-file path.

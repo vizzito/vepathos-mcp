@@ -1,7 +1,7 @@
 # MCP runs are plans
 
-Decided 2026-09-16. Replaces the order-set design in [architecture-mcp-orderset.md](architecture-mcp-orderset.md)
-(sections 4–5, 9–10 are superseded; nothing from them was built).
+Decided 2026-09-16. Replaces an earlier order-set design (a mutable per-account draft merging
+several imports into a dedicated optimize tool) that was superseded before anything from it was built.
 
 **Decisions**
 

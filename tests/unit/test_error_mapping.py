@@ -226,7 +226,10 @@ def test_backend_unavailable_keeps_cores_own_reason() -> None:
 
 
 def test_backend_unavailable_without_a_reason_still_says_something() -> None:
-    assert from_core_error(503, envelope("BACKEND_UNAVAILABLE")).message == "Vepathos is temporarily unavailable."
+    assert (
+        from_core_error(503, envelope("BACKEND_UNAVAILABLE")).message
+        == "Vepathos is temporarily unavailable."
+    )
 
 
 def test_plain_5xx_never_repeats_a_body_that_is_not_ours() -> None:

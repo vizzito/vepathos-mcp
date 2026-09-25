@@ -1,7 +1,8 @@
 # Shared route maps — integration contract (v1)
 
-Implementation spans `vepathos-mcp`, `vepathos-api-doc` and the existing webclient.
-Not deployed. The adapter tool is disabled by default until Core and the page are ready.
+Implementation spans `vepathos-mcp`, `vepathos-api-doc` and the existing webclient. `create_optimization_map`
+is deployed and one of the 15 tools production publishes today, behind `MCP_MAP_SHARES_ENABLED`,
+which is set to `true` there.
 
 ## Webclient handoff
 

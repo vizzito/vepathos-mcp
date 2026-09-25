@@ -225,9 +225,7 @@ async def test_geocode_addresses_returns_pins_from_smart_import_contract(
         # against the real server that read is what answers GEOCODE_EXPIRED.
         assert payload.get("geocode_id") is None
 
-        is_error, expired = await call(
-            client, "get_geocode_result", {"geocode_id": created["geocode_id"]}
-        )
+        is_error, expired = await call(client, "get_geocode_result", {"geocode_id": created["geocode_id"]})
     assert is_error
     assert expired["error"]["code"] == "GEOCODE_EXPIRED"
 
@@ -865,7 +863,7 @@ async def test_a_fleet_cannot_hold_a_vehicle_the_account_does_not_have(
 async def test_a_run_only_count_never_reaches_the_saved_catalog(
     mcp_client: Callable[..., Any], core_state: FakeCoreState
 ) -> None:
-    """"Use 25 vans tomorrow" is optimize_routes, not a fleet. The write tool must not accept it as one."""
+    """ "Use 25 vans tomorrow" is optimize_routes, not a fleet. The write tool must not accept it as one."""
 
     async with await mcp_client(**CATALOG_WRITES) as client:
         _, van = await call(client, "manage_catalog", SPRINTER)
@@ -939,7 +937,9 @@ async def test_a_fleet_holds_more_than_one_kind_of_vehicle(
             {"vehicle_id": sprinter["vehicle"]["vehicle_id"], "units": 2},
         ]
         is_error, created = await call(
-            client, "manage_catalog", {"resource": "fleet", "action": "create", "name": "mixta", "vehicles": held}
+            client,
+            "manage_catalog",
+            {"resource": "fleet", "action": "create", "name": "mixta", "vehicles": held},
         )
         assert not is_error, created
         assert created["fleet"]["total_units"] == 8

@@ -46,10 +46,11 @@ account already has. A fleet's `units` is what it holds standing, never how many
 which is `vehicles[].count` on `optimize_routes`. To run with a saved fleet, read it with
 `list_fleet` and pass its vehicles: `optimize_routes` takes no `fleet_id`.
 
-Vepathos is not in the official MCP registry yet, so a client has to add it as a custom connector
-with that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos)
-and [Glama](https://glama.ai/mcp/servers/vizzito/vepathos-mcp). Both take a snapshot when they
-crawl, so a listing can lag a deployment by a day.
+Vepathos is listed in the [official MCP registry](https://registry.modelcontextprotocol.io) as
+`com.vepathos/vepathos`, on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos), and on
+[Glama](https://glama.ai/mcp/servers/vizzito/vepathos-mcp). Directories take a snapshot when they
+crawl, so a listing can lag a deployment by a day; the registry entry is republished on every
+version bump.
 
 Paid self-serve is off. A request the account's plan cannot run answers `PLAN_UPGRADE_REQUIRED`
 with a `contact_url`, never a Stripe Checkout link, and the user retries without reconnecting once

@@ -3,10 +3,14 @@
 This is the deploy that actually shipped, including mistakes we hit. Follow it in order.
 Do not invent a second Smart Import MCP or rebuild RouteHub / SI for this channel.
 
-**Status after this run:** `https://mcp.vepathos.com` is live. `/health` 200, `/ready`
+Historical: a log of the first cut, on 0.2.0 with six tools. **For current status, see
+[../README.md](../README.md#status) and [publication-checklist.md](publication-checklist.md)
+instead** — this file is the topology, the pitfalls and the commands, not the current state.
+
+**Status after this run (2026-09-14):** `https://mcp.vepathos.com` is live. `/health` 200, `/ready`
 `core: ok` + `signing_keys: ok`, unauthenticated `POST /mcp` → 401 + PRM, authenticated
-`tools/list` returns the six tools. Geocode/optimize smoke and Claude directory are **not**
-done. Registry / directory still need an explicit OK (`docs/publication-checklist.md`).
+`tools/list` returns the six tools that existed then. Geocode/optimize smoke and Claude directory
+were **not** done yet that night.
 
 ---
 
@@ -114,7 +118,6 @@ MCP_SERVICE_KEYS=<openssl rand -hex 32>
 MCP_OAUTH_ISSUER=https://api.vepathos.com
 MCP_RESOURCE_URI=https://mcp.vepathos.com
 SMART_IMPORT_URL=http://vepathos-smart-import:8100
-MCP_FULL_TRIAL_ENABLED=false
 ```
 
 Notes:
@@ -437,8 +440,7 @@ localhost. Only **Allow** if you started Inspector.
 1. `geocode_addresses` (few CABA streets) + `get_geocode_result`.
 2. `optimize_routes` with those coordinates + `get_optimization_result`.
 3. Claude **custom** connector — not the directory.
-4. Keep `MCP_FULL_TRIAL_ENABLED=false` until you want the first-use trial.
-5. Registry / Claude directory / “Add to …” buttons: explicit OK only.
+4. Registry / Claude directory / “Add to …” buttons: explicit OK only.
 
 Kill switch: `MCP_CHANNEL_ENABLED=false` + api-doc recreate, no `--build`. Web/REST stay up.
 
