@@ -636,9 +636,7 @@ class GeocodeInput(StrictModel):
     city: str | None = Field(
         None, max_length=120, description="City used to pick the map region when depot is omitted."
     )
-    country: str | None = Field(
-        None, max_length=64, description="Country or ISO code the addresses are in."
-    )
+    country: str | None = Field(None, max_length=64, description="Country or ISO code the addresses are in.")
     timezone: str | None = Field(
         None,
         max_length=64,

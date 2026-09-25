@@ -114,9 +114,7 @@ def register_operational_routes(mcp: MCPServer, settings: Settings, core: Vepath
     # JSON, HTML, or a trailing newline fails that check.
     @mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])  # type: ignore[untyped-decorator]
     async def openai_apps_challenge(_: Request) -> Response:
-        token = (
-            settings.openai_apps_challenge.get_secret_value() if settings.openai_apps_challenge else ""
-        )
+        token = settings.openai_apps_challenge.get_secret_value() if settings.openai_apps_challenge else ""
         if not token:
             return PlainTextResponse("not found", status_code=404)
         return PlainTextResponse(token)

@@ -197,7 +197,5 @@ def test_a_stored_run_refuses_a_constraint_its_vehicles_cannot_carry() -> None:
             OptimizePlanInput.model_validate({**base, "vehicles": without, flag: True})
         # The same flag is fine once a vehicle declares that capacity, and false is always fine:
         # false is how a caller keeps the data for reference without routing by it.
-        OptimizePlanInput.model_validate(
-            {**base, "vehicles": [{**without[0], field: 900}], flag: True}
-        )
+        OptimizePlanInput.model_validate({**base, "vehicles": [{**without[0], field: 900}], flag: True})
         OptimizePlanInput.model_validate({**base, "vehicles": without, flag: False})
