@@ -119,6 +119,17 @@ def register_operational_routes(mcp: MCPServer, settings: Settings, core: Vepath
             return PlainTextResponse("not found", status_code=404)
         return PlainTextResponse(token)
 
+    # Glama's ownership claim: a fixed token their portal issued to prove control of this domain.
+    # Meant to be public at this exact path with no auth, so it is a literal here, not a secret setting.
+    @mcp.custom_route("/.well-known/glama.json", methods=["GET"])  # type: ignore[untyped-decorator]
+    async def glama_claim(_: Request) -> Response:
+        return JSONResponse(
+            {
+                "$schema": "https://glama.ai/mcp/schemas/connector.json",
+                "claim": "glama_claim_VnQKGt2kPrIyIS0gG-dpPy1CiuKOFMu7",
+            }
+        )
+
     @mcp.custom_route("/metrics", methods=["GET"])  # type: ignore[untyped-decorator]
     async def metrics_endpoint(request: Request) -> Response:
         expected = settings.metrics_bearer_token.get_secret_value() if settings.metrics_bearer_token else None

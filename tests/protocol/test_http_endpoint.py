@@ -194,6 +194,17 @@ async def test_openai_apps_challenge_is_the_token_as_plain_text(http: Callable[.
     assert "\n" not in response.text
 
 
+async def test_glama_claim_is_public_json_with_no_auth(http: Callable[..., Any]) -> None:
+    """Glama's health check and its ownership crawl both fetch this with no credentials."""
+
+    async with http() as client:
+        response = await client.get("/.well-known/glama.json")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["claim"] == "glama_claim_VnQKGt2kPrIyIS0gG-dpPy1CiuKOFMu7"
+    assert body["$schema"] == "https://glama.ai/mcp/schemas/connector.json"
+
+
 async def test_health_ready_metrics(http: Callable[..., Any]) -> None:
     async with http() as client:
         assert (await client.get("/health")).json()["status"] == "ok"
