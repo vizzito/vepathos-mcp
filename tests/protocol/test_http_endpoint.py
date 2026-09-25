@@ -179,6 +179,21 @@ async def test_dns_rebinding_protection(http: Callable[..., Any]) -> None:
         assert response.status_code in (400, 403, 421)
 
 
+async def test_openai_apps_challenge_is_absent_until_configured(http: Callable[..., Any]) -> None:
+    async with http() as client:
+        response = await client.get("/.well-known/openai-apps-challenge")
+    assert response.status_code == 404
+
+
+async def test_openai_apps_challenge_is_the_token_as_plain_text(http: Callable[..., Any]) -> None:
+    async with http(OPENAI_APPS_CHALLENGE="abcXYZ123") as client:
+        response = await client.get("/.well-known/openai-apps-challenge")
+    assert response.status_code == 200
+    assert response.text == "abcXYZ123"
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "\n" not in response.text
+
+
 async def test_health_ready_metrics(http: Callable[..., Any]) -> None:
     async with http() as client:
         assert (await client.get("/health")).json()["status"] == "ok"

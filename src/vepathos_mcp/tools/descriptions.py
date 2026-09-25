@@ -230,34 +230,53 @@ def optimize_description(*, confirm_before_optimize: bool, import_tools: bool) -
 
 
 LIST_FLEET_TITLE = "List fleet"
-LIST_FLEET_DESCRIPTION = (
+_LIST_FLEET = (
     "List what the connected Vepathos account has saved: vehicles and fleets (capacity in kilograms and "
     "cubic meters, units per vehicle, and the ids to pass as vehicles[] to optimize_routes) and depots "
     "(pass depot_id as depot to optimize_routes). Takes no arguments; read-only and "
     "it does not consume plan stops. empty=true means the account has no vehicles saved, so ask the user "
-    "to describe them or let them add the fleet in the Vepathos dashboard. A vehicle with no capacity "
-    "means the account never set one, not that it carries nothing."
+    "to describe them"
+)
+_LIST_FLEET_TAIL = (
+    " A vehicle with no capacity means the account never set one, not that it carries nothing. "
+    "Vehicles for one run only are not saved: pass them in vehicles[] to optimize_routes."
 )
 
-MANAGE_CATALOG_TITLE = "Manage saved vehicles and depots"
+
+def list_fleet_description(*, catalog_writes: bool) -> str:
+    """The empty case has to name the way out this deployment actually has.
+
+    Sending the user to the dashboard on a server that publishes manage_catalog is the wrong answer:
+    the agent can save the vehicle in this conversation, and an agent told otherwise will not try.
+    """
+
+    if catalog_writes:
+        return _LIST_FLEET + ", then save one with manage_catalog once they say yes." + _LIST_FLEET_TAIL
+    return _LIST_FLEET + " or let them add the fleet in the Vepathos dashboard." + _LIST_FLEET_TAIL
+
+
+# Kept for the deployments and tests that read the text without settings: the gate-off wording.
+LIST_FLEET_DESCRIPTION = list_fleet_description(catalog_writes=False)
+
+MANAGE_CATALOG_TITLE = "Manage saved vehicles, depots and fleets"
 MANAGE_CATALOG_DESCRIPTION = (
-    "Add or change one of the account's own things: a vehicle it owns, or a depot its routes start "
-    "from: master data that stays after this conversation and shows in their dashboard. Call it only "
-    "when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', 'van 4 now "
-    "carries 12 m3', 'save a depot in Barracas'). Not for one plan: how many vehicles a run uses, stops "
-    "per vehicle, a capacity for today only, a vehicle that is out tomorrow or a depot for one run are "
-    "plan settings: pass them to optimize_routes and save nothing. 'Use 25 vehicles' is a plan setting, "
-    "never 25 new vehicles. To use a saved depot ('use the Barracas depot'), pass its depot_id from "
-    "list_fleet to optimize_routes. "
-    "resource=vehicle takes name, max_weight_kg and max_volume_m3: one vehicle per call, because it is a "
-    "type with its capacity and how many units a plan uses is count on that plan. resource=depot takes "
-    "name, latitude and longitude: an address goes through geocode_addresses first; tell the user the "
-    "matched address before saving and do not invent coordinates. "
-    "action=create needs the name (and the coordinates for a depot); a name the account already has "
-    "returns that row (outcome=already_existed) when the values match and NAME_TAKEN when they differ: "
-    "ask whether to update it or use another name. action=update needs resource_id (a vehicle_id or "
-    "depot_id from list_fleet) and the fields to change; what is omitted stays as it is. "
-    "Say what will be saved and get a yes first. Does not consume plan stops."
+    "Add or change a vehicle, a depot or a fleet saved in the account: master data that stays after "
+    "this conversation. "
+    "Call it only when the user asks to add, save, rename, move or edit one ('add a 1,500 kg Sprinter', "
+    "'make a fleet called norte with 6 vans'). Not for one plan: how many vehicles a run uses, a capacity or a depot "
+    "for today only are plan settings: pass them to optimize_routes and save nothing. 'Use 25 vehicles' "
+    "is a plan setting, never 25 new vehicles nor a fleet of 25. "
+    "resource=vehicle takes name, max_weight_kg and max_volume_m3: one vehicle per call, it is a type "
+    "with its capacity. resource=depot takes name, latitude and longitude: an address goes through "
+    "geocode_addresses first; tell the user the matched address and never invent coordinates. "
+    "resource=fleet takes name and vehicles: a vehicle_id from list_fleet and the units the fleet owns "
+    "standing. It groups vehicles already saved: save the vehicle first and use the id it returns; on "
+    "update, vehicles replaces the whole list. "
+    "action=create needs the name (coordinates for a depot, vehicles for a fleet); a name the account "
+    "already has returns that row (outcome=already_existed) when the values match and NAME_TAKEN when "
+    "they differ: ask whether to update it or use another name. action=update needs resource_id (a "
+    "vehicle_id, depot_id or fleet_id from list_fleet) and the fields to change; what is omitted stays "
+    "as it is. Say what will be saved and get a yes first. Does not consume plan stops."
 )
 
 GET_ACCOUNT_TITLE = "Get connected account"

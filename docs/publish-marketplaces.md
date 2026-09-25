@@ -196,8 +196,10 @@ You will need:
 
 - Verified OpenAI publisher identity (individual or business)
 - Apps Management: Write
-- Domain verify: token at `https://mcp.vepathos.com/.well-known/openai-apps-challenge`
-  (or parent). That file is **not** in this repo yet — add it when the portal gives the token
+- Domain verify: set `OPENAI_APPS_CHALLENGE` to the portal token in the production `.env`
+  (never in git), recreate the adapter, then
+  `https://mcp.vepathos.com/.well-known/openai-apps-challenge` must return that token as
+  `text/plain` with nothing else in the body
 - Reviewer credentials, 5 positive + 3 negative cases (see listing pack)
 - Privacy + terms + support URLs
 

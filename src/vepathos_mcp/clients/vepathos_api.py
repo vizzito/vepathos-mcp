@@ -33,6 +33,7 @@ from vepathos_mcp.clients.core_models import (
     CoreCatalog,
     CoreDataset,
     CoreDepotSaved,
+    CoreFleetSaved,
     CoreGeocodeCreated,
     CoreGeocodeResult,
     CoreJobCreated,
@@ -58,6 +59,13 @@ _CANNOT_SAVE_VEHICLES = DomainError(
     "This Vepathos deployment cannot save vehicles yet.",
     suggestion="Plan with the vehicle in vehicles[] without saving it; the user can add it in the "
     "Vepathos dashboard.",
+    retryable=False,
+)
+_CANNOT_SAVE_FLEETS = DomainError(
+    ErrorCode.INTERNAL_ERROR,
+    "This Vepathos deployment cannot save fleets yet.",
+    suggestion="Plan with the vehicles in vehicles[] without saving a fleet; the user can group them "
+    "in the Vepathos dashboard.",
     retryable=False,
 )
 _CANNOT_SAVE_DEPOTS = DomainError(
@@ -307,6 +315,33 @@ class VepathosApiClient:
             absent_error=_CANNOT_SAVE_VEHICLES,
         )
         return self._parse(CoreVehicleSaved, data)
+
+    async def create_fleet(
+        self, call: CallContext, body: dict[str, Any], *, idempotency_key: str
+    ) -> CoreFleetSaved:
+        """Saves a fleet in the account. Core converges by name, so a retried call writes nothing new."""
+
+        data = await self._request(
+            "POST",
+            f"{BASE_PATH}/catalog/fleets",
+            call,
+            operation="catalog_fleet_create",
+            json_body=body,
+            idempotency_key=idempotency_key,
+            absent_error=_CANNOT_SAVE_FLEETS,
+        )
+        return self._parse(CoreFleetSaved, data)
+
+    async def update_fleet(self, call: CallContext, fleet_id: str, body: dict[str, Any]) -> CoreFleetSaved:
+        data = await self._request(
+            "PATCH",
+            f"{BASE_PATH}/catalog/fleets/{fleet_id}",
+            call,
+            operation="catalog_fleet_update",
+            json_body=body,
+            absent_error=_CANNOT_SAVE_FLEETS,
+        )
+        return self._parse(CoreFleetSaved, data)
 
     async def create_depot(
         self, call: CallContext, body: dict[str, Any], *, idempotency_key: str

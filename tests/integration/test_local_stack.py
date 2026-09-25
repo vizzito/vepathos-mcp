@@ -182,3 +182,89 @@ async def test_catalog_master_data_round_trip_against_routehub(core: VepathosApi
     catalog = await core.get_catalog(call)
     assert created.vehicle.vehicle_id in {v.vehicle_id for v in catalog.vehicles}
     assert saved.depot.depot_id in {d.depot_id for d in catalog.depots}
+
+
+async def test_fleet_round_trip_against_routehub(core: VepathosApiClient) -> None:
+    """Fleets against the REAL RouteHub, which the fake Core cannot vouch for.
+
+    What only this proves: RouteHub accepts the {id, qty} composition Core writes from `units`, the
+    fleet is reconciled to the caller's company and so reads back through the catalog the agent sees,
+    a PATCH replaces what it holds, and a create converges by name instead of duplicating. Spends no
+    stops. RouteHub has no delete on this channel, so each run leaves one vehicle and one fleet in the
+    DEV account; names are unique per run so reruns never collide.
+    """
+
+    call = CallContext(authorization=credential("VEPATHOS_GROWTH_CREDENTIAL"))
+    tag = uuid.uuid4().hex[:8]
+
+    held = await core.create_vehicle(
+        call, {"name": f"IT Fleet Van {tag}", "max_weight_kg": 1200}, idempotency_key=f"it-fv-{tag}"
+    )
+    vehicle_id = held.vehicle.vehicle_id
+    second = await core.create_vehicle(
+        call, {"name": f"IT Fleet Sprinter {tag}", "max_weight_kg": 1500}, idempotency_key=f"it-fs-{tag}"
+    )
+    other_id = second.vehicle.vehicle_id
+
+    # A fleet groups vehicles the account owns: one it does not must be refused, not invented.
+    with pytest.raises(DomainError) as unknown:
+        await core.create_fleet(
+            call,
+            {"name": f"IT Fleet {tag}", "vehicles": [{"vehicle_id": "999999999", "units": 1}]},
+            idempotency_key=f"it-fleet-{tag}-x",
+        )
+    assert unknown.value.code is ErrorCode.VEHICLE_NOT_FOUND
+    assert unknown.value.details.get("unknown_vehicle_ids") == ["999999999"]
+
+    # The fleet a user describes has more than one kind of vehicle in it, and RouteHub stores each line
+    # as its own FleetVehicle row: one line proves nothing about the second.
+    fleet = {
+        "name": f"IT Fleet {tag}",
+        "vehicles": [{"vehicle_id": vehicle_id, "units": 6}, {"vehicle_id": other_id, "units": 2}],
+    }
+    try:
+        created = await core.create_fleet(call, fleet, idempotency_key=f"it-fleet-{tag}")
+    except DomainError as capped:
+        assert capped.code is ErrorCode.PLAN_UPGRADE_REQUIRED, capped
+        pytest.skip(f"fleet writes not exercised: {capped.message}")
+    assert created.outcome == "created"
+    assert created.fleet.total_units == 8
+    # The count RouteHub reads back is the units that were written, under each side's own name.
+    assert {v.vehicle_id: v.count for v in created.fleet.vehicles} == {vehicle_id: 6, other_id: 2}
+
+    # Another spelling of the name and the lines the other way round is the same fleet, not a second one.
+    again = await core.create_fleet(
+        call,
+        {"name": fleet["name"].upper(), "vehicles": list(reversed(fleet["vehicles"]))},
+        idempotency_key=f"it-fleet-{tag}-b",
+    )
+    assert again.outcome == "already_existed" and again.fleet.fleet_id == created.fleet.fleet_id
+
+    with pytest.raises(DomainError) as taken:
+        await core.create_fleet(
+            call,
+            {**fleet, "vehicles": [{"vehicle_id": vehicle_id, "units": 2}]},
+            idempotency_key=f"it-fleet-{tag}-c",
+        )
+    assert taken.value.code is ErrorCode.NAME_TAKEN
+
+    # Sending vehicles replaces the composition: the sprinter line is gone, not merged.
+    replaced = await core.update_fleet(
+        call, created.fleet.fleet_id, {"vehicles": [{"vehicle_id": vehicle_id, "units": 22}]}
+    )
+    assert replaced.outcome == "updated" and replaced.fleet.total_units == 22
+    assert [v.vehicle_id for v in replaced.fleet.vehicles] == [vehicle_id]
+    assert replaced.fleet.name == fleet["name"]
+
+    renamed = await core.update_fleet(call, created.fleet.fleet_id, {"name": f"IT Fleet {tag} norte"})
+    assert renamed.fleet.name == f"IT Fleet {tag} norte"
+    # A rename is not a way to empty a fleet.
+    assert renamed.fleet.total_units == 22
+
+    with pytest.raises(DomainError) as missing:
+        await core.update_fleet(call, "999999999", {"name": "x"})
+    assert missing.value.code is ErrorCode.FLEET_NOT_FOUND
+
+    catalog = await core.get_catalog(call)
+    saved = next((f for f in catalog.fleets or [] if f.fleet_id == created.fleet.fleet_id), None)
+    assert saved is not None and saved.total_units == 22

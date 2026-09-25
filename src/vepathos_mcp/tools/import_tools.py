@@ -533,7 +533,12 @@ def make_import_deliveries_tool(deps: ToolDeps) -> Any:
                 elif inp.url:
                     # Core applies the same Drive rewrite; normalize here so logs/errors match.
                     body["url"] = normalize_public_download_url(inp.url)
-                    body["filename"] = smart_import_filename(inp.filename)
+                    # Only a name the user gave. smart_import_filename(None) is "delivery.txt", and a
+                    # .txt suffix is one Smart Import accepts, so sending it made Core keep it and never
+                    # look at what it downloaded: every spreadsheet fetched by url arrived declared as
+                    # text. With no filename Core names the file from the download itself.
+                    if inp.filename:
+                        body["filename"] = smart_import_filename(inp.filename)
                 else:
                     raise DomainError(
                         ErrorCode.INVALID_INPUT,

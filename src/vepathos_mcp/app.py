@@ -110,6 +110,17 @@ def register_operational_routes(mcp: MCPServer, settings: Settings, core: Vepath
         path = settings.mcp_path if settings.mcp_path.startswith("/") else f"/{settings.mcp_path}"
         return RedirectResponse(f"/.well-known/oauth-protected-resource{path}", status_code=307)
 
+    # OpenAI's app review fetches this with no auth and compares the body to the portal token.
+    # JSON, HTML, or a trailing newline fails that check.
+    @mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])  # type: ignore[untyped-decorator]
+    async def openai_apps_challenge(_: Request) -> Response:
+        token = (
+            settings.openai_apps_challenge.get_secret_value() if settings.openai_apps_challenge else ""
+        )
+        if not token:
+            return PlainTextResponse("not found", status_code=404)
+        return PlainTextResponse(token)
+
     @mcp.custom_route("/metrics", methods=["GET"])  # type: ignore[untyped-decorator]
     async def metrics_endpoint(request: Request) -> Response:
         expected = settings.metrics_bearer_token.get_secret_value() if settings.metrics_bearer_token else None

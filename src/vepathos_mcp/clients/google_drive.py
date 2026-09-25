@@ -1,9 +1,14 @@
-"""Rewrite public Google Drive share links to a direct download URL.
+"""Rewrite public Google Drive share links to a fetchable download URL.
 
-Share pages (`/file/d/…/view`) always 302/303. Our public fetch refuses redirects
-(SSRF). `drive.usercontent.google.com/download?id=…&export=download` returns the
-bytes for publicly shared files without a hop — so the model can pass a normal
-share link to `import_deliveries` instead of shelling out to gdown/curl.
+Share pages (`/file/d/…/view`) are HTML, not the file, so a share link as the user copies it is
+never downloadable on its own: the model can pass one to `import_deliveries` instead of shelling
+out to gdown/curl only because this rewrites it first.
+
+`drive.usercontent.google.com/download?id=…&export=download` answers the bytes for a publicly
+shared Drive file with no hop. A Docs/Sheets/Slides link exports instead, and that export answers
+307 to googleusercontent.com — one hop `public_fetch` follows and checks like any other URL. This
+file used to say the fetch refused every redirect; it stopped being true when the fetcher learned
+to follow them, and the stale sentence sent a later reader hunting a bug that was not here.
 """
 
 from __future__ import annotations

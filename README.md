@@ -22,7 +22,7 @@ Web, REST and MCP share the same Vepathos account, plan, features, limits and mo
 | `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | always |
 | `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | always |
 | `list_fleet` | List what the connected Vepathos account has saved. | no | always |
-| `manage_catalog` | Add or change one of the account's own things. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
+| `manage_catalog` | Add or change a vehicle, a depot or a fleet saved in the account: master data that stays after this conversation. | yes | `MCP_CATALOG_WRITE_TOOLS_ENABLED` |
 | `list_automations` | List the connected Vepathos account's standing rules. | no | always |
 | `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | always |
 | `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | `MCP_MAP_SHARES_ENABLED` |
@@ -37,12 +37,19 @@ invent coordinates.
 
 ## Status
 
-Production runs **0.10.0** at `https://mcp.vepathos.com/mcp` and publishes all **15 tools**: the
+Production runs **0.11.1** at `https://mcp.vepathos.com/mcp` and publishes all **15 tools**: the
 import tools, the shareable map and `manage_catalog` are switched on there, so the "Available"
 column above describes what the code gates, not what this deployment withholds.
 
-Vepathos is not listed in any directory yet, so a client has to add it as a custom connector with
-that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos).
+`manage_catalog` saves three kinds of thing: a vehicle, a depot, and a fleet grouping vehicles the
+account already has. A fleet's `units` is what it holds standing, never how many go out on one run,
+which is `vehicles[].count` on `optimize_routes`. To run with a saved fleet, read it with
+`list_fleet` and pass its vehicles: `optimize_routes` takes no `fleet_id`.
+
+Vepathos is not in the official MCP registry yet, so a client has to add it as a custom connector
+with that URL. It is listed on [Smithery](https://smithery.ai/servers/@martinvizzolini/vepathos)
+and [Glama](https://glama.ai/mcp/servers/vizzito/vepathos-mcp). Both take a snapshot when they
+crawl, so a listing can lag a deployment by a day.
 
 Paid self-serve is off. A request the account's plan cannot run answers `PLAN_UPGRADE_REQUIRED`
 with a `contact_url`, never a Stripe Checkout link, and the user retries without reconnecting once

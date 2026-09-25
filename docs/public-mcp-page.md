@@ -32,7 +32,7 @@ ask the assistant to optimize deliveries. No API keys for that flow.
 | `geocode_addresses` | Turn street addresses into latitude/longitude using Vepathos Smart Import. | yes | Always |
 | `get_geocode_result` | Get the status and coordinates of a geocode_addresses job. | no | Always |
 | `list_fleet` | List what the connected Vepathos account has saved. | no | Always |
-| `manage_catalog` | Add or change one of the account's own things. | yes | Rolling out (saved vehicles and depots) |
+| `manage_catalog` | Add or change a vehicle, a depot or a fleet saved in the account: master data that stays after this conversation. | yes | Rolling out (saved vehicles and depots) |
 | `list_automations` | List the connected Vepathos account's standing rules. | no | Always |
 | `create_automation` | Prepare a rule that routes deliveries on a schedule. | yes | Always |
 | `create_optimization_map` | Create a temporary public link to the map of a completed optimization owned by the connected account. | yes | Rolling out (shareable maps) |

@@ -757,3 +757,32 @@ async def test_optimize_routes_refuses_what_it_cannot_mean(
     assert is_error and payload["error"]["code"] == "INVALID_INPUT"
     assert code_part in json.dumps(payload["error"])
     assert not core_state.jobs
+
+
+async def test_import_by_url_lets_the_download_name_the_file(mcp_client: Callable[..., Any]) -> None:
+    """A url import must not declare a type it cannot know.
+
+    smart_import_filename(None) is "delivery.txt", and .txt is a suffix Smart Import accepts, so
+    sending it made Core keep the name and never look at what it downloaded: every spreadsheet
+    fetched by url arrived declared as text. With no filename Core names it from the download.
+    """
+
+    async with await mcp_client() as client:
+        is_error, created = await call(
+            client, "import_deliveries", {"url": "https://files.example.com/caba.xlsm"}
+        )
+        assert not is_error, created
+        is_error, listed = await call(client, "list_datasets", {})
+        assert not is_error
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == created["dataset_id"])
+        assert not row["filename"].endswith(".txt"), row["filename"]
+
+        # A name the user did give still travels: only the invented one is gone.
+        is_error, named = await call(
+            client, "import_deliveries", {"url": "https://files.example.com/x", "filename": "zona-1.csv"}
+        )
+        assert not is_error, named
+        is_error, listed = await call(client, "list_datasets", {})
+        assert not is_error
+        row = next(d for d in listed["datasets"] if d["dataset_id"] == named["dataset_id"])
+        assert row["filename"] == "zona-1.csv"

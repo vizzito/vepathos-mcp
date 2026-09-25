@@ -214,3 +214,24 @@ def test_a_catalog_cap_says_the_plan_can_still_run_without_saving() -> None:
     assert err.details["reason"] == "CATALOG_VEHICLE_LIMIT" and err.details["upgrade_url"]
     depot = from_core_error(403, envelope("PLAN_UPGRADE_REQUIRED", "cap", reason="CATALOG_DEPOT_LIMIT"))
     assert depot.suggestion is not None and "saved-depot" in depot.suggestion
+
+
+def test_backend_unavailable_keeps_cores_own_reason() -> None:
+    """Three blind retries came from throwing this sentence away: the agent was told to resend."""
+
+    err = from_core_error(503, envelope("BACKEND_UNAVAILABLE", "Import is not configured."))
+    assert err.code is ErrorCode.BACKEND_UNAVAILABLE
+    assert err.message == "Import is not configured."
+    assert err.retry_after_seconds == 30
+
+
+def test_backend_unavailable_without_a_reason_still_says_something() -> None:
+    assert from_core_error(503, envelope("BACKEND_UNAVAILABLE")).message == "Vepathos is temporarily unavailable."
+
+
+def test_plain_5xx_never_repeats_a_body_that_is_not_ours() -> None:
+    """A 502 from a proxy carries HTML, not our envelope: that text must not reach the agent."""
+
+    err = from_core_error(502, "<html><body>nginx</body></html>")
+    assert err.code is ErrorCode.BACKEND_UNAVAILABLE
+    assert err.message == "Vepathos is temporarily unavailable."

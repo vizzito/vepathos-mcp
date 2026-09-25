@@ -176,6 +176,42 @@ within 0.0005°.
 Any of `name`, `latitude`, `longitude`, at least one; **`latitude` and `longitude` change together**.
 `404 DEPOT_NOT_FOUND`, `409 NAME_TAKEN`.
 
+### `POST /api/mcp/v1/catalog/fleets`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string 1–120 | yes | |
+| `vehicles` | array 1–100 | yes | `{ "vehicle_id": string, "units": integer 1–10,000 }` |
+
+`units` is the fleet's standing membership, not a run: how many vehicles one optimization uses is
+`vehicles[].count` on that job and is never written here. A `vehicle_id` the account does not own is
+`404 VEHICLE_NOT_FOUND` with `details.unknown_vehicle_ids` — a fleet groups saved vehicles and never
+creates one, so the caller saves the vehicle first.
+
+`201` (or `200` when it already existed: same name holding the same vehicles with the same units):
+
+```json
+{
+  "fleet": {
+    "fleet_id": "31",
+    "name": "norte",
+    "total_units": 6,
+    "vehicles": [{ "vehicle_id": "12", "name": "Sprinter", "count": 6, "max_weight_kg": 1500, "max_volume_m3": 14 }]
+  },
+  "outcome": "created",
+  "account_url": "https://vepathos.com/dashboard/fleets"
+}
+```
+
+The read side (`GET /api/mcp/v1/catalog`) already returned `fleets` in this shape, so `count` there and
+`units` here are the same number under the two names each side has always used.
+
+### `PATCH /api/mcp/v1/catalog/fleets/{fleet_id}`
+
+`name`, `vehicles`, or both, at least one. **`vehicles` replaces the whole composition**: a caller
+adding one line sends every line the fleet keeps. `404 FLEET_NOT_FOUND`, `409 NAME_TAKEN`,
+`404 VEHICLE_NOT_FOUND`.
+
 ## Plans
 
 Every run lives in an `OptimizationPlan`, the same object the dashboard uses
